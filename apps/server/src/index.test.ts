@@ -1,6 +1,9 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import type { AddressInfo } from "node:net";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { ServerMessage } from "@vibedeck/shared";
 import { buildApp } from "./index.js";
 
@@ -9,6 +12,25 @@ import { buildApp } from "./index.js";
  * ubuntu-latest, where claude/cursor-agent/codex are not installed — a
  * test that assumes one of those exists would only pass on Harsha's Mac.
  */
+
+/**
+ * Every `buildApp()` call in this file constructs a fresh `WorkspaceStore`,
+ * which opens a SQLite file under `VIBEDECK_DATA_DIR` (see
+ * `apps/server/src/db/schema.ts`). Point that at a brand-new temp directory
+ * before each test, and clean it up after, so these tests never read or
+ * write a developer's real `~/.vibedeck`.
+ */
+let dataDir: string;
+
+beforeEach(() => {
+  dataDir = mkdtempSync(join(tmpdir(), "vibedeck-index-test-"));
+  process.env.VIBEDECK_DATA_DIR = dataDir;
+});
+
+afterEach(() => {
+  delete process.env.VIBEDECK_DATA_DIR;
+  rmSync(dataDir, { recursive: true, force: true });
+});
 
 describe("GET /api/health", () => {
   it("returns 200 with status, version, and the supported agent list", async () => {
@@ -22,6 +44,9 @@ describe("GET /api/health", () => {
       status: "ok",
       version: expect.any(String),
       agents: ["claude", "cursor-agent", "codex", "shell"],
+      // The server's own cwd — only used by the web UI to pre-fill the
+      // first-run "create a workspace" form's directory field.
+      cwd: expect.any(String),
     });
 
     await app.close();
@@ -29,18 +54,32 @@ describe("GET /api/health", () => {
 });
 
 describe("GET /api/agents", () => {
-  it("reports availability for every known agent, shell always available", async () => {
+  it("reports availability and an install hint for every known agent, shell always available", async () => {
     const app = buildApp();
     const response = await app.inject({ method: "GET", url: "/api/agents" });
 
     expect(response.statusCode).toBe(200);
     const body = response.json() as {
-      agents: { id: string; displayName: string; available: boolean }[];
+      agents: { id: string; displayName: string; available: boolean; installHint: string | null }[];
     };
     expect(body.agents).toHaveLength(4);
     const shell = body.agents.find((a) => a.id === "shell");
     expect(shell?.available).toBe(true);
     expect(shell?.displayName).toBe("Shell");
+    // Shell needs no separate install, and is always available, so it
+    // should never carry an install hint.
+    expect(shell?.installHint).toBeNull();
+
+    // codex is the one agent with a real (non-null) install hint when it's
+    // missing — guaranteed missing on ubuntu-latest CI, may or may not be
+    // missing on a dev machine, so branch on actual availability rather
+    // than assuming either state.
+    const codex = body.agents.find((a) => a.id === "codex");
+    if (codex?.available) {
+      expect(codex.installHint).toBeNull();
+    } else {
+      expect(codex?.installHint).toBe("npm install -g @openai/codex");
+    }
 
     await app.close();
   });
@@ -80,7 +119,10 @@ describe("session REST endpoints", () => {
       payload: { agent: "codex" },
     });
     expect(response.statusCode).toBe(409);
-    expect(response.json()).toMatchObject({ error: expect.stringContaining("codex") });
+    expect(response.json()).toMatchObject({
+      error: expect.stringContaining("codex"),
+      installHint: "npm install -g @openai/codex",
+    });
     await app.close();
   });
 
@@ -133,6 +175,207 @@ describe("session REST endpoints", () => {
     },
     10_000
   );
+
+  it(
+    "spawns a session in a workspace's rootPath when workspaceId is given",
+    async () => {
+      const app = buildApp();
+      const projectDir = mkdtempSync(join(tmpdir(), "vibedeck-workspace-cwd-"));
+
+      const workspaceResponse = await app.inject({
+        method: "POST",
+        url: "/api/workspaces",
+        payload: { name: "cwd-test", rootPath: projectDir },
+      });
+      expect(workspaceResponse.statusCode).toBe(201);
+      const workspace = workspaceResponse.json() as { id: string; rootPath: string };
+
+      const sessionResponse = await app.inject({
+        method: "POST",
+        url: "/api/sessions",
+        payload: { agent: "shell", workspaceId: workspace.id },
+      });
+      expect(sessionResponse.statusCode).toBe(201);
+      const info = sessionResponse.json() as { cwd: string };
+      // The workspace's rootPath wins — this is the actual fix for "every
+      // pane spawns in the server's own working directory" bug.
+      expect(info.cwd).toBe(workspace.rootPath);
+
+      rmSync(projectDir, { recursive: true, force: true });
+      await app.close();
+    },
+    10_000
+  );
+
+  it("POST /api/sessions rejects an unknown workspaceId with 400", async () => {
+    const app = buildApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/sessions",
+      payload: { agent: "shell", workspaceId: "does-not-exist" },
+    });
+    expect(response.statusCode).toBe(400);
+    await app.close();
+  });
+});
+
+describe("workspace REST endpoints", () => {
+  it("GET /api/workspaces starts empty", async () => {
+    const app = buildApp();
+    const response = await app.inject({ method: "GET", url: "/api/workspaces" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ workspaces: [] });
+    await app.close();
+  });
+
+  it("creates, lists, gets, patches, and deletes a workspace", async () => {
+    const app = buildApp();
+    const projectDir = mkdtempSync(join(tmpdir(), "vibedeck-workspace-crud-"));
+
+    const createResponse = await app.inject({
+      method: "POST",
+      url: "/api/workspaces",
+      payload: { name: "my-project", rootPath: projectDir },
+    });
+    expect(createResponse.statusCode).toBe(201);
+    const created = createResponse.json() as {
+      id: string;
+      name: string;
+      rootPath: string;
+      layout: string | null;
+    };
+    expect(created.name).toBe("my-project");
+    expect(created.rootPath).toBe(projectDir);
+    expect(created.layout).toBeNull();
+
+    const listResponse = await app.inject({ method: "GET", url: "/api/workspaces" });
+    const { workspaces } = listResponse.json() as { workspaces: { id: string }[] };
+    expect(workspaces.map((w) => w.id)).toContain(created.id);
+
+    const getResponse = await app.inject({
+      method: "GET",
+      url: `/api/workspaces/${created.id}`,
+    });
+    expect(getResponse.statusCode).toBe(200);
+    expect((getResponse.json() as { id: string }).id).toBe(created.id);
+
+    const layout = JSON.stringify({ kind: "leaf", id: "leaf-1", sessionId: null });
+    const patchResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/workspaces/${created.id}`,
+      payload: { name: "renamed-project", layout },
+    });
+    expect(patchResponse.statusCode).toBe(200);
+    const patched = patchResponse.json() as { name: string; layout: string | null };
+    expect(patched.name).toBe("renamed-project");
+    expect(patched.layout).toBe(layout);
+
+    const deleteResponse = await app.inject({
+      method: "DELETE",
+      url: `/api/workspaces/${created.id}`,
+    });
+    expect(deleteResponse.statusCode).toBe(204);
+
+    const afterDelete = await app.inject({
+      method: "GET",
+      url: `/api/workspaces/${created.id}`,
+    });
+    expect(afterDelete.statusCode).toBe(404);
+
+    rmSync(projectDir, { recursive: true, force: true });
+    await app.close();
+  });
+
+  it("POST /api/workspaces rejects an empty name with 400", async () => {
+    const app = buildApp();
+    const projectDir = mkdtempSync(join(tmpdir(), "vibedeck-workspace-badname-"));
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/workspaces",
+      payload: { name: "   ", rootPath: projectDir },
+    });
+    expect(response.statusCode).toBe(400);
+    rmSync(projectDir, { recursive: true, force: true });
+    await app.close();
+  });
+
+  it("POST /api/workspaces rejects a rootPath that doesn't exist with 400", async () => {
+    const app = buildApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/workspaces",
+      payload: { name: "ghost-project", rootPath: "/definitely/does/not/exist/vibedeck" },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error: expect.any(String) });
+    await app.close();
+  });
+
+  it("PATCH /api/workspaces/:id rejects a rootPath that doesn't exist with 400", async () => {
+    const app = buildApp();
+    const projectDir = mkdtempSync(join(tmpdir(), "vibedeck-workspace-patch-"));
+    const created = (
+      await app.inject({
+        method: "POST",
+        url: "/api/workspaces",
+        payload: { name: "patch-test", rootPath: projectDir },
+      })
+    ).json() as { id: string };
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: `/api/workspaces/${created.id}`,
+      payload: { rootPath: "/definitely/does/not/exist/vibedeck" },
+    });
+    expect(response.statusCode).toBe(400);
+
+    rmSync(projectDir, { recursive: true, force: true });
+    await app.close();
+  });
+
+  it("GET /api/workspaces/:id returns 404 for an unknown id", async () => {
+    const app = buildApp();
+    const response = await app.inject({ method: "GET", url: "/api/workspaces/does-not-exist" });
+    expect(response.statusCode).toBe(404);
+    await app.close();
+  });
+
+  it("PATCH /api/workspaces/:id returns 404 for an unknown id", async () => {
+    const app = buildApp();
+    const response = await app.inject({
+      method: "PATCH",
+      url: "/api/workspaces/does-not-exist",
+      payload: { name: "irrelevant" },
+    });
+    expect(response.statusCode).toBe(404);
+    await app.close();
+  });
+
+  it("DELETE /api/workspaces/:id returns 404 for an unknown id", async () => {
+    const app = buildApp();
+    const response = await app.inject({
+      method: "DELETE",
+      url: "/api/workspaces/does-not-exist",
+    });
+    expect(response.statusCode).toBe(404);
+    await app.close();
+  });
+
+  it("expands a leading ~ in rootPath to the home directory", async () => {
+    const app = buildApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/workspaces",
+      payload: { name: "home-dir-project", rootPath: "~" },
+    });
+    expect(response.statusCode).toBe(201);
+    const created = response.json() as { rootPath: string };
+    // homedir() is always an existing absolute directory, so "~" alone
+    // should resolve straight to it.
+    expect(created.rootPath.length).toBeGreaterThan(0);
+    expect(created.rootPath.startsWith("/")).toBe(true);
+    await app.close();
+  });
 });
 
 describe("WebSocket session stream", () => {

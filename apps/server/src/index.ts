@@ -3,6 +3,8 @@ import fastifyWebsocket from "@fastify/websocket";
 import { AGENT_IDS, AGENT_SPECS, type AgentId, type ClientMessage } from "@vibedeck/shared";
 import { detectAllAgents } from "./pty/agents.js";
 import { SessionManager } from "./pty/session-manager.js";
+import { WorkspaceStore } from "./db/workspaces.js";
+import { resolveRootPath } from "./workspace-path.js";
 
 const VERSION = "0.0.0";
 const PORT = 4317;
@@ -12,9 +14,25 @@ function isAgentId(value: unknown): value is AgentId {
   return typeof value === "string" && (AGENT_IDS as readonly string[]).includes(value);
 }
 
+/**
+ * How a user would install a given agent's CLI if it's missing. `null` for
+ * agents that need no separate install (the "shell" agent is always
+ * available) — surfaced by `GET /api/agents` and in the 409 body of
+ * `POST /api/sessions`, so the UI can show something more useful than "not
+ * installed".
+ */
+const INSTALL_HINTS: Record<AgentId, string | null> = {
+  claude: null,
+  "cursor-agent": null,
+  codex: "npm install -g @openai/codex",
+  shell: null,
+};
+
 export interface BuildAppOptions {
   /** Inject a SessionManager (mainly for tests). Defaults to a fresh one. */
   sessionManager?: SessionManager;
+  /** Inject a WorkspaceStore (mainly for tests). Defaults to a fresh one. */
+  workspaceStore?: WorkspaceStore;
 }
 
 /**
@@ -25,16 +43,21 @@ export interface BuildAppOptions {
 export function buildApp(options: BuildAppOptions = {}) {
   const app = Fastify({ logger: false });
   const sessionManager = options.sessionManager ?? new SessionManager();
+  const workspaceStore = options.workspaceStore ?? new WorkspaceStore();
 
-  // Make the manager reachable from outside (tests call app.sessionManager
-  // directly to assert on state, and to disposeAll() in teardown).
+  // Make the manager/store reachable from outside (tests call
+  // app.sessionManager/app.workspaceStore directly to assert on state, and
+  // to tear down in test teardown).
   app.decorate("sessionManager", sessionManager);
+  app.decorate("workspaceStore", workspaceStore);
 
-  // Kill every pty when the Fastify instance closes, so `app.close()` in
-  // tests (and a real process shutdown) doesn't leave shell/agent
-  // processes running in the background.
+  // Kill every pty and close the database when the Fastify instance closes,
+  // so `app.close()` in tests (and a real process shutdown) doesn't leave
+  // shell/agent processes running, or the SQLite file handle open, in the
+  // background.
   app.addHook("onClose", (_instance, done) => {
     sessionManager.disposeAll();
+    workspaceStore.close();
     done();
   });
 
@@ -44,6 +67,10 @@ export function buildApp(options: BuildAppOptions = {}) {
     status: "ok" as const,
     version: VERSION,
     agents: AGENT_IDS,
+    // The server's own working directory — used by the web UI only to
+    // pre-fill a sensible default path when prompting a first-time user to
+    // create their first workspace. Not otherwise load-bearing.
+    cwd: process.cwd(),
   }));
 
   app.get("/api/agents", async () => {
@@ -53,8 +80,83 @@ export function buildApp(options: BuildAppOptions = {}) {
         id,
         displayName: AGENT_SPECS[id].displayName,
         available: availability[id],
+        installHint: availability[id] ? null : INSTALL_HINTS[id],
       })),
     };
+  });
+
+  app.get("/api/workspaces", async () => ({
+    workspaces: workspaceStore.list(),
+  }));
+
+  app.post("/api/workspaces", async (request, reply) => {
+    const body = (request.body ?? {}) as { name?: unknown; rootPath?: unknown };
+
+    if (typeof body.name !== "string" || body.name.trim().length === 0) {
+      return reply.status(400).send({ error: '"name" must be a non-empty string' });
+    }
+
+    const resolved = resolveRootPath(body.rootPath);
+    if (!resolved.ok) {
+      return reply.status(400).send({ error: resolved.error });
+    }
+
+    const workspace = workspaceStore.create({ name: body.name.trim(), rootPath: resolved.path });
+    return reply.status(201).send(workspace);
+  });
+
+  app.get("/api/workspaces/:id", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const workspace = workspaceStore.get(id);
+    if (!workspace) {
+      return reply.status(404).send({ error: `No workspace with id "${id}"` });
+    }
+    return workspace;
+  });
+
+  app.patch("/api/workspaces/:id", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    if (!workspaceStore.get(id)) {
+      return reply.status(404).send({ error: `No workspace with id "${id}"` });
+    }
+
+    const body = (request.body ?? {}) as { name?: unknown; rootPath?: unknown; layout?: unknown };
+    const changes: { name?: string; rootPath?: string; layout?: string | null } = {};
+
+    if ("name" in body) {
+      if (typeof body.name !== "string" || body.name.trim().length === 0) {
+        return reply.status(400).send({ error: '"name" must be a non-empty string' });
+      }
+      changes.name = body.name.trim();
+    }
+
+    if ("rootPath" in body) {
+      const resolved = resolveRootPath(body.rootPath);
+      if (!resolved.ok) {
+        return reply.status(400).send({ error: resolved.error });
+      }
+      changes.rootPath = resolved.path;
+    }
+
+    if ("layout" in body) {
+      if (body.layout !== null && typeof body.layout !== "string") {
+        return reply.status(400).send({ error: '"layout" must be a JSON string or null' });
+      }
+      changes.layout = body.layout;
+    }
+
+    // Existence was already confirmed above and better-sqlite3 is
+    // synchronous (no `await` between that check and this call, so nothing
+    // else could have deleted it in between) — this is always defined.
+    return workspaceStore.update(id, changes)!;
+  });
+
+  app.delete("/api/workspaces/:id", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    if (!workspaceStore.remove(id)) {
+      return reply.status(404).send({ error: `No workspace with id "${id}"` });
+    }
+    return reply.status(204).send();
   });
 
   app.get("/api/sessions", async () => ({
@@ -67,6 +169,7 @@ export function buildApp(options: BuildAppOptions = {}) {
       cwd?: unknown;
       cols?: unknown;
       rows?: unknown;
+      workspaceId?: unknown;
     };
 
     if (!isAgentId(body.agent)) {
@@ -83,10 +186,29 @@ export function buildApp(options: BuildAppOptions = {}) {
           `The "${body.agent}" agent isn't installed on this machine ` +
           `(looked for the "${spec.command}" command on PATH). ` +
           `Install it first, then try again.`,
+        installHint: INSTALL_HINTS[body.agent],
       });
     }
 
-    const cwd = typeof body.cwd === "string" ? body.cwd : process.cwd();
+    // A workspaceId, if given, is the source of truth for where this pane
+    // spawns — this is the actual fix for the "every pane opens in the
+    // server's own cwd" bug: we look up the workspace's rootPath and use
+    // that, ignoring any `cwd` the caller also sent, so a stale/incorrect
+    // client-supplied cwd can never silently override the workspace.
+    let cwd: string;
+    if (body.workspaceId !== undefined) {
+      if (typeof body.workspaceId !== "string") {
+        return reply.status(400).send({ error: '"workspaceId" must be a string' });
+      }
+      const workspace = workspaceStore.get(body.workspaceId);
+      if (!workspace) {
+        return reply.status(400).send({ error: `No workspace with id "${body.workspaceId}"` });
+      }
+      cwd = workspace.rootPath;
+    } else {
+      cwd = typeof body.cwd === "string" ? body.cwd : process.cwd();
+    }
+
     const cols = typeof body.cols === "number" ? body.cols : 80;
     const rows = typeof body.rows === "number" ? body.rows : 24;
 
@@ -177,6 +299,7 @@ export function buildApp(options: BuildAppOptions = {}) {
 declare module "fastify" {
   interface FastifyInstance {
     sessionManager: SessionManager;
+    workspaceStore: WorkspaceStore;
   }
 }
 

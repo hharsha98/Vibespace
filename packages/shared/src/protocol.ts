@@ -86,3 +86,29 @@ export const AGENT_SPECS: Record<AgentId, AgentSpec> = {
   codex: { id: "codex", displayName: "Codex", command: "codex", args: [] },
   shell: { id: "shell", displayName: "Shell", command: "/bin/zsh", args: ["-l"] },
 };
+
+/**
+ * A workspace is "a name + a project directory + a saved layout" — Phase 3's
+ * fix for every pane spawning in the *server's* working directory instead of
+ * a project the user actually cares about. Switching workspaces swaps which
+ * project directory new panes spawn in, and remembers the pane grid's shape
+ * (via `layout`) so it survives a page refresh or server restart.
+ *
+ * Important: `layout` only ever preserves the *shape* of the grid (which
+ * panes exist, how they're split), never live sessions — pty processes do
+ * not survive a server restart, so a restored workspace's panes always come
+ * back empty. See `apps/web/src/grid/tree.ts` for the GridNode shape that
+ * gets JSON-serialised into this field.
+ */
+export interface Workspace {
+  id: string;
+  name: string;
+  /** Absolute path on the server's filesystem; new sessions spawn here. */
+  rootPath: string;
+  /** JSON-serialised GridNode tree, or null if this workspace has never had a layout saved. */
+  layout: string | null;
+  /** ISO 8601 UTC timestamp string, e.g. "2026-08-10T12:34:56.000Z". */
+  createdAt: string;
+  /** ISO 8601 UTC timestamp string, updated on every create/update. */
+  updatedAt: string;
+}

@@ -7,6 +7,7 @@ import {
   createLeaf,
   findPane,
   listPanes,
+  pruneDeadSessions,
   splitPane,
   type GridNode,
 } from "./tree.js";
@@ -259,5 +260,45 @@ describe("buildTemplate", () => {
     const tree = buildTemplate(16);
     const ids = listPanes(tree).map((p) => p.id);
     expect(new Set(ids).size).toBe(16);
+  });
+});
+
+describe("pruneDeadSessions", () => {
+  it("clears a leaf's sessionId when it isn't in the live set", () => {
+    const leaf = createLeaf("session-gone");
+    const pruned = pruneDeadSessions(leaf, new Set());
+    if (pruned.kind !== "leaf") throw new Error("expected a leaf");
+    expect(pruned.sessionId).toBeNull();
+  });
+
+  it("leaves a leaf's sessionId alone when it IS in the live set", () => {
+    const leaf = createLeaf("session-alive");
+    const pruned = pruneDeadSessions(leaf, new Set(["session-alive"]));
+    if (pruned.kind !== "leaf") throw new Error("expected a leaf");
+    expect(pruned.sessionId).toBe("session-alive");
+  });
+
+  it("leaves empty leaves (no sessionId) untouched", () => {
+    const leaf = createLeaf(null);
+    const pruned = pruneDeadSessions(leaf, new Set());
+    expect(pruned).toBe(leaf); // same reference — nothing needed pruning
+  });
+
+  it("prunes dead sessions anywhere in a nested tree, leaving live ones intact", () => {
+    let root: GridNode = createLeaf("session-alive");
+    root = splitPane(root, root.id, "row");
+    const [aliveLeaf, emptyLeaf] = listPanes(root);
+    root = attachSession(root, emptyLeaf.id, "session-dead");
+
+    const pruned = pruneDeadSessions(root, new Set(["session-alive"]));
+    const panes = listPanes(pruned);
+    expect(panes.find((p) => p.id === aliveLeaf.id)?.sessionId).toBe("session-alive");
+    expect(panes.find((p) => p.id === emptyLeaf.id)?.sessionId).toBeNull();
+  });
+
+  it("returns the exact same tree reference when nothing needed pruning", () => {
+    const root = buildTemplate(4); // every leaf already has sessionId: null
+    const pruned = pruneDeadSessions(root, new Set());
+    expect(pruned).toBe(root);
   });
 });

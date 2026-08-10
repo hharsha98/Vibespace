@@ -6,6 +6,7 @@ import {
   type AgentSpec,
   type ServerMessage,
   type SessionInfo,
+  type Workspace,
 } from "./protocol.js";
 
 describe("AGENT_IDS", () => {
@@ -152,5 +153,60 @@ describe("AGENT_SPECS", () => {
 
   it("shell is spawned as a login shell (-l), so it picks up the user's PATH and profile", () => {
     expect(AGENT_SPECS.shell.args).toEqual(["-l"]);
+  });
+});
+
+describe("Workspace", () => {
+  it("describes a freshly-created workspace with no layout saved yet", () => {
+    const workspace: Workspace = {
+      id: "33333333-3333-3333-3333-333333333333",
+      name: "vibedeck",
+      rootPath: "/Users/harsha/projects/vibedeck",
+      layout: null,
+      createdAt: "2026-08-10T12:00:00.000Z",
+      updatedAt: "2026-08-10T12:00:00.000Z",
+    };
+    expect(workspace.layout).toBeNull();
+    expect(workspace.createdAt).toBe(workspace.updatedAt);
+  });
+
+  it("round-trips a serialised GridNode tree through the layout field", () => {
+    // `layout` is deliberately just `string | null` (not a nested GridNode
+    // type) so this package never has to import web-only tree shapes —
+    // callers JSON.stringify/parse it themselves. Exercise that contract.
+    const tree = {
+      kind: "split",
+      id: "split-1",
+      direction: "row",
+      children: [
+        { kind: "leaf", id: "leaf-1", sessionId: null },
+        { kind: "leaf", id: "leaf-2", sessionId: "session-abc" },
+      ],
+    };
+    const workspace: Workspace = {
+      id: "44444444-4444-4444-4444-444444444444",
+      name: "api-project",
+      rootPath: "/tmp/api-project",
+      layout: JSON.stringify(tree),
+      createdAt: "2026-08-10T12:00:00.000Z",
+      updatedAt: "2026-08-10T12:05:00.000Z",
+    };
+
+    const parsed: unknown = JSON.parse(workspace.layout as string);
+    expect(parsed).toEqual(tree);
+  });
+
+  it("updatedAt can move forward independently of createdAt after an edit", () => {
+    const workspace: Workspace = {
+      id: "55555555-5555-5555-5555-555555555555",
+      name: "renamed-project",
+      rootPath: "/tmp/renamed-project",
+      layout: null,
+      createdAt: "2026-08-10T09:00:00.000Z",
+      updatedAt: "2026-08-10T10:30:00.000Z",
+    };
+    expect(new Date(workspace.updatedAt).getTime()).toBeGreaterThan(
+      new Date(workspace.createdAt).getTime()
+    );
   });
 });

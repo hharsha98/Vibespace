@@ -19,6 +19,10 @@ interface PaneViewProps {
   agents: AgentOption[];
   /** Pre-highlighted choice in the empty-pane agent picker (the header <select>'s current value). */
   defaultAgent: AgentId | "";
+  /** The active workspace's id, sent with `POST /api/sessions` so the new
+   * pty spawns in that workspace's rootPath instead of the server's own
+   * cwd. Null only in the (should-be-rare) case no workspace is active. */
+  workspaceId: string | null;
   isFocused: boolean;
   onFocus: () => void;
   /** Fired once `POST /api/sessions` succeeds for this (previously empty) pane. */
@@ -41,6 +45,7 @@ export default function PaneView({
   session,
   agents,
   defaultAgent,
+  workspaceId,
   isFocused,
   onFocus,
   onSessionStarted,
@@ -57,7 +62,7 @@ export default function PaneView({
       const res = await fetch("/api/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ agent }),
+        body: JSON.stringify(workspaceId ? { agent, workspaceId } : { agent }),
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };

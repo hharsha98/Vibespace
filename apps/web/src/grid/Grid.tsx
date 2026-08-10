@@ -9,6 +9,7 @@ interface GridProps {
   sessions: SessionInfo[];
   agents: AgentOption[];
   defaultAgent: AgentId | "";
+  workspaceId: string | null;
   focusedPaneId: PaneId | null;
   onFocus: (paneId: PaneId) => void;
   onSessionStarted: (paneId: PaneId, session: SessionInfo) => void;
@@ -28,8 +29,17 @@ export default function Grid(props: GridProps) {
 }
 
 function GridNodeView({ node, ...rest }: GridProps & { node: GridNode }) {
-  const { sessions, agents, defaultAgent, focusedPaneId, onFocus, onSessionStarted, onSplit, onClosePane } =
-    rest;
+  const {
+    sessions,
+    agents,
+    defaultAgent,
+    workspaceId,
+    focusedPaneId,
+    onFocus,
+    onSessionStarted,
+    onSplit,
+    onClosePane,
+  } = rest;
 
   if (node.kind === "leaf") {
     const session = node.sessionId ? (sessions.find((s) => s.id === node.sessionId) ?? null) : null;
@@ -40,6 +50,7 @@ function GridNodeView({ node, ...rest }: GridProps & { node: GridNode }) {
         session={session}
         agents={agents}
         defaultAgent={defaultAgent}
+        workspaceId={workspaceId}
         isFocused={focusedPaneId === node.id}
         onFocus={() => onFocus(node.id)}
         onSessionStarted={onSessionStarted}

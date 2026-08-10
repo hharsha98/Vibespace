@@ -170,6 +170,34 @@ export function buildTemplate(n: number): GridNode {
   return buildBalanced(n, "row");
 }
 
+/**
+ * Walks a tree loaded from a workspace's saved `layout` JSON and nulls out
+ * any leaf's `sessionId` that isn't in `liveSessionIds`. This is what makes
+ * restoring a workspace honest: a saved layout only ever remembers pane
+ * *shape*, never guarantees the pty that used to fill a pane still exists
+ * (it doesn't, across a server restart) — so any reference to a session
+ * that isn't actually running right now gets cleared back to an empty
+ * pane rather than the UI pretending it's still there.
+ *
+ * If the referenced session IS still running (e.g. switching back to a
+ * workspace within the same still-up server, not after a restart), its id
+ * is left alone and the pane reattaches normally.
+ */
+export function pruneDeadSessions(root: GridNode, liveSessionIds: ReadonlySet<string>): GridNode {
+  if (root.kind === "leaf") {
+    if (root.sessionId && !liveSessionIds.has(root.sessionId)) {
+      return { ...root, sessionId: null };
+    }
+    return root;
+  }
+  const newLeft = pruneDeadSessions(root.children[0], liveSessionIds);
+  const newRight = pruneDeadSessions(root.children[1], liveSessionIds);
+  if (newLeft === root.children[0] && newRight === root.children[1]) {
+    return root; // Nothing under this node needed pruning — hand back the same object.
+  }
+  return { ...root, children: [newLeft, newRight] };
+}
+
 function buildBalanced(n: number, direction: Direction): GridNode {
   if (n === 1) return createLeaf(null);
 
