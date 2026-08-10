@@ -12,13 +12,17 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
+    "@fastify/websocket": "^11.3.0",
     "@vibedeck/shared": "workspace:*",
-    "fastify": "^5.2.1"
+    "fastify": "^5.2.1",
+    "node-pty": "^1.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.7",
+    "@types/ws": "^8.5.13",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3",
-    "vitest": "^3.0.4"
+    "vitest": "^3.0.4",
+    "ws": "^8.21.3"
   }
 }

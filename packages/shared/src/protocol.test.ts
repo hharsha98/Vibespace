@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { AGENT_IDS, type AgentId, type ServerMessage } from "./protocol.js";
+import {
+  AGENT_IDS,
+  AGENT_SPECS,
+  type AgentId,
+  type AgentSpec,
+  type ServerMessage,
+  type SessionInfo,
+} from "./protocol.js";
 
 describe("AGENT_IDS", () => {
   it("contains exactly the four expected agent ids, in a stable order", () => {
@@ -43,14 +50,20 @@ describe("isOutputMessage (discriminated union narrowing)", () => {
 
   it("returns false for exit and ready messages", () => {
     const exit: ServerMessage = { type: "exit", sessionId: "abc", code: 0 };
-    const ready: ServerMessage = { type: "ready", sessionId: "abc" };
+    const ready: ServerMessage = {
+      type: "ready",
+      sessionId: "abc",
+      history: "",
+      cols: 80,
+      rows: 24,
+    };
     expect(isOutputMessage(exit)).toBe(false);
     expect(isOutputMessage(ready)).toBe(false);
   });
 
   it("filters a mixed message stream down to only output messages", () => {
     const stream: ServerMessage[] = [
-      { type: "ready", sessionId: "s1" },
+      { type: "ready", sessionId: "s1", history: "welcome\n", cols: 80, rows: 24 },
       { type: "output", sessionId: "s1", data: "line 1\n" },
       { type: "output", sessionId: "s1", data: "line 2\n" },
       { type: "exit", sessionId: "s1", code: 0 },
@@ -58,5 +71,86 @@ describe("isOutputMessage (discriminated union narrowing)", () => {
     const outputs = stream.filter(isOutputMessage);
     expect(outputs).toHaveLength(2);
     expect(outputs.map((m) => m.data)).toEqual(["line 1\n", "line 2\n"]);
+  });
+
+  it("a ready message carries replayed scrollback and the pty's current size", () => {
+    // This is what makes reattaching after a tab refresh work: the client
+    // gets the full history text plus the size to size its terminal to,
+    // all in the one message that kicks off a session view.
+    const ready: ServerMessage = {
+      type: "ready",
+      sessionId: "s1",
+      history: "$ echo hi\nhi\n",
+      cols: 120,
+      rows: 40,
+    };
+    expect(ready.history).toContain("hi");
+    expect(ready.cols).toBe(120);
+    expect(ready.rows).toBe(40);
+  });
+});
+
+describe("SessionInfo", () => {
+  it("describes a running session with a null exit code", () => {
+    const session: SessionInfo = {
+      id: "11111111-1111-1111-1111-111111111111",
+      agent: "shell",
+      cwd: "/Users/harsha/projects/vibedeck",
+      title: "shell",
+      status: "running",
+      exitCode: null,
+      createdAt: "2026-08-10T12:00:00.000Z",
+    };
+    expect(session.status).toBe("running");
+    expect(session.exitCode).toBeNull();
+  });
+
+  it("describes an exited session with a numeric exit code", () => {
+    const session: SessionInfo = {
+      id: "22222222-2222-2222-2222-222222222222",
+      agent: "claude",
+      cwd: "/tmp",
+      title: "claude",
+      status: "exited",
+      exitCode: 1,
+      createdAt: "2026-08-10T12:00:00.000Z",
+    };
+    expect(session.status).toBe("exited");
+    expect(session.exitCode).toBe(1);
+  });
+});
+
+describe("AGENT_SPECS", () => {
+  it("has exactly one entry per AgentId, with matching keys and ids", () => {
+    // If a new AgentId is ever added without a matching AGENT_SPECS entry,
+    // this test catches it — TypeScript's Record<AgentId, AgentSpec> would
+    // already refuse to compile, but this also guards the runtime shape.
+    expect(Object.keys(AGENT_SPECS).sort()).toEqual([...AGENT_IDS].sort());
+    for (const id of AGENT_IDS) {
+      const spec: AgentSpec = AGENT_SPECS[id];
+      expect(spec.id).toBe(id);
+    }
+  });
+
+  it("gives every agent a non-empty, human-readable display name", () => {
+    for (const id of AGENT_IDS) {
+      expect(AGENT_SPECS[id].displayName.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("gives every agent a non-empty command", () => {
+    for (const id of AGENT_IDS) {
+      expect(AGENT_SPECS[id].command.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("the AI CLI agents take no extra args, matching how they're normally invoked", () => {
+    expect(AGENT_SPECS.claude.args).toEqual([]);
+    expect(AGENT_SPECS["cursor-agent"].args).toEqual([]);
+    expect(AGENT_SPECS.codex.args).toEqual([]);
+  });
+
+  it("shell is spawned as a login shell (-l), so it picks up the user's PATH and profile", () => {
+    expect(AGENT_SPECS.shell.args).toEqual(["-l"]);
   });
 });

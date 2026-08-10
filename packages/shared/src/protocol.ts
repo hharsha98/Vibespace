@@ -24,4 +24,65 @@ export type ClientMessage =
 export type ServerMessage =
   | { type: "output"; sessionId: string; data: string }
   | { type: "exit"; sessionId: string; code: number }
-  | { type: "ready"; sessionId: string };
+  // "ready" now carries everything the client needs to redraw a terminal it
+  // is (re)attaching to: the replayed scrollback text and the size the pty
+  // is currently running at. This is what makes "close the tab, reopen it,
+  // see your session exactly as you left it" work.
+  | { type: "ready"; sessionId: string; history: string; cols: number; rows: number };
+
+/**
+ * A session as seen over the REST API (`GET /api/sessions`, etc). This is
+ * the "directory listing" shape — it does not include the pty's live
+ * output, just enough to render a session list and know whether a process
+ * is still running.
+ */
+export interface SessionInfo {
+  id: string;
+  agent: AgentId;
+  cwd: string;
+  title: string;
+  status: "running" | "exited";
+  /** null while running; set to the process's exit code once it exits. */
+  exitCode: number | null;
+  /** ISO 8601 UTC timestamp string, e.g. "2026-08-10T12:34:56.000Z". */
+  createdAt: string;
+}
+
+/**
+ * Static metadata about how to launch a given agent: what binary to run
+ * and what arguments to pass it. This is the "menu" the UI shows when a
+ * user picks which agent to start a session with.
+ */
+export interface AgentSpec {
+  id: AgentId;
+  displayName: string;
+  command: string;
+  args: string[];
+}
+
+/**
+ * Metadata for every known agent, keyed by id.
+ *
+ * Important: `packages/shared` is imported by the browser bundle, so this
+ * file must never read Node-only APIs like `process.env` at module scope
+ * (or at all) — doing so would either crash the browser build or silently
+ * bake in whatever value happened to be present when the bundle was built.
+ *
+ * The "shell" entry's `command` below is therefore just a static fallback
+ * for display/metadata purposes (e.g. showing "Shell" in a dropdown). The
+ * *real* shell binary is resolved server-side, at request time, from
+ * `process.env.SHELL` — see `resolveAgent()` in
+ * `apps/server/src/pty/agents.ts`. That function is the actual source of
+ * truth for what command gets spawned; this object is not.
+ */
+export const AGENT_SPECS: Record<AgentId, AgentSpec> = {
+  claude: { id: "claude", displayName: "Claude Code", command: "claude", args: [] },
+  "cursor-agent": {
+    id: "cursor-agent",
+    displayName: "Cursor Agent",
+    command: "cursor-agent",
+    args: [],
+  },
+  codex: { id: "codex", displayName: "Codex", command: "codex", args: [] },
+  shell: { id: "shell", displayName: "Shell", command: "/bin/zsh", args: ["-l"] },
+};
