@@ -109,6 +109,20 @@ describe("session REST endpoints", () => {
       });
       expect(deleteResponse.statusCode).toBe(204);
 
+      // A DELETE that returns 204 but leaves the session in the listing is
+      // a lie, and it also strands that session's ring buffer (up to 2MB)
+      // in memory for the life of the server. Guard both here.
+      const afterDelete = await app.inject({ method: "GET", url: "/api/sessions" });
+      const remaining = (afterDelete.json() as { sessions: { id: string }[] }).sessions;
+      expect(remaining.map((s) => s.id)).not.toContain(info.id);
+
+      // Deleting it a second time is now a 404, because it's genuinely gone.
+      const deleteAgain = await app.inject({
+        method: "DELETE",
+        url: `/api/sessions/${info.id}`,
+      });
+      expect(deleteAgain.statusCode).toBe(404);
+
       const deleteUnknown = await app.inject({
         method: "DELETE",
         url: "/api/sessions/does-not-exist",

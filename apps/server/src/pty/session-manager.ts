@@ -159,10 +159,25 @@ export class SessionManager {
     return this.sessions.get(id)?.info;
   }
 
-  /** Kill a session's pty process outright (used by DELETE /api/sessions/:id). */
+  /**
+   * Kill a session's pty AND forget it (used by DELETE /api/sessions/:id).
+   *
+   * Note the deliberate asymmetry with the `onExit` handler above, which
+   * keeps exited sessions around. The two cases mean different things:
+   *
+   *   - the process exited on its own    -> keep it, so you can still read
+   *     the final scrollback and see why it stopped
+   *   - you explicitly asked to delete it -> remove it, because a "delete"
+   *     that leaves the thing in the list is just a lie
+   *
+   * Forgetting it also releases the session's ring buffer (up to 2MB each),
+   * which would otherwise accumulate for the whole life of the server.
+   */
   kill(id: string): void {
     const session = this.mustGet(id);
     session.pty.kill();
+    session.listeners.clear();
+    this.sessions.delete(id);
   }
 
   /** Kill every session's pty. Call this on server shutdown so tests/processes don't leak. */

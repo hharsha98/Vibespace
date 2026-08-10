@@ -35,6 +35,35 @@ interface ContextMenuState {
   y: number;
 }
 
+// --- WebGL context budget -----------------------------------------------
+//
+// Browsers cap the number of *simultaneous* WebGL contexts a page may hold
+// open — typically somewhere around 8 to 16, and it varies by browser. Once
+// that cap is hit, creating another context either fails outright, or (more
+// dangerously) the browser silently force-loses the *oldest* context to
+// make room. In a pane grid where every terminal wants WebGL, that second
+// behaviour is nasty: early panes go blank and stop repainting with no
+// error visible anywhere, because their context was killed out from under
+// them by a browser-internal budget we don't control.
+//
+// We defend against this two ways, both required:
+//   1. A hard module-level cap (`MAX_WEBGL_TERMINALS`) on how many of *our*
+//      terminals may hold a WebGL context at once, comfortably under the
+//      browser's own limit. Terminals created beyond the cap skip WebGL
+//      entirely and use xterm's default (canvas/DOM) renderer — slower on
+//      huge output bursts, but always renders.
+//   2. Listening for `onContextLoss` on every WebGL addon we DO create. If
+//      the browser yanks a context out from under us anyway (e.g. because
+//      some other tab/page also ate into the shared budget), we dispose
+//      the addon — which xterm.js treats as "fall back to the default
+//      renderer" — instead of leaving that pane frozen and dead.
+//
+// Do not remove this cap thinking "modern browsers can handle more" — the
+// point isn't today's exact number, it's that *some* finite number exists
+// and terminals must degrade gracefully past it rather than going dark.
+const MAX_WEBGL_TERMINALS = 8;
+let activeWebglTerminals = 0;
+
 /**
  * A real, server-backed terminal. Renders one xterm.js instance wired up to
  * a WebSocket that streams a pty's input/output. Closing this component
@@ -85,13 +114,40 @@ export default function Terminal({ sessionId, onClose }: TerminalProps) {
     term.loadAddon(new WebLinksAddon());
 
     // WebGL rendering is much faster, but its driver support is patchy —
-    // some machines/browsers throw when creating the context. Falling back
-    // to xterm's default (canvas) renderer keeps the terminal usable
-    // everywhere, just slower on huge output bursts.
-    try {
-      term.loadAddon(new WebglAddon());
-    } catch (err) {
-      console.warn("vibedeck: WebGL addon failed to load, falling back to default renderer", err);
+    // some machines/browsers throw when creating the context — and, per the
+    // module-level comment above, the browser's *total* WebGL context
+    // budget is shared across every pane in the grid. `holdsWebglSlot`
+    // tracks whether *this* terminal currently counts against that budget,
+    // so we decrement `activeWebglTerminals` exactly once no matter which
+    // of the two paths releases it (context loss vs. component unmount).
+    let holdsWebglSlot = false;
+    if (activeWebglTerminals < MAX_WEBGL_TERMINALS) {
+      try {
+        const webglAddon = new WebglAddon();
+        term.loadAddon(webglAddon);
+        activeWebglTerminals++;
+        holdsWebglSlot = true;
+        webglAddon.onContextLoss(() => {
+          console.warn(
+            `vibedeck: WebGL context lost for session ${sessionId}; falling back to default renderer`
+          );
+          // Disposing the addon (rather than the whole terminal) is the
+          // documented xterm.js recovery path: xterm detaches the WebGL
+          // renderer and reverts this terminal to its default renderer,
+          // so the pane keeps repainting instead of going dark.
+          webglAddon.dispose();
+          if (holdsWebglSlot) {
+            holdsWebglSlot = false;
+            activeWebglTerminals--;
+          }
+        });
+      } catch (err) {
+        console.warn("vibedeck: WebGL addon failed to load, falling back to default renderer", err);
+      }
+    } else {
+      console.info(
+        `vibedeck: WebGL terminal cap (${MAX_WEBGL_TERMINALS}) reached — session ${sessionId} uses the default renderer`
+      );
     }
 
     term.open(container);
@@ -154,6 +210,15 @@ export default function Terminal({ sessionId, onClose }: TerminalProps) {
       // on the server keeps the pty running so we (or another tab) can
       // reattach later and replay the scrollback.
       socket.close();
+      // Release this terminal's WebGL budget slot, if it still has one
+      // (context loss may have already released it — `holdsWebglSlot`
+      // guards against double-decrementing the shared counter).
+      if (holdsWebglSlot) {
+        holdsWebglSlot = false;
+        activeWebglTerminals--;
+      }
+      // term.dispose() also disposes any still-loaded addons (including
+      // the WebGL one, if context loss hasn't already disposed it).
       term.dispose();
       termRef.current = null;
       fitAddonRef.current = null;
