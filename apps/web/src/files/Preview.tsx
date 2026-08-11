@@ -101,6 +101,14 @@ export default function Preview() {
         new tab" if so.
       </p>
 
+      {/*
+        The one deliberate hard-coded colour in the app. DESIGN.md says
+        chrome must use theme tokens — but this is not chrome, it is the
+        canvas *behind someone else's web page*. Pages overwhelmingly assume
+        a white backdrop, so a page with a transparent background rendered
+        over our dark surface would look broken through no fault of its own.
+        Do not "fix" this to a token.
+      */}
       <div style={{ flex: 1, minHeight: 0, background: "#fff" }}>
         <iframe
           key={reloadNonce}

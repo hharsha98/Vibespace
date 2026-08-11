@@ -78,10 +78,20 @@ describe("matchShortcut", () => {
     expect(matchShortcut(key({ key: "k" }), true)).toBeNull();
   });
 
-  it("matches Cmd+G/E/B to the three centre-column view switchers", () => {
+  it("matches Cmd+G/E/B and Cmd+Shift+K to the four centre-column view switchers", () => {
     expect(matchShortcut(key({ key: "g", metaKey: true }), true)).toBe("view-terminals");
     expect(matchShortcut(key({ key: "e", metaKey: true }), true)).toBe("view-editor");
     expect(matchShortcut(key({ key: "b", metaKey: true }), true)).toBe("view-preview");
+    expect(matchShortcut(key({ key: "k", metaKey: true, shiftKey: true }), true)).toBe(
+      "view-board"
+    );
+  });
+
+  it("does not bind Cmd+J, which Chrome reserves for itself", () => {
+    // The board was originally on Cmd+J. Chrome intercepts it before the
+    // page ever sees the keydown, so the board never opened — the same trap
+    // as Cmd+N/W/T. Asserted here so nobody "simplifies" it back.
+    expect(matchShortcut(key({ key: "j", metaKey: true }), true)).toBeNull();
   });
 
   it("matches Cmd+P to quick-open", () => {

@@ -59,6 +59,19 @@ export function sessionStatusKind(status: SessionLikeStatus): StatusKind {
   }
 }
 
+/**
+ * The CSS custom property that carries a given `StatusKind`'s colour, e.g.
+ * `statusColorVar("ok")` -> `"var(--vd-ok)"`. Exported (unlike the
+ * `STATUS_VAR` table above, which stays private) specifically so later
+ * phases that tint a whole element by status meaning — Phase 7's board
+ * column headers, Phase 9's swarm node roles — can reuse the exact same
+ * mapping `StatusDot`/`Pill` use, instead of re-deriving their own copy of
+ * "which var name means which status" and risking it drifting out of sync.
+ */
+export function statusColorVar(kind: StatusKind): string {
+  return STATUS_VAR[kind];
+}
+
 /** A 6px status-colour circle — "the single most repeated element in the
  * UI" per docs/DESIGN.md §5. `title` becomes a native tooltip. */
 export function StatusDot({ status, title }: { status: StatusKind; title?: string }) {
@@ -238,6 +251,8 @@ export function GlobalShellStyles() {
 .vd-list-row:hover { background: var(--vd-surface-raised); }
 .vd-pane-icons { opacity: 0; transition: opacity 120ms ease; }
 .vd-pane:hover .vd-pane-icons, .vd-pane.is-focused .vd-pane-icons { opacity: 1; }
+.vd-board-card-actions { opacity: 0; transition: opacity 120ms ease; }
+.vd-board-card:hover .vd-board-card-actions { opacity: 1; }
 `}</style>
   );
 }

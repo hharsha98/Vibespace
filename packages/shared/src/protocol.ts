@@ -160,3 +160,67 @@ export type FileWatchEvent =
   | { type: "add"; path: string }
   | { type: "change"; path: string }
   | { type: "unlink"; path: string };
+
+/**
+ * Phase 7 (the board) types. A `BoardCard` is a task that lives in one of
+ * four columns and can be dispatched to a coding agent — see
+ * `apps/server/src/db/board.ts` for the store and `docs/AGENT-API.md` for
+ * how a dispatched agent updates its own card over HTTP.
+ */
+
+/** How urgent a card is. Drives the priority `Pill`'s colour (docs/DESIGN.md
+ * §5): critical -> `--danger`, high -> `--warn`, medium -> `--info`,
+ * low -> `--idle`. */
+export type CardPriority = "critical" | "high" | "medium" | "low";
+
+/** Runtime array of every `CardPriority`, for validating request bodies and
+ * populating a picker — same "type + runtime array kept in sync by hand"
+ * pattern as `AGENT_IDS` above. */
+export const CARD_PRIORITIES: readonly CardPriority[] = ["critical", "high", "medium", "low"];
+
+/** Which of the board's four columns a card is in. */
+export type ColumnId = "todo" | "in_progress" | "in_review" | "complete";
+
+/**
+ * Every board column, in display order, with the semantic status colour
+ * (docs/DESIGN.md §2) its header is tinted with. Both the server (for
+ * validating a `columnId` in a request body) and the client (for rendering
+ * the four columns in order) import this single array so they can never
+ * disagree about what columns exist or what order they render in.
+ */
+export const COLUMNS: readonly { id: ColumnId; label: string; meaning: "idle" | "warn" | "info" | "ok" }[] = [
+  { id: "todo", label: "To do", meaning: "idle" },
+  { id: "in_progress", label: "In progress", meaning: "warn" },
+  { id: "in_review", label: "In review", meaning: "info" },
+  { id: "complete", label: "Complete", meaning: "ok" },
+];
+
+/** Runtime array of every `ColumnId`, derived from `COLUMNS` so the two can
+ * never drift apart. */
+export const COLUMN_IDS: readonly ColumnId[] = COLUMNS.map((c) => c.id);
+
+/**
+ * A task on the board, as seen over the REST API. `sessionId`/`agent` are
+ * both null until the card has been dispatched to an agent (Phase 7 §5) —
+ * once set, the board card shows a live `StatusDot` + agent name, and
+ * clicking it switches to the Terminals view and focuses that pane.
+ */
+export interface BoardCard {
+  id: string;
+  workspaceId: string;
+  title: string;
+  description: string | null;
+  priority: CardPriority;
+  columnId: ColumnId;
+  /** Fractional ordering position within its column — see board.ts's top
+   * comment. Not meaningful across columns, only for sorting within one. */
+  position: number;
+  /** Set once this card has been dispatched to a running agent session. */
+  sessionId: string | null;
+  /** Which agent `sessionId` is running, e.g. "shell" or "claude". */
+  agent: AgentId | null;
+  /** ISO 8601 UTC timestamp string. */
+  createdAt: string;
+  /** ISO 8601 UTC timestamp string, updated on every create/update/move. */
+  updatedAt: string;
+}

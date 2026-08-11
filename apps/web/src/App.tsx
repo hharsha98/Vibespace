@@ -36,6 +36,7 @@ import { GlobalShellStyles, IconButton, StatusDot } from "./shell/ui.js";
 import Editor, { type OpenFileRequest } from "./files/Editor.js";
 import Preview from "./files/Preview.js";
 import QuickOpen from "./files/QuickOpen.js";
+import Board from "./board/Board.js";
 
 /** Which full-screen overlay (if any) is currently open. Only one at a
  * time — opening a new one implicitly replaces whichever was open, and
@@ -45,12 +46,13 @@ import QuickOpen from "./files/QuickOpen.js";
 type OverlayKind = "palette" | "theme" | "help" | "quickOpen" | null;
 
 /** Which view the centre column is showing (Phase 6's view switcher, see
- * docs/DESIGN.md's centre-column note in this phase's spec). All three are
- * kept MOUNTED at all times once a workspace is active (see the render
- * below) — only CSS `display` toggles which one is visible — so switching
- * views never disconnects a running terminal's WebSocket, and never
- * discards an editor tab's unsaved buffer either. */
-type CenterView = "terminals" | "editor" | "preview";
+ * docs/DESIGN.md's centre-column note in this phase's spec; Phase 7 adds
+ * "board" as the fourth). All four are kept MOUNTED at all times once a
+ * workspace is active (see the render below) — only CSS `display` toggles
+ * which one is visible — so switching views never disconnects a running
+ * terminal's WebSocket, never discards an editor tab's unsaved buffer, and
+ * never re-fetches the board's card list on every switch either. */
+type CenterView = "terminals" | "editor" | "preview" | "board";
 
 interface HealthResponse {
   status: string;
@@ -379,6 +381,56 @@ export default function App() {
     setRoot((prev) => (prev ? attachSession(prev, paneId, session.id) : prev));
     setFocusedPaneId(paneId);
   }, []);
+
+  // Phase 7: the board's "Dispatch" action just created a session via
+  // POST /api/board/cards/:id/dispatch — unlike handleSessionStarted above,
+  // there's no specific pane it was started FROM (the board isn't a pane at
+  // all), so this folds it into whichever empty pane already exists, or
+  // splits a fresh one if every pane is occupied — the same two building
+  // blocks (`attachSession`/`splitPane`) addPane() already uses.
+  const handleSessionDispatched = useCallback(
+    (session: SessionInfo) => {
+      setSessions((prev) => [...prev, session]);
+      // Reads `root`/`focusedPaneId` directly from the closure (not via a
+      // `setRoot(prev => ...)` functional updater) specifically so the
+      // matching `setFocusedPaneId` call below can sit next to it as a
+      // plain, separate statement — same style `handleClosePane` already
+      // uses elsewhere in this file — rather than triggering a second
+      // state update from inside a `setState` updater function, which
+      // React's StrictMode double-invokes in development.
+      if (!root) return;
+      const panes = listPanes(root);
+      const emptyPane = panes.find((p) => p.sessionId === null);
+      if (emptyPane) {
+        setRoot(attachSession(root, emptyPane.id, session.id));
+        setFocusedPaneId(emptyPane.id);
+        return;
+      }
+      const target = panes.find((p) => p.id === focusedPaneId) ?? panes[0];
+      const split = splitPane(root, target.id, "row");
+      // The freshly-created leaf is the only pane id NOT present before
+      // the split — findable by diffing the before/after pane id sets.
+      const beforeIds = new Set(panes.map((p) => p.id));
+      const newLeafId = listPanes(split).find((p) => !beforeIds.has(p.id))?.id;
+      setRoot(newLeafId ? attachSession(split, newLeafId, session.id) : split);
+      if (newLeafId) setFocusedPaneId(newLeafId);
+    },
+    [root, focusedPaneId]
+  );
+
+  // Phase 7: clicking a dispatched board card's session indicator — switch
+  // to Terminals and focus whichever pane that session ended up attached
+  // to (via handleSessionDispatched above, or wherever else it may have
+  // landed since).
+  const focusSessionInGrid = useCallback(
+    (sessionId: string) => {
+      setCenterView("terminals");
+      if (!root) return;
+      const pane = listPanes(root).find((p) => p.sessionId === sessionId);
+      if (pane) setFocusedPaneId(pane.id);
+    },
+    [root]
+  );
 
   const handleSplit = useCallback((paneId: PaneId, direction: Direction) => {
     setRoot((prev) => (prev ? splitPane(prev, paneId, direction) : prev));
@@ -765,6 +817,7 @@ export default function App() {
       "view-terminals": () => setCenterView("terminals"),
       "view-editor": () => setCenterView("editor"),
       "view-preview": () => setCenterView("preview"),
+      "view-board": () => setCenterView("board"),
       "quick-open": () => {
         if (activeWorkspaceId) setActiveOverlay("quickOpen");
       },
@@ -969,10 +1022,10 @@ export default function App() {
 
         <div style={{ flex: 1 }} />
 
-        {/* Phase 6: the centre-column view switcher — Terminals (the
-            existing grid) | Editor | Preview. See CenterView's doc comment
-            above for why all three stay mounted regardless of which is
-            visible. */}
+        {/* Phase 6/7: the centre-column view switcher — Terminals (the
+            existing grid) | Editor | Preview | Board. See CenterView's doc
+            comment above for why all four stay mounted regardless of which
+            is visible. */}
         <div
           role="tablist"
           aria-label="Centre column view"
@@ -1007,6 +1060,13 @@ export default function App() {
             shortcut={formatShortcut(KEYMAP.find((s) => s.id === "view-preview")!, isMac)}
           >
             Preview
+          </ViewTabButton>
+          <ViewTabButton
+            active={centerView === "board"}
+            onClick={() => setCenterView("board")}
+            shortcut={formatShortcut(KEYMAP.find((s) => s.id === "view-board")!, isMac)}
+          >
+            Board
           </ViewTabButton>
         </div>
 
@@ -1177,6 +1237,16 @@ export default function App() {
                 </div>
                 <div style={{ position: "absolute", inset: 0, display: centerView === "preview" ? "block" : "none" }}>
                   <Preview />
+                </div>
+                <div style={{ position: "absolute", inset: 0, display: centerView === "board" ? "block" : "none" }}>
+                  <Board
+                    workspaceId={activeWorkspaceId}
+                    agents={agents}
+                    defaultAgent={defaultAgent}
+                    sessions={sessions}
+                    onSessionDispatched={handleSessionDispatched}
+                    onFocusSession={focusSessionInGrid}
+                  />
                 </div>
               </div>
             ) : (

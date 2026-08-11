@@ -1,39 +1,24 @@
 import Fastify from "fastify";
 import fastifyWebsocket from "@fastify/websocket";
-import { AGENT_IDS, AGENT_SPECS, type AgentId, type ClientMessage } from "@vibedeck/shared";
-import { detectAllAgents } from "./pty/agents.js";
+import { AGENT_IDS, AGENT_SPECS, type ClientMessage } from "@vibedeck/shared";
+import { detectAllAgents, INSTALL_HINTS, isAgentId } from "./pty/agents.js";
 import { SessionManager } from "./pty/session-manager.js";
 import { WorkspaceStore } from "./db/workspaces.js";
+import { BoardStore } from "./db/board.js";
 import { resolveRootPath } from "./workspace-path.js";
 import { registerFileRoutes } from "./files/routes.js";
+import { registerBoardRoutes } from "./board/routes.js";
 
 const VERSION = "0.0.0";
 const PORT = 4317;
-
-/** True if `value` is one of the known AgentId strings. */
-function isAgentId(value: unknown): value is AgentId {
-  return typeof value === "string" && (AGENT_IDS as readonly string[]).includes(value);
-}
-
-/**
- * How a user would install a given agent's CLI if it's missing. `null` for
- * agents that need no separate install (the "shell" agent is always
- * available) — surfaced by `GET /api/agents` and in the 409 body of
- * `POST /api/sessions`, so the UI can show something more useful than "not
- * installed".
- */
-const INSTALL_HINTS: Record<AgentId, string | null> = {
-  claude: null,
-  "cursor-agent": null,
-  codex: "npm install -g @openai/codex",
-  shell: null,
-};
 
 export interface BuildAppOptions {
   /** Inject a SessionManager (mainly for tests). Defaults to a fresh one. */
   sessionManager?: SessionManager;
   /** Inject a WorkspaceStore (mainly for tests). Defaults to a fresh one. */
   workspaceStore?: WorkspaceStore;
+  /** Inject a BoardStore (mainly for tests). Defaults to a fresh one. */
+  boardStore?: BoardStore;
 }
 
 /**
@@ -45,12 +30,14 @@ export function buildApp(options: BuildAppOptions = {}) {
   const app = Fastify({ logger: false });
   const sessionManager = options.sessionManager ?? new SessionManager();
   const workspaceStore = options.workspaceStore ?? new WorkspaceStore();
+  const boardStore = options.boardStore ?? new BoardStore();
 
   // Make the manager/store reachable from outside (tests call
-  // app.sessionManager/app.workspaceStore directly to assert on state, and
-  // to tear down in test teardown).
+  // app.sessionManager/app.workspaceStore/app.boardStore directly to assert
+  // on state, and to tear down in test teardown).
   app.decorate("sessionManager", sessionManager);
   app.decorate("workspaceStore", workspaceStore);
+  app.decorate("boardStore", boardStore);
 
   // Kill every pty and close the database when the Fastify instance closes,
   // so `app.close()` in tests (and a real process shutdown) doesn't leave
@@ -59,6 +46,7 @@ export function buildApp(options: BuildAppOptions = {}) {
   app.addHook("onClose", (_instance, done) => {
     sessionManager.disposeAll();
     workspaceStore.close();
+    boardStore.close();
     done();
   });
 
@@ -71,6 +59,10 @@ export function buildApp(options: BuildAppOptions = {}) {
   // in files/safe-path.ts, which is easier to keep straight in a dedicated
   // module than interleaved with session/workspace routes.
   registerFileRoutes(app, workspaceStore);
+
+  // Phase 7: the board — CRUD for cards plus the agent-dispatch action. See
+  // board/routes.ts's top comment for why this is its own module too.
+  registerBoardRoutes(app, { workspaceStore, boardStore, sessionManager, serverPort: PORT });
 
   app.get("/api/health", async () => ({
     status: "ok" as const,
@@ -309,6 +301,7 @@ declare module "fastify" {
   interface FastifyInstance {
     sessionManager: SessionManager;
     workspaceStore: WorkspaceStore;
+    boardStore: BoardStore;
   }
 }
 

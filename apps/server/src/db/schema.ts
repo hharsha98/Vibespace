@@ -51,5 +51,27 @@ export function openDatabase(): Database.Database {
     )
   `);
 
+  // Phase 7: the board. `position` is a fractional index (see board.ts's top
+  // comment for why) rather than an integer row number, so inserting a card
+  // between two neighbours never has to renumber the rest of the column.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS board_cards (
+      id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT,
+      priority TEXT NOT NULL,
+      column_id TEXT NOT NULL,
+      position REAL NOT NULL,
+      session_id TEXT,
+      agent TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_board_cards_workspace ON board_cards(workspace_id, column_id, position)`
+  );
+
   return db;
 }

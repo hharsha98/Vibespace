@@ -76,3 +76,28 @@ export async function detectAllAgents(): Promise<Record<AgentId, boolean>> {
   );
   return Object.fromEntries(entries) as Record<AgentId, boolean>;
 }
+
+/**
+ * How a user would install a given agent's CLI if it's missing. `null` for
+ * agents that need no separate install (the "shell" agent is always
+ * available) — surfaced by `GET /api/agents` and in the 409 body of both
+ * `POST /api/sessions` and `POST /api/board/cards/:id/dispatch`, so the UI
+ * can show something more useful than "not installed". Lives here (not in
+ * `index.ts`, where it originated) so `board/routes.ts` can import it
+ * without an `index.ts` <-> `board/routes.ts` import cycle.
+ */
+export const INSTALL_HINTS: Record<AgentId, string | null> = {
+  claude: null,
+  "cursor-agent": null,
+  codex: "npm install -g @openai/codex",
+  shell: null,
+};
+
+/** True if `value` is one of the known AgentId strings. Shared by every
+ * route that accepts an agent id in a request body (`POST /api/sessions`,
+ * `POST /api/board/cards/:id/dispatch`) — lives here rather than in one of
+ * those route files so neither has to duplicate it or import from the
+ * other. */
+export function isAgentId(value: unknown): value is AgentId {
+  return typeof value === "string" && (AGENT_IDS as readonly string[]).includes(value);
+}

@@ -184,6 +184,22 @@ export const KEYMAP: readonly Shortcut[] = [
     description: "Show the browser preview in the centre column.",
     key: "b",
   },
+  // Phase 7: the board joins the same centre-column switcher. "b" (the
+  // obvious mnemonic) is already Preview and "k" is the command palette.
+  //
+  // This was originally Cmd+J, which failed exactly the way Cmd+N/W/T do:
+  // Chrome claims Cmd+J for itself, so pressing it opened a browser panel
+  // and the board never appeared. Found by hand-testing, not assumed.
+  // Cmd+Shift+K sits beside the palette's Cmd+K, is not a Chrome binding,
+  // and — unlike the plain-letter view keys above — takes Shift precisely
+  // because the free unshifted letters here are spoken for by the browser.
+  {
+    id: "view-board",
+    label: "View: Board",
+    description: "Show the task board in the centre column.",
+    key: "k",
+    shift: true,
+  },
   {
     id: "quick-open",
     label: "Quick open file",
