@@ -5,11 +5,17 @@ import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import type { ClientMessage, ServerMessage } from "@vibedeck/shared";
+import { isMacPlatform, matchShortcut } from "../keys/keymap.js";
+import type { Theme } from "../themes/themes.js";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalProps {
   /** Which server-side session this terminal attaches to. */
   sessionId: string;
+  /** The active theme — its `.terminal` palette colours this instance,
+   * live, whenever the user switches themes (see the effect below); it's
+   * not just used at creation time. */
+  theme: Theme;
   /**
    * Called after the user picks "Close" from the right-click menu and the
    * session has actually been killed server-side (DELETE /api/sessions/:id
@@ -70,7 +76,7 @@ let activeWebglTerminals = 0;
  * (switching sessions, unmounting) only closes the *view* — the pty itself
  * keeps running on the server until explicitly killed (see `onClose`).
  */
-export default function Terminal({ sessionId, onClose }: TerminalProps) {
+export default function Terminal({ sessionId, theme, onClose }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -94,14 +100,28 @@ export default function Terminal({ sessionId, onClose }: TerminalProps) {
       scrollback: 10000,
       fontFamily: "'SF Mono', Menlo, Monaco, 'Cascadia Code', 'Fira Code', monospace",
       fontSize: 14,
-      theme: {
-        background: "#0f1115",
-        foreground: "#e6e6e6",
-        cursor: "#e6e6e6",
-        selectionBackground: "#3a3f4b",
-      },
+      // `theme` here is just this terminal's starting colours — it's read
+      // once, from whatever theme was active when this effect ran (mount,
+      // or a session switch). Later theme changes are pushed live via the
+      // separate `theme.terminal` sync effect below, which is what keeps
+      // an ALREADY-OPEN terminal in sync with the picker instead of only
+      // colouring newly-created ones.
+      theme: theme.terminal,
     });
     termRef.current = term;
+
+    // Shortcuts vibedeck owns (Cmd+D, Cmd+K, Cmd+1..9, ...) must reach the
+    // app, not the shell — but xterm.js, by default, decides for itself
+    // what to do with every keydown it receives, including forwarding some
+    // modified combos to the pty. `attachCustomKeyEventHandler` runs BEFORE
+    // xterm's own handling and lets us veto: returning `false` tells xterm
+    // "don't touch this one," so it never reaches `onData` at all. This is
+    // the second half of the two-layer defense — `useKeyboardShortcuts`'s
+    // window-capture listener (see that file's top comment) already calls
+    // `preventDefault()` on these before they'd reach this textarea in the
+    // first place; this is the belt-and-suspenders backstop in case some
+    // browser/OS combination still hands xterm the event.
+    term.attachCustomKeyEventHandler((event) => matchShortcut(event, isMacPlatform()) === null);
 
     const fitAddon = new FitAddon();
     fitAddonRef.current = fitAddon;
@@ -227,6 +247,19 @@ export default function Terminal({ sessionId, onClose }: TerminalProps) {
     };
   }, [sessionId]);
 
+  // Push theme changes into this terminal LIVE — this is what makes
+  // switching themes recolour a terminal that's already open and streaming
+  // output, not just ones created afterward. xterm.js re-reads
+  // `term.options.theme` and repaints as soon as it's reassigned; no
+  // dispose/recreate needed. Deliberately a separate effect from the main
+  // setup one above (which intentionally only reruns on `sessionId`) so a
+  // theme switch never tears down and reconnects the WebSocket.
+  useEffect(() => {
+    if (termRef.current) {
+      termRef.current.options.theme = theme.terminal;
+    }
+  }, [theme]);
+
   // Cmd/Ctrl+F opens the in-terminal search box instead of the browser's.
   useEffect(() => {
     const container = containerRef.current;
@@ -332,7 +365,7 @@ export default function Terminal({ sessionId, onClose }: TerminalProps) {
 
   return (
     <div
-      style={{ position: "relative", width: "100%", height: "100%", background: "#0f1115" }}
+      style={{ position: "relative", width: "100%", height: "100%", background: "var(--vd-bg)" }}
       onContextMenu={handleContextMenu}
       onDrop={handleDrop}
       onDragOver={handleDragOver}
@@ -347,8 +380,8 @@ export default function Terminal({ sessionId, onClose }: TerminalProps) {
             right: 8,
             display: "flex",
             gap: 4,
-            background: "#1a1d24",
-            border: "1px solid #2a2e37",
+            background: "var(--vd-surface)",
+            border: "1px solid var(--vd-border)",
             borderRadius: 6,
             padding: 6,
             zIndex: 10,
@@ -364,9 +397,9 @@ export default function Terminal({ sessionId, onClose }: TerminalProps) {
             }}
             placeholder="Search…"
             style={{
-              background: "#0f1115",
-              color: "#e6e6e6",
-              border: "1px solid #2a2e37",
+              background: "var(--vd-bg)",
+              color: "var(--vd-text)",
+              border: "1px solid var(--vd-border)",
               borderRadius: 4,
               padding: "2px 6px",
               fontSize: 13,
@@ -390,8 +423,8 @@ export default function Terminal({ sessionId, onClose }: TerminalProps) {
             position: "fixed",
             top: contextMenu.y,
             left: contextMenu.x,
-            background: "#1a1d24",
-            border: "1px solid #2a2e37",
+            background: "var(--vd-surface)",
+            border: "1px solid var(--vd-border)",
             borderRadius: 6,
             padding: "4px 0",
             margin: 0,
@@ -413,7 +446,7 @@ export default function Terminal({ sessionId, onClose }: TerminalProps) {
 
 const searchButtonStyle: React.CSSProperties = {
   background: "transparent",
-  color: "#e6e6e6",
+  color: "var(--vd-text)",
   border: "none",
   cursor: "pointer",
   fontSize: 13,
@@ -427,7 +460,7 @@ function ContextMenuItem({ label, onClick }: { label: string; onClick: () => voi
       style={{
         padding: "6px 14px",
         cursor: "pointer",
-        color: "#e6e6e6",
+        color: "var(--vd-text)",
         fontSize: 13,
       }}
     >

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentId, SessionInfo, Workspace } from "@vibedeck/shared";
 import Grid from "./grid/Grid.js";
 import type { AgentOption } from "./grid/PaneView.js";
@@ -15,6 +15,26 @@ import {
   type GridNode,
   type PaneId,
 } from "./grid/tree.js";
+import { KEYMAP, formatShortcut, isMacPlatform } from "./keys/keymap.js";
+import { useKeyboardShortcuts, type ShortcutHandlers } from "./keys/useKeyboardShortcuts.js";
+import {
+  DEFAULT_THEME_ID,
+  THEMES,
+  applyThemeCssVars,
+  getThemeById,
+  loadStoredThemeId,
+  saveThemeId,
+} from "./themes/themes.js";
+import ThemePicker from "./themes/ThemePicker.js";
+import CommandPalette, { type PaletteCommand } from "./CommandPalette.js";
+import KeyboardCheatSheet from "./KeyboardCheatSheet.js";
+
+/** Which full-screen overlay (if any) is currently open. Only one at a
+ * time — opening a new one implicitly replaces whichever was open, and
+ * `useKeyboardShortcuts` is disabled entirely while any of them is open, so
+ * e.g. Cmd+D can't accidentally split a pane while the user is browsing the
+ * theme picker. */
+type OverlayKind = "palette" | "theme" | "help" | null;
 
 interface HealthResponse {
   status: string;
@@ -103,6 +123,38 @@ export default function App() {
   const [pendingDeleteWorkspaceId, setPendingDeleteWorkspaceId] = useState<string | null>(null);
 
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) ?? null;
+
+  // --- Theme ---------------------------------------------------------------
+
+  const [themeId, setThemeIdState] = useState<string>(() => {
+    const id = loadStoredThemeId() ?? DEFAULT_THEME_ID;
+    // Applying the CSS custom properties here — inside the lazy `useState`
+    // initializer, which runs during the very first render, before
+    // anything paints — avoids a flash of the wrong (or unstyled) colours
+    // that a `useEffect` doing the same thing would cause: effects only run
+    // AFTER the first paint. Touching the DOM during render is normally
+    // avoided, but a one-time startup colour application like this is a
+    // common, deliberate exception to that rule.
+    applyThemeCssVars(getThemeById(id));
+    return id;
+  });
+  const theme = getThemeById(themeId);
+
+  // Keep :root's CSS variables and localStorage in sync with `themeId` on
+  // every change (the initial application above already covers first
+  // render, so this mostly matters for the picker actually switching
+  // themes later).
+  useEffect(() => {
+    applyThemeCssVars(theme);
+    saveThemeId(themeId);
+  }, [themeId, theme]);
+
+  const setTheme = useCallback((id: string) => setThemeIdState(id), []);
+
+  // --- Overlays (command palette, theme picker, keyboard cheat sheet) ------
+
+  const [activeOverlay, setActiveOverlay] = useState<OverlayKind>(null);
+  const closeOverlay = useCallback(() => setActiveOverlay(null), []);
 
   // Load server health, the agent menu, and (once both resolve) the
   // sessions + workspaces needed to build the initial grid, once on mount.
@@ -257,6 +309,97 @@ export default function App() {
       return splitPane(prev, target.id, "row");
     });
   }, [focusedPaneId]);
+
+  // --- Keyboard-shortcut action handlers ------------------------------------
+  // Every one of these reuses the same tree functions the mouse-driven UI
+  // already calls (splitPane/closePane/listPanes from grid/tree.ts) — the
+  // keyboard layer never reimplements grid surgery, it just figures out
+  // WHICH pane to operate on and then calls the same code path.
+
+  // Cmd+D / Cmd+Shift+D: split whichever pane is focused. Same "fall back to
+  // the first pane if nothing's focused" rule as `addPane` above, so the
+  // shortcut still does something sensible right after all panes closed.
+  const splitFocused = useCallback(
+    (direction: Direction) => {
+      setRoot((prev) => {
+        if (!prev) return prev;
+        const panes = listPanes(prev);
+        const target = panes.find((p) => p.id === focusedPaneId) ?? panes[0];
+        if (!target) return prev;
+        return splitPane(prev, target.id, direction);
+      });
+    },
+    [focusedPaneId]
+  );
+
+  // Cmd+Shift+W: close the focused pane. Mirrors PaneView's own header
+  // "close" button (closeFromHeader) — DELETE the session server-side
+  // first, if this pane has one, then drop it from the tree. There's
+  // nothing to do if no pane is focused.
+  const closeFocusedPane = useCallback(() => {
+    if (!root || !focusedPaneId) return;
+    const pane = findPane(root, focusedPaneId);
+    if (pane?.kind === "leaf" && pane.sessionId) {
+      fetch(`/api/sessions/${pane.sessionId}`, { method: "DELETE" }).catch((err: unknown) => {
+        console.warn("vibedeck: failed to close session via keyboard shortcut", err);
+      });
+    }
+    handleClosePane(focusedPaneId);
+  }, [root, focusedPaneId, handleClosePane]);
+
+  // Cmd+1..Cmd+9: jump focus straight to the Nth pane, left-to-right /
+  // top-to-bottom (the same order `listPanes` already returns them in).
+  const focusPaneByIndex = useCallback(
+    (index: number) => {
+      if (!root) return;
+      const panes = listPanes(root);
+      const target = panes[index];
+      if (target) setFocusedPaneId(target.id);
+    },
+    [root]
+  );
+
+  // Cmd+] / Cmd+[: move focus to the next/previous pane, wrapping around.
+  // If nothing's focused yet, both directions just land on the first pane.
+  const cycleFocus = useCallback(
+    (delta: 1 | -1) => {
+      if (!root) return;
+      const panes = listPanes(root);
+      if (panes.length === 0) return;
+      const currentIndex = panes.findIndex((p) => p.id === focusedPaneId);
+      const nextIndex = currentIndex === -1 ? 0 : (currentIndex + delta + panes.length) % panes.length;
+      setFocusedPaneId(panes[nextIndex].id);
+    },
+    [root, focusedPaneId]
+  );
+
+  // Used by the command palette's "Start <agent> in this pane" commands.
+  // Deliberately only acts when the focused pane is currently EMPTY — there's
+  // no sensible meaning for "start an agent" in a pane that already has one
+  // running, and PaneView's own agent picker only exists on empty panes for
+  // the same reason.
+  const startAgentInFocusedPane = useCallback(
+    async (agent: AgentId) => {
+      if (!root || !focusedPaneId) return;
+      const pane = findPane(root, focusedPaneId);
+      if (!pane || pane.kind !== "leaf" || pane.sessionId) return;
+      try {
+        const res = await fetch("/api/sessions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            activeWorkspaceId ? { agent, workspaceId: activeWorkspaceId } : { agent }
+          ),
+        });
+        if (!res.ok) return;
+        const info = (await res.json()) as SessionInfo;
+        handleSessionStarted(focusedPaneId, info);
+      } catch (err) {
+        console.warn("vibedeck: failed to start an agent from the command palette", err);
+      }
+    },
+    [root, focusedPaneId, activeWorkspaceId, handleSessionStarted]
+  );
 
   const applyTemplate = useCallback(
     (n: number) => {
@@ -419,14 +562,139 @@ export default function App() {
     setPendingDeleteWorkspaceId(null);
   }, [pendingDeleteWorkspaceId, workspaces, activeWorkspaceId, sessions]);
 
+  // --- Keyboard shortcuts ----------------------------------------------------
+
+  const isMac = useMemo(() => isMacPlatform(), []);
+
+  const shortcutHandlers = useMemo(() => {
+    const handlers: ShortcutHandlers = {
+      "command-palette": () => setActiveOverlay("palette"),
+      "split-row": () => splitFocused("row"),
+      "split-column": () => splitFocused("column"),
+      "new-pane": () => addPane(),
+      "close-pane": () => closeFocusedPane(),
+      "cycle-focus-next": () => cycleFocus(1),
+      "cycle-focus-prev": () => cycleFocus(-1),
+      "theme-picker": () => setActiveOverlay("theme"),
+    };
+    // The nine "focus pane N" shortcuts all share one handler shape, keyed
+    // off `paneIndex` (see keymap.ts) instead of writing out
+    // "focus-pane-1".."focus-pane-9" by hand nine times.
+    for (const shortcut of KEYMAP) {
+      if (shortcut.paneIndex !== undefined) {
+        const index = shortcut.paneIndex;
+        handlers[shortcut.id] = () => focusPaneByIndex(index);
+      }
+    }
+    return handlers;
+  }, [splitFocused, addPane, closeFocusedPane, cycleFocus, focusPaneByIndex]);
+
+  // Disabled entirely while any overlay is open — otherwise e.g. Cmd+D would
+  // both split a pane in the background AND leave the theme picker open,
+  // which is surprising. Each overlay's own Escape handler (and, for the
+  // palette, its own arrow-key/Enter navigation) covers in-overlay input;
+  // this hook only needs to own the "nothing's open" case.
+  useKeyboardShortcuts(shortcutHandlers, activeOverlay === null);
+
+  // --- Command palette contents ----------------------------------------------
+  // Every keyboard action, plus "Switch to workspace: X", "New workspace",
+  // "Layout: N panes", "Theme: X", and (when the focused pane is empty)
+  // "Start <agent> in this pane" — built fresh whenever anything it reads
+  // from changes, so e.g. renaming a workspace updates its palette entry too.
+
+  const focusedEmptyPane = useMemo(() => {
+    if (!root || !focusedPaneId) return null;
+    const pane = findPane(root, focusedPaneId);
+    return pane?.kind === "leaf" && !pane.sessionId ? pane : null;
+  }, [root, focusedPaneId]);
+
+  const paletteCommands = useMemo<PaletteCommand[]>(() => {
+    const commands: PaletteCommand[] = [];
+
+    for (const shortcut of KEYMAP) {
+      const handler = shortcutHandlers[shortcut.id];
+      if (!handler) continue;
+      commands.push({
+        id: `action-${shortcut.id}`,
+        label: shortcut.label,
+        category: "Action",
+        shortcut: formatShortcut(shortcut, isMac),
+        // The palette runs these as plain clicks/Enter presses, not real
+        // key combos — every handler here ignores its `event` argument
+        // (it only exists so `useKeyboardShortcuts` can pass the real one
+        // through when a shortcut fires normally), so an empty stand-in
+        // object is enough.
+        run: () => handler({} as KeyboardEvent),
+      });
+    }
+
+    for (const workspace of workspaces) {
+      commands.push({
+        id: `workspace-${workspace.id}`,
+        label: `Switch to workspace: ${workspace.name}`,
+        category: "Workspace",
+        run: () => switchWorkspace(workspace.id),
+      });
+    }
+    commands.push({
+      id: "new-workspace",
+      label: "New workspace",
+      category: "Workspace",
+      run: () => openCreateForm(),
+    });
+
+    for (const n of TEMPLATE_SIZES) {
+      commands.push({
+        id: `layout-${n}`,
+        label: `Layout: ${n} pane${n === 1 ? "" : "s"}`,
+        category: "Layout",
+        run: () => applyTemplate(n),
+      });
+    }
+
+    for (const t of THEMES) {
+      commands.push({
+        id: `theme-${t.id}`,
+        label: `Theme: ${t.name}`,
+        category: "Theme",
+        run: () => setTheme(t.id),
+      });
+    }
+
+    if (focusedEmptyPane) {
+      for (const agent of agents) {
+        if (!agent.available) continue;
+        commands.push({
+          id: `start-agent-${agent.id}`,
+          label: `Start ${agent.displayName} in this pane`,
+          category: "Agent",
+          run: () => void startAgentInFocusedPane(agent.id),
+        });
+      }
+    }
+
+    return commands;
+  }, [
+    shortcutHandlers,
+    isMac,
+    workspaces,
+    switchWorkspace,
+    openCreateForm,
+    applyTemplate,
+    setTheme,
+    focusedEmptyPane,
+    agents,
+    startAgentInFocusedPane,
+  ]);
+
   return (
     <div
       style={{
         display: "flex",
         flexDirection: "column",
         height: "100vh",
-        background: "#0f1115",
-        color: "#e6e6e6",
+        background: "var(--vd-bg)",
+        color: "var(--vd-text)",
         fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
       }}
     >
@@ -436,14 +704,14 @@ export default function App() {
           alignItems: "center",
           gap: "1rem",
           padding: "0.75rem 1rem",
-          borderBottom: "1px solid #2a2e37",
+          borderBottom: "1px solid var(--vd-border)",
           flexShrink: 0,
           flexWrap: "wrap",
         }}
       >
         <strong style={{ fontSize: "1.1rem" }}>vibedeck</strong>
 
-        <span style={{ fontSize: "0.85rem", color: "#9aa0a6" }}>
+        <span style={{ fontSize: "0.85rem", color: "var(--vd-text-muted)" }}>
           {health.kind === "loading" && "checking server…"}
           {health.kind === "error" && (
             <span style={{ color: "#f28b82" }}>server unreachable: {health.message}</span>
@@ -456,9 +724,9 @@ export default function App() {
         </span>
 
         {activeWorkspace && (
-          <span style={{ fontSize: "0.8rem", color: "#6b7280" }}>
+          <span style={{ fontSize: "0.8rem", color: "var(--vd-text-muted)" }}>
             Directory:{" "}
-            <code style={{ color: "#e6e6e6" }} title={activeWorkspace.rootPath}>
+            <code style={{ color: "var(--vd-text)" }} title={activeWorkspace.rootPath}>
               {activeWorkspace.rootPath}
             </code>
           </span>
@@ -466,14 +734,29 @@ export default function App() {
 
         <div style={{ flex: 1 }} />
 
-        <span style={{ fontSize: "0.8rem", color: "#6b7280" }}>Default agent for new panes:</span>
+        <button
+          onClick={() => setActiveOverlay("theme")}
+          style={templateButtonStyle}
+          title={`Theme picker (${formatShortcut(KEYMAP.find((s) => s.id === "theme-picker")!, isMac)})`}
+        >
+          Theme: {theme.name}
+        </button>
+        <button
+          onClick={() => setActiveOverlay("help")}
+          style={templateButtonStyle}
+          title="Keyboard shortcuts"
+        >
+          ?
+        </button>
+
+        <span style={{ fontSize: "0.8rem", color: "var(--vd-text-muted)" }}>Default agent for new panes:</span>
         <select
           value={defaultAgent}
           onChange={(e) => setDefaultAgent(e.target.value as AgentId)}
           style={{
-            background: "#1a1d24",
-            color: "#e6e6e6",
-            border: "1px solid #2a2e37",
+            background: "var(--vd-surface)",
+            color: "var(--vd-text)",
+            border: "1px solid var(--vd-border)",
             borderRadius: 4,
             padding: "0.4rem 0.6rem",
           }}
@@ -489,12 +772,16 @@ export default function App() {
           ))}
         </select>
 
-        <button onClick={addPane} style={primaryButtonStyle}>
+        <button
+          onClick={addPane}
+          style={primaryButtonStyle}
+          title={formatShortcut(KEYMAP.find((s) => s.id === "new-pane")!, isMac)}
+        >
           New pane
         </button>
 
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <span style={{ fontSize: "0.8rem", color: "#6b7280" }}>Layout:</span>
+          <span style={{ fontSize: "0.8rem", color: "var(--vd-text-muted)" }}>Layout:</span>
           {TEMPLATE_SIZES.map((n) => (
             <button key={n} onClick={() => applyTemplate(n)} style={templateButtonStyle} title={`${n} panes`}>
               {n}
@@ -625,7 +912,7 @@ export default function App() {
         ) : workspaces.length === 0 ? (
           <div style={centeredStyle}>
             <div style={{ textAlign: "center", maxWidth: 420 }}>
-              <p style={{ color: "#9aa0a6", marginBottom: 12 }}>
+              <p style={{ color: "var(--vd-text-muted)", marginBottom: 12 }}>
                 No workspaces yet. A workspace is a project directory — panes you start spawn
                 there instead of vibedeck's own install folder.
               </p>
@@ -657,6 +944,7 @@ export default function App() {
             agents={agents}
             defaultAgent={defaultAgent}
             workspaceId={activeWorkspaceId}
+            theme={theme}
             focusedPaneId={focusedPaneId}
             onFocus={handleFocus}
             onSessionStarted={handleSessionStarted}
@@ -667,13 +955,28 @@ export default function App() {
           <div style={centeredStyle}>Loading…</div>
         )}
       </div>
+
+      {activeOverlay === "palette" && (
+        <CommandPalette commands={paletteCommands} onClose={closeOverlay} />
+      )}
+      {activeOverlay === "theme" && (
+        <ThemePicker
+          currentThemeId={themeId}
+          onSelect={(id) => {
+            setTheme(id);
+            closeOverlay();
+          }}
+          onClose={closeOverlay}
+        />
+      )}
+      {activeOverlay === "help" && <KeyboardCheatSheet onClose={closeOverlay} />}
     </div>
   );
 }
 
 const primaryButtonStyle: React.CSSProperties = {
-  background: "#2a6df4",
-  color: "white",
+  background: "var(--vd-accent)",
+  color: "var(--vd-accent-text)",
   border: "none",
   borderRadius: 4,
   padding: "0.4rem 0.9rem",
@@ -681,9 +984,9 @@ const primaryButtonStyle: React.CSSProperties = {
 };
 
 const templateButtonStyle: React.CSSProperties = {
-  background: "#1a1d24",
-  color: "#e6e6e6",
-  border: "1px solid #2a2e37",
+  background: "var(--vd-surface)",
+  color: "var(--vd-text)",
+  border: "1px solid var(--vd-border)",
   borderRadius: 4,
   padding: "0.3rem 0.6rem",
   cursor: "pointer",
@@ -691,14 +994,18 @@ const templateButtonStyle: React.CSSProperties = {
 };
 
 const formInputStyle: React.CSSProperties = {
-  background: "#0f1115",
-  color: "#e6e6e6",
-  border: "1px solid #2a2e37",
+  background: "var(--vd-bg)",
+  color: "var(--vd-text)",
+  border: "1px solid var(--vd-border)",
   borderRadius: 4,
   padding: "0.3rem 0.5rem",
   fontSize: "0.85rem",
 };
 
+// Deliberately kept as a fixed amber/brown, not a theme variable — this
+// banner means "confirm a destructive action," and that meaning should
+// read the same regardless of which theme is active, the same way a
+// browser's own "Leave site?" prompt doesn't reskin per website.
 const confirmBannerStyle: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
@@ -715,7 +1022,7 @@ const centeredStyle: React.CSSProperties = {
   alignItems: "center",
   justifyContent: "center",
   height: "100%",
-  color: "#6b7280",
+  color: "var(--vd-text-muted)",
 };
 
 const tabStripStyle: React.CSSProperties = {
@@ -723,18 +1030,18 @@ const tabStripStyle: React.CSSProperties = {
   alignItems: "center",
   gap: 6,
   padding: "0.4rem 1rem",
-  borderBottom: "1px solid #2a2e37",
+  borderBottom: "1px solid var(--vd-border)",
   flexShrink: 0,
   flexWrap: "wrap",
-  background: "#14161c",
+  background: "var(--vd-surface)",
 };
 
 const tabStyle: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
   gap: 6,
-  background: "#1a1d24",
-  border: "1px solid #2a2e37",
+  background: "var(--vd-surface)",
+  border: "1px solid var(--vd-border)",
   borderRadius: 4,
   padding: "0.3rem 0.5rem",
   fontSize: "0.8rem",
@@ -743,9 +1050,9 @@ const tabStyle: React.CSSProperties = {
 
 const activeTabStyle: React.CSSProperties = {
   ...tabStyle,
-  background: "#2a6df4",
-  borderColor: "#2a6df4",
-  color: "white",
+  background: "var(--vd-accent)",
+  borderColor: "var(--vd-accent)",
+  color: "var(--vd-accent-text)",
 };
 
 const tabIconButtonStyle: React.CSSProperties = {

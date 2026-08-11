@@ -2,6 +2,7 @@ import { Allotment } from "allotment";
 import "allotment/dist/style.css";
 import type { AgentId, SessionInfo } from "@vibedeck/shared";
 import PaneView, { type AgentOption } from "./PaneView.js";
+import type { Theme } from "../themes/themes.js";
 import type { Direction, GridNode, PaneId } from "./tree.js";
 
 interface GridProps {
@@ -10,6 +11,8 @@ interface GridProps {
   agents: AgentOption[];
   defaultAgent: AgentId | "";
   workspaceId: string | null;
+  /** The active theme, threaded down to every pane's `<Terminal>`. */
+  theme: Theme;
   focusedPaneId: PaneId | null;
   onFocus: (paneId: PaneId) => void;
   onSessionStarted: (paneId: PaneId, session: SessionInfo) => void;
@@ -34,6 +37,7 @@ function GridNodeView({ node, ...rest }: GridProps & { node: GridNode }) {
     agents,
     defaultAgent,
     workspaceId,
+    theme,
     focusedPaneId,
     onFocus,
     onSessionStarted,
@@ -51,6 +55,7 @@ function GridNodeView({ node, ...rest }: GridProps & { node: GridNode }) {
         agents={agents}
         defaultAgent={defaultAgent}
         workspaceId={workspaceId}
+        theme={theme}
         isFocused={focusedPaneId === node.id}
         onFocus={() => onFocus(node.id)}
         onSessionStarted={onSessionStarted}

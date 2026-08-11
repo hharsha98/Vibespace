@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { AgentId, SessionInfo } from "@vibedeck/shared";
 import Terminal from "../term/Terminal.js";
+import type { Theme } from "../themes/themes.js";
 import type { Direction, PaneId } from "./tree.js";
 
 /** One entry from `GET /api/agents` — mirrors the shape App.tsx already fetches. */
@@ -23,6 +24,9 @@ interface PaneViewProps {
    * pty spawns in that workspace's rootPath instead of the server's own
    * cwd. Null only in the (should-be-rare) case no workspace is active. */
   workspaceId: string | null;
+  /** The active theme, threaded down to this pane's `<Terminal>` so its
+   * ANSI palette matches what the rest of the app is showing. */
+  theme: Theme;
   isFocused: boolean;
   onFocus: () => void;
   /** Fired once `POST /api/sessions` succeeds for this (previously empty) pane. */
@@ -46,6 +50,7 @@ export default function PaneView({
   agents,
   defaultAgent,
   workspaceId,
+  theme,
   isFocused,
   onFocus,
   onSessionStarted,
@@ -101,8 +106,8 @@ export default function PaneView({
         flexDirection: "column",
         height: "100%",
         boxSizing: "border-box",
-        border: `2px solid ${isFocused ? "#2a6df4" : "#2a2e37"}`,
-        background: "#0f1115",
+        border: `2px solid ${isFocused ? "var(--vd-accent)" : "var(--vd-border)"}`,
+        background: "var(--vd-bg)",
       }}
     >
       <div
@@ -111,10 +116,10 @@ export default function PaneView({
           alignItems: "center",
           gap: 6,
           padding: "3px 6px",
-          borderBottom: "1px solid #2a2e37",
+          borderBottom: "1px solid var(--vd-border)",
           flexShrink: 0,
           fontSize: 12,
-          color: "#9aa0a6",
+          color: "var(--vd-text-muted)",
         }}
       >
         <span
@@ -125,7 +130,8 @@ export default function PaneView({
             height: 6,
             flexShrink: 0,
             borderRadius: "50%",
-            background: session?.status === "running" ? "#81c995" : session ? "#6b7280" : "#3a3f4b",
+            background:
+              session?.status === "running" ? "#81c995" : session ? "var(--vd-text-muted)" : "var(--vd-border)",
           }}
         />
         <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -145,11 +151,11 @@ export default function PaneView({
 
       <div style={{ flex: 1, minHeight: 0 }}>
         {sessionId ? (
-          <Terminal sessionId={sessionId} onClose={() => onClosePane(paneId)} />
+          <Terminal sessionId={sessionId} theme={theme} onClose={() => onClosePane(paneId)} />
         ) : (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>
             <div style={{ textAlign: "center" }}>
-              <p style={{ color: "#6b7280", fontSize: 13, marginBottom: 10 }}>
+              <p style={{ color: "var(--vd-text-muted)", fontSize: 13, marginBottom: 10 }}>
                 Start an agent in this pane
               </p>
               <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 160 }}>
@@ -159,9 +165,9 @@ export default function PaneView({
                     disabled={!agent.available || starting}
                     onClick={() => void startSession(agent.id)}
                     style={{
-                      background: agent.id === defaultAgent ? "#2a6df4" : "#1a1d24",
-                      color: "#e6e6e6",
-                      border: "1px solid #2a2e37",
+                      background: agent.id === defaultAgent ? "var(--vd-accent)" : "var(--vd-surface)",
+                      color: agent.id === defaultAgent ? "var(--vd-accent-text)" : "var(--vd-text)",
+                      border: "1px solid var(--vd-border)",
                       borderRadius: 4,
                       padding: "6px 14px",
                       cursor: agent.available && !starting ? "pointer" : "not-allowed",
@@ -185,7 +191,7 @@ export default function PaneView({
 
 const paneButtonStyle: React.CSSProperties = {
   background: "transparent",
-  color: "#9aa0a6",
+  color: "var(--vd-text-muted)",
   border: "none",
   cursor: "pointer",
   fontSize: 12,
