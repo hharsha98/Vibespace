@@ -52,11 +52,11 @@ export default function KeyboardCheatSheet({ onClose }: KeyboardCheatSheetProps)
           width: "min(440px, 90vw)",
           maxHeight: "75vh",
           overflowY: "auto",
-          background: "var(--vd-surface)",
+          background: "var(--vd-surface-raised)",
           border: "1px solid var(--vd-border)",
-          borderRadius: 8,
+          borderRadius: 10,
           boxShadow: "0 12px 40px rgba(0, 0, 0, 0.5)",
-          padding: "1rem",
+          padding: 16,
         }}
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>

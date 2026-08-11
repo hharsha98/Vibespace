@@ -28,6 +28,9 @@ import {
 import ThemePicker from "./themes/ThemePicker.js";
 import CommandPalette, { type PaletteCommand } from "./CommandPalette.js";
 import KeyboardCheatSheet from "./KeyboardCheatSheet.js";
+import WorkspaceRail from "./shell/WorkspaceRail.js";
+import RightDock from "./shell/RightDock.js";
+import { GlobalShellStyles, IconButton, StatusDot } from "./shell/ui.js";
 
 /** Which full-screen overlay (if any) is currently open. Only one at a
  * time — opening a new one implicitly replaces whichever was open, and
@@ -75,6 +78,38 @@ function layoutToTree(layout: string | null, sessions: SessionInfo[]): GridNode 
   }
 }
 
+// --- Rail/dock collapsed-state persistence ---------------------------------
+// Same try/catch-around-localStorage pattern as themes.ts's loadStoredThemeId
+// / saveThemeId — private-browsing Safari throws on ANY localStorage access,
+// not just writes, so both directions need a guard. Falling back silently
+// (rather than surfacing an error) is the right call here: "the rail
+// forgets it was collapsed" is not worth interrupting anyone over.
+
+function loadBoolPref(key: string, fallback: boolean): boolean {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw === null ? fallback : raw === "true";
+  } catch {
+    return fallback;
+  }
+}
+
+function saveBoolPref(key: string, value: boolean): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(key, String(value));
+  } catch {
+    // Storage full or disabled — same reasoning as saveThemeId in themes.ts.
+  }
+}
+
+const RAIL_COLLAPSED_KEY = "vibedeck.rail.collapsed";
+// The right dock ships with only one tab (Info) — DESIGN.md is explicit
+// that it should be "collapsed/hidden by default" until Phases 7/8/10 give
+// it real content, hence `true` as the fallback (vs. the rail's `false`).
+const DOCK_COLLAPSED_KEY = "vibedeck.dock.collapsed";
+
 export default function App() {
   const [health, setHealth] = useState<HealthState>({ kind: "loading" });
   const [agents, setAgents] = useState<AgentOption[]>([]);
@@ -82,6 +117,10 @@ export default function App() {
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [root, setRoot] = useState<GridNode | null>(null);
   const [focusedPaneId, setFocusedPaneId] = useState<PaneId | null>(null);
+  // The pane currently filling the whole grid (docs/DESIGN.md §5
+  // "maximise"), or null. See Grid.tsx's top comment for how this is
+  // rendered without duplicating a session's live Terminal/WebSocket.
+  const [maximizedPaneId, setMaximizedPaneId] = useState<PaneId | null>(null);
   // `allotment` (the resizable-split library Grid.tsx uses) keeps its own
   // internal, non-React layout state tied to the DOM nodes it mounted into.
   // That's fine when the tree changes incrementally (splitPane/closePane
@@ -101,6 +140,26 @@ export default function App() {
   // the page for browser-automation tools (and tests), so we use this
   // small piece of state to drive an inline confirmation banner instead.
   const [pendingTemplate, setPendingTemplate] = useState<number | null>(null);
+
+  // --- Left rail / right dock collapsed state -------------------------------
+  const [railCollapsed, setRailCollapsedState] = useState(() => loadBoolPref(RAIL_COLLAPSED_KEY, false));
+  const [dockCollapsed, setDockCollapsedState] = useState(() => loadBoolPref(DOCK_COLLAPSED_KEY, true));
+
+  const toggleRailCollapsed = useCallback(() => {
+    setRailCollapsedState((prev) => {
+      const next = !prev;
+      saveBoolPref(RAIL_COLLAPSED_KEY, next);
+      return next;
+    });
+  }, []);
+
+  const toggleDockCollapsed = useCallback(() => {
+    setDockCollapsedState((prev) => {
+      const next = !prev;
+      saveBoolPref(DOCK_COLLAPSED_KEY, next);
+      return next;
+    });
+  }, []);
 
   // --- Workspaces ---------------------------------------------------------
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -123,6 +182,26 @@ export default function App() {
   const [pendingDeleteWorkspaceId, setPendingDeleteWorkspaceId] = useState<string | null>(null);
 
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) ?? null;
+
+  // A workspace's "running-pane count" (shown as the rail row's trailing
+  // badge, and the dock's session count) has no direct server-side field to
+  // read — `SessionInfo` doesn't carry a workspaceId (see
+  // packages/shared/src/protocol.ts). What it DOES carry is `cwd`, and every
+  // session's cwd is set, once, at creation time, to the workspace's own
+  // rootPath (see PaneView.tsx's startSession / App.tsx's
+  // startAgentInFocusedPane, both of which send `workspaceId` and let the
+  // server resolve it to that path). So "sessions whose cwd matches this
+  // workspace's rootPath" is an honest, frontend-only way to answer "which
+  // sessions belong to this workspace" without a server change.
+  const sessionsForWorkspace = useCallback(
+    (workspace: Workspace) => sessions.filter((s) => s.cwd === workspace.rootPath),
+    [sessions]
+  );
+  const workspacePaneCount = useCallback(
+    (workspace: Workspace) =>
+      sessions.filter((s) => s.status === "running" && s.cwd === workspace.rootPath).length,
+    [sessions]
+  );
 
   // --- Theme ---------------------------------------------------------------
 
@@ -294,6 +373,7 @@ export default function App() {
       }
       setRoot(closePane(root, paneId));
       setFocusedPaneId((prev) => (prev === paneId ? null : prev));
+      setMaximizedPaneId((prev) => (prev === paneId ? null : prev));
     },
     [root]
   );
@@ -309,6 +389,40 @@ export default function App() {
       return splitPane(prev, target.id, "row");
     });
   }, [focusedPaneId]);
+
+  // Cmd+Shift+Return / the pane's own maximise icon: toggle whether `paneId`
+  // fills the whole grid. Toggling the SAME pane again (or Escape, see the
+  // effect below) restores the normal tree.
+  const toggleMaximize = useCallback((paneId: PaneId) => {
+    setMaximizedPaneId((prev) => (prev === paneId ? null : paneId));
+  }, []);
+
+  // Escape restores a maximized pane — handled here (a dedicated window
+  // listener), not through `useKeyboardShortcuts`, because maximize isn't
+  // one of the mutually-exclusive `OverlayKind`s that hook already guards
+  // against (the palette/theme-picker/cheat-sheet), and `matchShortcut`
+  // only ever matches combos that hold a modifier key (see keymap.ts), so a
+  // bare Escape could never be added to KEYMAP without loosening that rule
+  // for everything else too.
+  //
+  // MUST be capture-phase, not bubble — same reasoning as
+  // `useKeyboardShortcuts`'s own top comment: a maximized pane is almost
+  // always the one the user just clicked into, so the DOM focus target is
+  // typically xterm.js's hidden textarea. xterm handles Escape itself (it's
+  // a real terminal key, e.g. for vim) and stops it from bubbling back up
+  // to a plain `window.addEventListener("keydown", ...)`, so a bubble-phase
+  // listener here would silently never fire while a terminal has focus —
+  // exactly the moment this shortcut most needs to work. Capture runs
+  // top-down, before the event ever reaches the textarea, so it always
+  // sees the key regardless of what xterm does with it afterward.
+  useEffect(() => {
+    if (!maximizedPaneId) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMaximizedPaneId(null);
+    };
+    window.addEventListener("keydown", onKeyDown, { capture: true });
+    return () => window.removeEventListener("keydown", onKeyDown, { capture: true });
+  }, [maximizedPaneId]);
 
   // --- Keyboard-shortcut action handlers ------------------------------------
   // Every one of these reuses the same tree functions the mouse-driven UI
@@ -410,6 +524,7 @@ export default function App() {
       }
       setRoot(buildTemplate(n));
       setFocusedPaneId(null);
+      setMaximizedPaneId(null);
       setGridEpoch((e) => e + 1); // wholesale swap — force Grid/Allotment to remount fresh
     },
     [root]
@@ -430,6 +545,7 @@ export default function App() {
     setSessions([]);
     setRoot(buildTemplate(pendingTemplate));
     setFocusedPaneId(null);
+    setMaximizedPaneId(null);
     setPendingTemplate(null);
     setGridEpoch((e) => e + 1); // wholesale swap — force Grid/Allotment to remount fresh
   }, [pendingTemplate, root]);
@@ -461,6 +577,7 @@ export default function App() {
       setActiveWorkspaceId(targetId);
       setRoot(layoutToTree(target.layout, sessions));
       setFocusedPaneId(null);
+      setMaximizedPaneId(null);
       setGridEpoch((e) => e + 1); // wholesale swap — same reasoning as applyTemplate above
     },
     [activeWorkspaceId, root, workspaces, sessions]
@@ -491,6 +608,7 @@ export default function App() {
       setActiveWorkspaceId(workspace.id);
       setRoot(createLeaf(null));
       setFocusedPaneId(null);
+      setMaximizedPaneId(null);
       setGridEpoch((e) => e + 1);
       setShowCreateForm(false);
       setNewWorkspaceName("");
@@ -557,6 +675,7 @@ export default function App() {
         setRoot(null);
       }
       setFocusedPaneId(null);
+      setMaximizedPaneId(null);
       setGridEpoch((e) => e + 1);
     }
     setPendingDeleteWorkspaceId(null);
@@ -576,6 +695,9 @@ export default function App() {
       "cycle-focus-next": () => cycleFocus(1),
       "cycle-focus-prev": () => cycleFocus(-1),
       "theme-picker": () => setActiveOverlay("theme"),
+      "maximize-pane": () => {
+        if (focusedPaneId) toggleMaximize(focusedPaneId);
+      },
     };
     // The nine "focus pane N" shortcuts all share one handler shape, keyed
     // off `paneIndex` (see keymap.ts) instead of writing out
@@ -587,7 +709,7 @@ export default function App() {
       }
     }
     return handlers;
-  }, [splitFocused, addPane, closeFocusedPane, cycleFocus, focusPaneByIndex]);
+  }, [splitFocused, addPane, closeFocusedPane, cycleFocus, focusPaneByIndex, focusedPaneId, toggleMaximize]);
 
   // Disabled entirely while any overlay is open — otherwise e.g. Cmd+D would
   // both split a pane in the background AND leave the theme picker open,
@@ -687,6 +809,14 @@ export default function App() {
     startAgentInFocusedPane,
   ]);
 
+  const healthStatusKind = health.kind === "loaded" ? "ok" : health.kind === "error" ? "danger" : "idle";
+  const healthTitle =
+    health.kind === "loaded"
+      ? `Server ok (v${health.health.version})`
+      : health.kind === "error"
+        ? `Server unreachable: ${health.message}`
+        : "Checking server…";
+
   return (
     <div
       style={{
@@ -696,73 +826,87 @@ export default function App() {
         background: "var(--vd-bg)",
         color: "var(--vd-text)",
         fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+        fontSize: 12,
       }}
     >
+      <GlobalShellStyles />
+
+      {/* Top bar — 36px, per docs/DESIGN.md §1: mark, breadcrumb, and
+          exactly the three right-aligned icon buttons the spec calls for
+          (theme picker, help, right-dock toggle). Deliberately short —
+          vertical space belongs to the terminal grid below it. */}
       <header
         style={{
           display: "flex",
           alignItems: "center",
-          gap: "1rem",
-          padding: "0.75rem 1rem",
+          gap: 10,
+          height: 36,
+          minHeight: 36,
+          padding: "0 10px",
           borderBottom: "1px solid var(--vd-border)",
+          background: "var(--vd-surface)",
           flexShrink: 0,
-          flexWrap: "wrap",
         }}
       >
-        <strong style={{ fontSize: "1.1rem" }}>vibedeck</strong>
+        <span
+          aria-hidden
+          style={{ width: 8, height: 8, borderRadius: 2, background: "var(--vd-accent)", flexShrink: 0 }}
+        />
+        <strong style={{ fontSize: 13, fontWeight: 600, letterSpacing: "-0.01em", flexShrink: 0 }}>
+          vibedeck
+        </strong>
 
-        <span style={{ fontSize: "0.85rem", color: "var(--vd-text-muted)" }}>
-          {health.kind === "loading" && "checking server…"}
-          {health.kind === "error" && (
-            <span style={{ color: "#f28b82" }}>server unreachable: {health.message}</span>
-          )}
-          {health.kind === "loaded" && (
-            <span>
-              <span style={{ color: "#81c995" }}>●</span> server ok (v{health.health.version})
-            </span>
+        <StatusDot status={healthStatusKind} title={healthTitle} />
+
+        <span
+          style={{
+            fontSize: 11,
+            color: "var(--vd-text-muted)",
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+            overflow: "hidden",
+            minWidth: 0,
+          }}
+        >
+          {activeWorkspace ? (
+            <>
+              <span style={{ color: "var(--vd-text)" }}>{activeWorkspace.name}</span>
+              <span style={{ color: "var(--vd-text-faint)" }}>›</span>
+              <span
+                style={{
+                  color: "var(--vd-text-faint)",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+                title={activeWorkspace.rootPath}
+              >
+                {activeWorkspace.rootPath}
+              </span>
+            </>
+          ) : (
+            "No workspace"
           )}
         </span>
 
-        {activeWorkspace && (
-          <span style={{ fontSize: "0.8rem", color: "var(--vd-text-muted)" }}>
-            Directory:{" "}
-            <code style={{ color: "var(--vd-text)" }} title={activeWorkspace.rootPath}>
-              {activeWorkspace.rootPath}
-            </code>
-          </span>
-        )}
-
         <div style={{ flex: 1 }} />
 
-        <button
-          onClick={() => setActiveOverlay("theme")}
-          style={templateButtonStyle}
-          title={`Theme picker (${formatShortcut(KEYMAP.find((s) => s.id === "theme-picker")!, isMac)})`}
-        >
-          Theme: {theme.name}
-        </button>
-        <button
-          onClick={() => setActiveOverlay("help")}
-          style={templateButtonStyle}
-          title="Keyboard shortcuts"
-        >
-          ?
-        </button>
-
-        <span style={{ fontSize: "0.8rem", color: "var(--vd-text-muted)" }}>Default agent for new panes:</span>
         <select
           value={defaultAgent}
           onChange={(e) => setDefaultAgent(e.target.value as AgentId)}
+          title="Default agent for new panes"
           style={{
             background: "var(--vd-surface)",
             color: "var(--vd-text)",
             border: "1px solid var(--vd-border)",
             borderRadius: 4,
-            padding: "0.4rem 0.6rem",
+            padding: "2px 6px",
+            fontSize: 11,
           }}
         >
           <option value="" disabled>
-            Choose an agent…
+            Default agent…
           </option>
           {agents.map((agent) => (
             <option key={agent.id} value={agent.id} disabled={!agent.available}>
@@ -772,187 +916,142 @@ export default function App() {
           ))}
         </select>
 
-        <button
-          onClick={addPane}
-          style={primaryButtonStyle}
-          title={formatShortcut(KEYMAP.find((s) => s.id === "new-pane")!, isMac)}
+        <IconButton
+          title={`Theme: ${theme.name} (${formatShortcut(KEYMAP.find((s) => s.id === "theme-picker")!, isMac)})`}
+          onClick={() => setActiveOverlay("theme")}
         >
-          New pane
-        </button>
-
-        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <span style={{ fontSize: "0.8rem", color: "var(--vd-text-muted)" }}>Layout:</span>
-          {TEMPLATE_SIZES.map((n) => (
-            <button key={n} onClick={() => applyTemplate(n)} style={templateButtonStyle} title={`${n} panes`}>
-              {n}
-            </button>
-          ))}
-        </div>
+          <span
+            aria-hidden
+            style={{
+              width: 12,
+              height: 12,
+              borderRadius: "50%",
+              background: theme.ui.accent,
+              border: "1px solid var(--vd-border)",
+            }}
+          />
+        </IconButton>
+        <IconButton title="Keyboard shortcuts" onClick={() => setActiveOverlay("help")}>
+          <span style={{ fontSize: 12, fontWeight: 600 }}>?</span>
+        </IconButton>
+        <IconButton
+          title={dockCollapsed ? "Show right dock" : "Hide right dock"}
+          onClick={toggleDockCollapsed}
+          active={!dockCollapsed}
+        >
+          <DockToggleIcon open={!dockCollapsed} />
+        </IconButton>
       </header>
 
-      {workspacesLoaded && workspaces.length > 0 && (
-        <div style={tabStripStyle}>
-          {workspaces.map((workspace) => (
-            <div key={workspace.id} style={workspace.id === activeWorkspaceId ? activeTabStyle : tabStyle}>
-              {renamingId === workspace.id ? (
-                <>
-                  <input
-                    autoFocus
-                    value={renameValue}
-                    onChange={(e) => setRenameValue(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") void commitRename();
-                      if (e.key === "Escape") cancelRename();
-                    }}
-                    style={{ ...formInputStyle, padding: "1px 4px", fontSize: "0.8rem", width: 120 }}
-                  />
-                  <button onClick={() => void commitRename()} style={tabIconButtonStyle} title="Save name">
-                    ✓
-                  </button>
-                  <button onClick={cancelRename} style={tabIconButtonStyle} title="Cancel rename">
-                    ✕
-                  </button>
-                </>
-              ) : (
-                <>
-                  <span onClick={() => switchWorkspace(workspace.id)} title={workspace.rootPath}>
-                    {workspace.name}
-                  </span>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      startRename(workspace);
-                    }}
-                    style={tabIconButtonStyle}
-                    title="Rename workspace"
-                  >
-                    ✎
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      requestDeleteWorkspace(workspace.id);
-                    }}
-                    style={tabIconButtonStyle}
-                    title="Delete workspace"
-                  >
-                    ✕
-                  </button>
-                </>
-              )}
-            </div>
-          ))}
-          <button onClick={openCreateForm} style={templateButtonStyle} title="New workspace">
-            +
-          </button>
-          {renameError && <span style={{ color: "#f28b82", fontSize: "0.8rem" }}>{renameError}</span>}
-        </div>
-      )}
-
-      {showCreateForm && (
-        <div style={confirmBannerStyle}>
-          <span>New workspace:</span>
-          <input
-            placeholder="Name"
-            value={newWorkspaceName}
-            onChange={(e) => setNewWorkspaceName(e.target.value)}
-            style={formInputStyle}
+      {/* The three-column body: left rail, centre grid, right dock. */}
+      <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
+        {workspacesLoaded && workspaces.length > 0 && (
+          <WorkspaceRail
+            workspaces={workspaces}
+            activeWorkspaceId={activeWorkspaceId}
+            collapsed={railCollapsed}
+            onToggleCollapsed={toggleRailCollapsed}
+            runningCount={workspacePaneCount}
+            onSwitch={switchWorkspace}
+            showCreateForm={showCreateForm}
+            onOpenCreateForm={openCreateForm}
+            newWorkspaceName={newWorkspaceName}
+            onNewWorkspaceNameChange={setNewWorkspaceName}
+            newWorkspacePath={newWorkspacePath}
+            onNewWorkspacePathChange={setNewWorkspacePath}
+            onCreateWorkspace={() => void createWorkspace()}
+            onCancelCreate={() => setShowCreateForm(false)}
+            creating={creating}
+            createError={createError}
+            renamingId={renamingId}
+            renameValue={renameValue}
+            onRenameValueChange={setRenameValue}
+            onStartRename={startRename}
+            onCommitRename={() => void commitRename()}
+            onCancelRename={cancelRename}
+            renameError={renameError}
+            pendingDeleteWorkspaceId={pendingDeleteWorkspaceId}
+            onRequestDelete={requestDeleteWorkspace}
+            onConfirmDelete={() => void confirmDeleteWorkspace()}
+            onCancelDelete={cancelDeleteWorkspace}
           />
-          <input
-            placeholder="Directory (e.g. ~/projects/foo)"
-            value={newWorkspacePath}
-            onChange={(e) => setNewWorkspacePath(e.target.value)}
-            style={{ ...formInputStyle, minWidth: 260 }}
-          />
-          <button onClick={() => void createWorkspace()} disabled={creating} style={primaryButtonStyle}>
-            Create
-          </button>
-          <button onClick={() => setShowCreateForm(false)} style={templateButtonStyle}>
-            Cancel
-          </button>
-          {createError && <span style={{ color: "#f28b82", fontSize: "0.8rem" }}>{createError}</span>}
-        </div>
-      )}
+        )}
 
-      {pendingDeleteWorkspaceId && (
-        <div style={confirmBannerStyle}>
-          <span>
-            Delete workspace "
-            {workspaces.find((w) => w.id === pendingDeleteWorkspaceId)?.name ?? pendingDeleteWorkspaceId}
-            "? This won't stop any sessions still running in it — only the workspace entry and its
-            saved layout are removed.
-          </span>
-          <button onClick={() => void confirmDeleteWorkspace()} style={primaryButtonStyle}>
-            Delete
-          </button>
-          <button onClick={cancelDeleteWorkspace} style={templateButtonStyle}>
-            Cancel
-          </button>
-        </div>
-      )}
-
-      {pendingTemplate !== null && (
-        <div style={confirmBannerStyle}>
-          <span>
-            Switching to a {pendingTemplate}-pane layout will close panes that still have running
-            sessions. Continue?
-          </span>
-          <button onClick={confirmTemplate} style={primaryButtonStyle}>
-            Discard and switch
-          </button>
-          <button onClick={cancelTemplate} style={templateButtonStyle}>
-            Cancel
-          </button>
-        </div>
-      )}
-
-      <div style={{ flex: 1, minHeight: 0 }}>
-        {!workspacesLoaded ? (
-          <div style={centeredStyle}>Loading…</div>
-        ) : workspaces.length === 0 ? (
-          <div style={centeredStyle}>
-            <div style={{ textAlign: "center", maxWidth: 420 }}>
-              <p style={{ color: "var(--vd-text-muted)", marginBottom: 12 }}>
-                No workspaces yet. A workspace is a project directory — panes you start spawn
-                there instead of vibedeck's own install folder.
-              </p>
-              <input
-                placeholder="Name (e.g. my-project)"
-                value={newWorkspaceName}
-                onChange={(e) => setNewWorkspaceName(e.target.value)}
-                style={{ ...formInputStyle, marginBottom: 8, width: "100%", boxSizing: "border-box" }}
-              />
-              <input
-                placeholder="Directory (e.g. ~/projects/my-project)"
-                value={newWorkspacePath}
-                onChange={(e) => setNewWorkspacePath(e.target.value)}
-                style={{ ...formInputStyle, marginBottom: 12, width: "100%", boxSizing: "border-box" }}
-              />
-              <button onClick={() => void createWorkspace()} disabled={creating} style={primaryButtonStyle}>
-                Create workspace
+        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+          {pendingTemplate !== null && (
+            <div style={confirmBannerStyle}>
+              <span>
+                Switching to a {pendingTemplate}-pane layout will close panes that still have running
+                sessions. Continue?
+              </span>
+              <button onClick={confirmTemplate} style={primaryButtonStyle}>
+                Discard and switch
               </button>
-              {createError && (
-                <p style={{ color: "#f28b82", fontSize: "0.8rem", marginTop: 8 }}>{createError}</p>
-              )}
+              <button onClick={cancelTemplate} style={secondaryButtonStyle}>
+                Cancel
+              </button>
             </div>
+          )}
+
+          <div style={{ flex: 1, minHeight: 0 }}>
+            {!workspacesLoaded ? (
+              <div style={centeredStyle}>Loading…</div>
+            ) : workspaces.length === 0 ? (
+              <div style={centeredStyle}>
+                <div style={{ textAlign: "center", maxWidth: 420 }}>
+                  <p style={{ color: "var(--vd-text-muted)", marginBottom: 12, fontSize: 12 }}>
+                    No workspaces yet. A workspace is a project directory — panes you start spawn
+                    there instead of vibedeck's own install folder.
+                  </p>
+                  <input
+                    placeholder="Name (e.g. my-project)"
+                    value={newWorkspaceName}
+                    onChange={(e) => setNewWorkspaceName(e.target.value)}
+                    style={{ ...formInputStyle, marginBottom: 8, width: "100%", boxSizing: "border-box" }}
+                  />
+                  <input
+                    placeholder="Directory (e.g. ~/projects/my-project)"
+                    value={newWorkspacePath}
+                    onChange={(e) => setNewWorkspacePath(e.target.value)}
+                    style={{ ...formInputStyle, marginBottom: 12, width: "100%", boxSizing: "border-box" }}
+                  />
+                  <button onClick={() => void createWorkspace()} disabled={creating} style={primaryButtonStyle}>
+                    Create workspace
+                  </button>
+                  {createError && (
+                    <p style={{ color: "var(--vd-danger)", fontSize: 11, marginTop: 8 }}>{createError}</p>
+                  )}
+                </div>
+              </div>
+            ) : root ? (
+              <Grid
+                key={gridEpoch}
+                root={root}
+                sessions={sessions}
+                agents={agents}
+                defaultAgent={defaultAgent}
+                workspaceId={activeWorkspaceId}
+                theme={theme}
+                focusedPaneId={focusedPaneId}
+                onFocus={handleFocus}
+                onSessionStarted={handleSessionStarted}
+                onSplit={handleSplit}
+                onClosePane={handleClosePane}
+                maximizedPaneId={maximizedPaneId}
+                onToggleMaximize={toggleMaximize}
+              />
+            ) : (
+              <div style={centeredStyle}>Loading…</div>
+            )}
           </div>
-        ) : root ? (
-          <Grid
-            key={gridEpoch}
-            root={root}
-            sessions={sessions}
+        </div>
+
+        {!dockCollapsed && (
+          <RightDock
+            activeWorkspace={activeWorkspace}
             agents={agents}
-            defaultAgent={defaultAgent}
-            workspaceId={activeWorkspaceId}
-            theme={theme}
-            focusedPaneId={focusedPaneId}
-            onFocus={handleFocus}
-            onSessionStarted={handleSessionStarted}
-            onSplit={handleSplit}
-            onClosePane={handleClosePane}
+            workspaceSessions={activeWorkspace ? sessionsForWorkspace(activeWorkspace) : []}
           />
-        ) : (
-          <div style={centeredStyle}>Loading…</div>
         )}
       </div>
 
@@ -974,23 +1073,44 @@ export default function App() {
   );
 }
 
+/** A small "panel" glyph for the right-dock toggle — filled when the dock
+ * is open, outline-only when it's closed. Inline SVG, no icon library. */
+function DockToggleIcon({ open }: { open: boolean }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
+      <rect x="1.5" y="2.5" width="11" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.1" />
+      <rect
+        x="8.5"
+        y="2.5"
+        width="4"
+        height="9"
+        rx="0.5"
+        fill={open ? "currentColor" : "none"}
+        stroke="currentColor"
+        strokeWidth="1.1"
+      />
+    </svg>
+  );
+}
+
 const primaryButtonStyle: React.CSSProperties = {
   background: "var(--vd-accent)",
   color: "var(--vd-accent-text)",
   border: "none",
   borderRadius: 4,
-  padding: "0.4rem 0.9rem",
+  padding: "4px 12px",
+  fontSize: 12,
   cursor: "pointer",
 };
 
-const templateButtonStyle: React.CSSProperties = {
-  background: "var(--vd-surface)",
-  color: "var(--vd-text)",
+const secondaryButtonStyle: React.CSSProperties = {
+  background: "transparent",
+  color: "var(--vd-text-muted)",
   border: "1px solid var(--vd-border)",
   borderRadius: 4,
-  padding: "0.3rem 0.6rem",
+  padding: "4px 12px",
+  fontSize: 12,
   cursor: "pointer",
-  fontSize: "0.8rem",
 };
 
 const formInputStyle: React.CSSProperties = {
@@ -998,23 +1118,27 @@ const formInputStyle: React.CSSProperties = {
   color: "var(--vd-text)",
   border: "1px solid var(--vd-border)",
   borderRadius: 4,
-  padding: "0.3rem 0.5rem",
-  fontSize: "0.85rem",
+  padding: "5px 8px",
+  fontSize: 12,
 };
 
-// Deliberately kept as a fixed amber/brown, not a theme variable — this
-// banner means "confirm a destructive action," and that meaning should
-// read the same regardless of which theme is active, the same way a
-// browser's own "Leave site?" prompt doesn't reskin per website.
+// A destructive-confirmation banner ("this will close running sessions") is
+// exactly what docs/DESIGN.md §2's `--warn` status colour means — "working /
+// attention" — so deriving its background/border from that token (via
+// `color-mix`, not a hard-coded hex) both satisfies "every colour carries
+// meaning, never decoration" (DESIGN.md §6 rule 2) AND keeps this banner
+// visually consistent with whichever theme is active, the same way the
+// original fixed-amber version stayed consistent across themes.
 const confirmBannerStyle: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
   gap: 10,
-  padding: "0.5rem 1rem",
-  background: "#3a2a1f",
-  borderBottom: "1px solid #5a3f2a",
-  fontSize: "0.85rem",
+  padding: "6px 12px",
+  background: "color-mix(in srgb, var(--vd-warn) 18%, var(--vd-bg))",
+  borderBottom: "1px solid var(--vd-warn)",
+  fontSize: 12,
   flexWrap: "wrap",
+  flexShrink: 0,
 };
 
 const centeredStyle: React.CSSProperties = {
@@ -1023,45 +1147,4 @@ const centeredStyle: React.CSSProperties = {
   justifyContent: "center",
   height: "100%",
   color: "var(--vd-text-muted)",
-};
-
-const tabStripStyle: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: 6,
-  padding: "0.4rem 1rem",
-  borderBottom: "1px solid var(--vd-border)",
-  flexShrink: 0,
-  flexWrap: "wrap",
-  background: "var(--vd-surface)",
-};
-
-const tabStyle: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: 6,
-  background: "var(--vd-surface)",
-  border: "1px solid var(--vd-border)",
-  borderRadius: 4,
-  padding: "0.3rem 0.5rem",
-  fontSize: "0.8rem",
-  cursor: "pointer",
-};
-
-const activeTabStyle: React.CSSProperties = {
-  ...tabStyle,
-  background: "var(--vd-accent)",
-  borderColor: "var(--vd-accent)",
-  color: "var(--vd-accent-text)",
-};
-
-const tabIconButtonStyle: React.CSSProperties = {
-  background: "transparent",
-  border: "none",
-  color: "inherit",
-  cursor: "pointer",
-  fontSize: "0.75rem",
-  padding: "0 2px",
-  lineHeight: 1,
-  opacity: 0.85,
 };

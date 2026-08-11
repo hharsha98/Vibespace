@@ -44,6 +44,11 @@ describe("matchShortcut", () => {
     expect(matchShortcut(key({ key: "t", metaKey: true, shiftKey: true }), true)).toBe("theme-picker");
   });
 
+  it("matches Cmd+Shift+Return to maximize-pane, but plain Cmd+Return matches nothing", () => {
+    expect(matchShortcut(key({ key: "Enter", metaKey: true, shiftKey: true }), true)).toBe("maximize-pane");
+    expect(matchShortcut(key({ key: "Enter", metaKey: true }), true)).toBeNull();
+  });
+
   it("on non-Mac, Ctrl substitutes for Cmd and Cmd does not match", () => {
     expect(matchShortcut(key({ key: "k", ctrlKey: true }), false)).toBe("command-palette");
     expect(matchShortcut(key({ key: "k", metaKey: true }), false)).toBeNull();
@@ -82,6 +87,12 @@ describe("formatShortcut", () => {
 
     const paletteShortcut = KEYMAP.find((s) => s.id === "command-palette")!;
     expect(formatShortcut(paletteShortcut, false)).toBe("Ctrl+K");
+  });
+
+  it("renders the maximize-pane shortcut as ⌘⇧Return / Ctrl+Shift+Return", () => {
+    const maximizeShortcut = KEYMAP.find((s) => s.id === "maximize-pane")!;
+    expect(formatShortcut(maximizeShortcut, true)).toBe("⌘⇧Return");
+    expect(formatShortcut(maximizeShortcut, false)).toBe("Ctrl+Shift+Return");
   });
 });
 

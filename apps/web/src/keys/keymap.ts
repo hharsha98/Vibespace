@@ -134,6 +134,13 @@ export const KEYMAP: readonly Shortcut[] = [
     key: "t",
     shift: true,
   },
+  {
+    id: "maximize-pane",
+    label: "Maximize pane",
+    description: "Temporarily expand the focused pane to fill the grid; press again (or Escape) to restore.",
+    key: "enter",
+    shift: true,
+  },
 ];
 
 /**
@@ -169,6 +176,7 @@ export function matchShortcut(event: KeyEventLike, isMac: boolean): string | nul
 const KEY_DISPLAY_OVERRIDES: Record<string, string> = {
   "[": "[",
   "]": "]",
+  enter: "Return",
 };
 
 /**

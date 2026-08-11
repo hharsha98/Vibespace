@@ -99,7 +99,11 @@ export default function Terminal({ sessionId, theme, onClose }: TerminalProps) {
       cursorBlink: true,
       scrollback: 10000,
       fontFamily: "'SF Mono', Menlo, Monaco, 'Cascadia Code', 'Fira Code', monospace",
-      fontSize: 14,
+      // docs/DESIGN.md §3's type scale: terminals are 13px monospace at
+      // 1.2 line-height — a step denser than the 14px/1.0 this shipped
+      // with pre-Phase-4.5.
+      fontSize: 13,
+      lineHeight: 1.2,
       // `theme` here is just this terminal's starting colours — it's read
       // once, from whatever theme was active when this effect ran (mount,
       // or a session switch). Later theme changes are pushed live via the

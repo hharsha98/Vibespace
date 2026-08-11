@@ -26,13 +26,31 @@
  * is safe under plain Node/vitest with no browser or jsdom involved.
  */
 
-/** vibedeck's own UI chrome colours — applied as CSS custom properties. */
+/**
+ * vibedeck's own UI chrome colours — applied as CSS custom properties.
+ *
+ * Phase 4.5 (the visual overhaul, see docs/DESIGN.md §2) grew this from 7
+ * fields to 14: the original `background/surface/border/text/textMuted/
+ * accent/accentText` set, plus `surfaceRaised`/`textFaint` (one more step
+ * of layering/dimming each) and five *status* colours (`ok`/`warn`/`danger`/
+ * `idle`/`info`) that every status dot, pill, and badge in the app draws
+ * from — so "running" always means the same colour whether it's a workspace
+ * row, a pane's title-bar dot, or (in later phases) a board card.
+ */
 export interface UIPalette {
   background: string;
   surface: string;
+  /** One layer up from `surface` — cards, menus, popovers, the active row
+   * in a list. Dark themes go a step LIGHTER than `surface`; light themes go
+   * a step DARKER, so "raised" always reads as "closer to the viewer"
+   * regardless of which direction that is in hex terms for this theme. */
+  surfaceRaised: string;
   border: string;
   text: string;
   textMuted: string;
+  /** Dimmer than `textMuted` — meta text, hints, the 10px uppercase section
+   * labels (`WORKSPACES`). */
+  textFaint: string;
   accent: string;
   /**
    * Text colour to place on top of an `accent`-coloured background (e.g. a
@@ -42,6 +60,16 @@ export interface UIPalette {
    * dark themes where white always works.
    */
   accentText: string;
+  /** Running / healthy. Status dots, "running" pills, ok-state badges. */
+  ok: string;
+  /** Working / needs attention. */
+  warn: string;
+  /** Error / critical / stopped. */
+  danger: string;
+  /** Idle / exited / nothing going on. Always a grey, never a "colour". */
+  idle: string;
+  /** Informational (not a running-state signal on its own). */
+  info: string;
 }
 
 /**
@@ -88,18 +116,124 @@ export interface Theme {
 }
 
 /**
- * The built-in catalogue: "Void" (vibedeck's own original look, carried
- * over unchanged from Phases 0-3), BridgeSpace's three other signature
- * themes (Neon Tokyo, Synthwave, Dracula), 21 more well-known editor/
- * terminal themes, and one light theme. 26 total — comfortably over the
- * ≥25 the phase asked for.
+ * The 7 "hand-picked" UI fields every theme still authors directly — the
+ * rest of `UIPalette` (`surfaceRaised`, `textFaint`, and the five status
+ * colours) is *derived* from these plus the theme's own terminal palette,
+ * by `deriveUi` below, rather than hand-written 26 more times over. This is
+ * what "derived sensibly" (Phase 4.5's instruction) means in code: every
+ * theme's status colours come from ITS OWN ANSI green/yellow/red/blue, so a
+ * theme stays internally coherent instead of borrowing some other theme's
+ * idea of "red".
  */
-export const THEMES: Theme[] = [
+interface UIBase {
+  background: string;
+  surface: string;
+  border: string;
+  text: string;
+  textMuted: string;
+  accent: string;
+  accentText: string;
+}
+
+/** One theme's raw data, before `deriveUi` expands `base` into a full `UIPalette`. */
+interface ThemeDef {
+  id: string;
+  name: string;
+  isDark: boolean;
+  base: UIBase;
+  terminal: TerminalPalette;
+}
+
+// --- Small, dependency-free colour math -----------------------------------
+// Deliberately hand-rolled (not pulled from a colour library) — this file's
+// whole point is staying free of any DOM/browser dependency so
+// `themes.test.ts` can import it under plain Node/vitest (see the top-level
+// comment). A tiny hex-blend function is a handful of lines; a colour
+// library would be a dependency for a handful of lines' worth of value.
+
+function clampByte(n: number): number {
+  return Math.max(0, Math.min(255, Math.round(n)));
+}
+
+/** Parses a `#rgb` or `#rrggbb` hex string into its [r, g, b] byte triple. */
+function hexToRgb(hex: string): [number, number, number] {
+  const h = hex.replace("#", "");
+  const full = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
+  const num = parseInt(full.slice(0, 6), 16);
+  return [(num >> 16) & 255, (num >> 8) & 255, num & 255];
+}
+
+function rgbToHex(r: number, g: number, b: number): string {
+  return (
+    "#" +
+    [r, g, b]
+      .map((v) => clampByte(v).toString(16).padStart(2, "0"))
+      .join("")
+  );
+}
+
+/**
+ * Blends `hex` toward white (`amount` > 0) or black (`amount` < 0) by
+ * `|amount|` (0..1 fraction of the way there). Used to derive one extra step
+ * of "raised" surface or "faint" text from a colour a theme already defines,
+ * instead of asking every theme to hand-author two more near-duplicate
+ * hex values.
+ */
+function mix(hex: string, amount: number): string {
+  const [r, g, b] = hexToRgb(hex);
+  const target = amount >= 0 ? 255 : 0;
+  const t = Math.min(1, Math.abs(amount));
+  return rgbToHex(r + (target - r) * t, g + (target - g) * t, b + (target - b) * t);
+}
+
+/**
+ * Expands a theme's hand-picked `base` fields (plus its terminal palette)
+ * into the full 14-field `UIPalette`. See the `UIBase` doc comment above for
+ * why this exists instead of every theme writing all 14 fields by hand.
+ */
+function deriveUi(base: UIBase, terminal: TerminalPalette, isDark: boolean): UIPalette {
+  return {
+    background: base.background,
+    surface: base.surface,
+    // "Raised" always means "a step closer to the viewer" — for a dark
+    // theme that's lighter (closer to white); for a light theme it's
+    // darker (closer to black), which is why the mix direction flips.
+    surfaceRaised: mix(base.surface, isDark ? 0.12 : -0.06),
+    border: base.border,
+    text: base.text,
+    textMuted: base.textMuted,
+    // Dimmer than textMuted, blended toward black on dark themes / toward
+    // white on light themes so it recedes further in whichever direction
+    // "further from the page" already means for this theme.
+    textFaint: mix(base.textMuted, isDark ? -0.35 : 0.35),
+    accent: base.accent,
+    accentText: base.accentText,
+    // Status colours are drawn straight from this theme's OWN ANSI palette
+    // so they always look native to it, never like a foreign accent.
+    ok: terminal.green,
+    warn: terminal.yellow,
+    danger: terminal.red,
+    idle: base.textMuted,
+    info: terminal.blue,
+  };
+}
+
+/**
+ * The built-in catalogue: "Void" (vibedeck's own original look, carried over
+ * unchanged from Phases 0-3), then long-established community editor and
+ * terminal palettes — Dracula, Synthwave, Nord, Gruvbox, Tokyo Night,
+ * Solarized and friends — plus one light option. 26 total.
+ *
+ * These are widely-used palettes from the wider ecosystem, not any single
+ * product's proprietary set; each is our own transcription of a public
+ * palette into the `ThemeDef` shape below.
+ */
+const THEME_DEFS: ThemeDef[] = [
   {
     id: "void",
     name: "Void",
     isDark: true,
-    ui: {
+    base: {
       background: "#0f1115",
       surface: "#1a1d24",
       border: "#2a2e37",
@@ -136,7 +270,7 @@ export const THEMES: Theme[] = [
     id: "neon-tokyo",
     name: "Neon Tokyo",
     isDark: true,
-    ui: {
+    base: {
       background: "#0a0014",
       surface: "#150221",
       border: "#331a4d",
@@ -173,7 +307,7 @@ export const THEMES: Theme[] = [
     id: "synthwave",
     name: "Synthwave",
     isDark: true,
-    ui: {
+    base: {
       background: "#1a1023",
       surface: "#241934",
       border: "#3e2a5c",
@@ -210,7 +344,7 @@ export const THEMES: Theme[] = [
     id: "dracula",
     name: "Dracula",
     isDark: true,
-    ui: {
+    base: {
       background: "#282a36",
       surface: "#21222c",
       border: "#44475a",
@@ -247,7 +381,7 @@ export const THEMES: Theme[] = [
     id: "nord",
     name: "Nord",
     isDark: true,
-    ui: {
+    base: {
       background: "#2e3440",
       surface: "#3b4252",
       border: "#4c566a",
@@ -284,7 +418,7 @@ export const THEMES: Theme[] = [
     id: "gruvbox-dark",
     name: "Gruvbox Dark",
     isDark: true,
-    ui: {
+    base: {
       background: "#282828",
       surface: "#3c3836",
       border: "#504945",
@@ -321,7 +455,7 @@ export const THEMES: Theme[] = [
     id: "solarized-dark",
     name: "Solarized Dark",
     isDark: true,
-    ui: {
+    base: {
       background: "#002b36",
       surface: "#073642",
       border: "#586e75",
@@ -358,7 +492,7 @@ export const THEMES: Theme[] = [
     id: "tokyo-night",
     name: "Tokyo Night",
     isDark: true,
-    ui: {
+    base: {
       background: "#1a1b26",
       surface: "#24283b",
       border: "#414868",
@@ -395,7 +529,7 @@ export const THEMES: Theme[] = [
     id: "catppuccin-mocha",
     name: "Catppuccin Mocha",
     isDark: true,
-    ui: {
+    base: {
       background: "#1e1e2e",
       surface: "#181825",
       border: "#313244",
@@ -432,7 +566,7 @@ export const THEMES: Theme[] = [
     id: "one-dark",
     name: "One Dark",
     isDark: true,
-    ui: {
+    base: {
       background: "#282c34",
       surface: "#21252b",
       border: "#3e4451",
@@ -469,7 +603,7 @@ export const THEMES: Theme[] = [
     id: "monokai",
     name: "Monokai",
     isDark: true,
-    ui: {
+    base: {
       background: "#272822",
       surface: "#1e1f1c",
       border: "#49483e",
@@ -506,7 +640,7 @@ export const THEMES: Theme[] = [
     id: "ayu-dark",
     name: "Ayu Dark",
     isDark: true,
-    ui: {
+    base: {
       background: "#0a0e14",
       surface: "#0d1017",
       border: "#1c212b",
@@ -543,7 +677,7 @@ export const THEMES: Theme[] = [
     id: "rose-pine",
     name: "Rosé Pine",
     isDark: true,
-    ui: {
+    base: {
       background: "#191724",
       surface: "#1f1d2e",
       border: "#403d52",
@@ -580,7 +714,7 @@ export const THEMES: Theme[] = [
     id: "everforest",
     name: "Everforest",
     isDark: true,
-    ui: {
+    base: {
       background: "#2d353b",
       surface: "#343f44",
       border: "#475258",
@@ -617,7 +751,7 @@ export const THEMES: Theme[] = [
     id: "kanagawa",
     name: "Kanagawa",
     isDark: true,
-    ui: {
+    base: {
       background: "#1f1f28",
       surface: "#16161d",
       border: "#363646",
@@ -654,7 +788,7 @@ export const THEMES: Theme[] = [
     id: "night-owl",
     name: "Night Owl",
     isDark: true,
-    ui: {
+    base: {
       background: "#011627",
       surface: "#01111d",
       border: "#1d3b53",
@@ -691,7 +825,7 @@ export const THEMES: Theme[] = [
     id: "material-ocean",
     name: "Material Ocean",
     isDark: true,
-    ui: {
+    base: {
       background: "#0f111a",
       surface: "#121420",
       border: "#2a2e42",
@@ -728,7 +862,7 @@ export const THEMES: Theme[] = [
     id: "cobalt2",
     name: "Cobalt2",
     isDark: true,
-    ui: {
+    base: {
       background: "#193549",
       surface: "#122738",
       border: "#1f4662",
@@ -765,7 +899,7 @@ export const THEMES: Theme[] = [
     id: "panda",
     name: "Panda",
     isDark: true,
-    ui: {
+    base: {
       background: "#292a2b",
       surface: "#24262e",
       border: "#414452",
@@ -802,7 +936,7 @@ export const THEMES: Theme[] = [
     id: "horizon",
     name: "Horizon",
     isDark: true,
-    ui: {
+    base: {
       background: "#1c1e26",
       surface: "#232530",
       border: "#2e303e",
@@ -839,7 +973,7 @@ export const THEMES: Theme[] = [
     id: "oceanic-next",
     name: "Oceanic Next",
     isDark: true,
-    ui: {
+    base: {
       background: "#1b2b34",
       surface: "#16242c",
       border: "#343d46",
@@ -876,7 +1010,7 @@ export const THEMES: Theme[] = [
     id: "palenight",
     name: "Palenight",
     isDark: true,
-    ui: {
+    base: {
       background: "#292d3e",
       surface: "#232635",
       border: "#444267",
@@ -913,7 +1047,7 @@ export const THEMES: Theme[] = [
     id: "moonlight",
     name: "Moonlight",
     isDark: true,
-    ui: {
+    base: {
       background: "#212337",
       surface: "#191a2a",
       border: "#383a52",
@@ -950,7 +1084,7 @@ export const THEMES: Theme[] = [
     id: "city-lights",
     name: "City Lights",
     isDark: true,
-    ui: {
+    base: {
       background: "#1d252c",
       surface: "#171d23",
       border: "#2c3941",
@@ -987,7 +1121,7 @@ export const THEMES: Theme[] = [
     id: "andromeda",
     name: "Andromeda",
     isDark: true,
-    ui: {
+    base: {
       background: "#23262e",
       surface: "#1e2025",
       border: "#363944",
@@ -1024,7 +1158,7 @@ export const THEMES: Theme[] = [
     id: "solarized-light",
     name: "Solarized Light",
     isDark: false,
-    ui: {
+    base: {
       background: "#fdf6e3",
       surface: "#eee8d5",
       border: "#93a1a1",
@@ -1058,6 +1192,21 @@ export const THEMES: Theme[] = [
     },
   },
 ];
+
+/**
+ * The catalogue every other module in the app actually imports: each
+ * `ThemeDef`'s hand-picked `base` expanded, via `deriveUi`, into a complete
+ * 14-field `UIPalette`. Doing this expansion once here (rather than inline
+ * in each `ThemeDef`) is what keeps `THEME_DEFS` above readable — 26 themes
+ * × 7 base fields, not 26 × 14.
+ */
+export const THEMES: Theme[] = THEME_DEFS.map((def) => ({
+  id: def.id,
+  name: def.name,
+  isDark: def.isDark,
+  ui: deriveUi(def.base, def.terminal, def.isDark),
+  terminal: def.terminal,
+}));
 
 /** Fallback theme id used when nothing's been picked or a saved id is stale. */
 export const DEFAULT_THEME_ID = "void";
@@ -1102,11 +1251,18 @@ export function saveThemeId(id: string): void {
 const CSS_VAR_NAMES: Record<keyof UIPalette, string> = {
   background: "--vd-bg",
   surface: "--vd-surface",
+  surfaceRaised: "--vd-surface-raised",
   border: "--vd-border",
   text: "--vd-text",
   textMuted: "--vd-text-muted",
+  textFaint: "--vd-text-faint",
   accent: "--vd-accent",
   accentText: "--vd-accent-text",
+  ok: "--vd-ok",
+  warn: "--vd-warn",
+  danger: "--vd-danger",
+  idle: "--vd-idle",
+  info: "--vd-info",
 };
 
 /**

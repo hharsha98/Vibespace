@@ -57,11 +57,11 @@ export default function ThemePicker({ currentThemeId, onSelect, onClose }: Theme
           width: "min(480px, 90vw)",
           maxHeight: "70vh",
           overflowY: "auto",
-          background: "var(--vd-surface)",
+          background: "var(--vd-surface-raised)",
           border: "1px solid var(--vd-border)",
-          borderRadius: 8,
+          borderRadius: 10,
           boxShadow: "0 12px 40px rgba(0, 0, 0, 0.5)",
-          padding: "0.75rem",
+          padding: 12,
         }}
       >
         <div

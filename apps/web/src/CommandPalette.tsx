@@ -115,9 +115,11 @@ export default function CommandPalette({ commands, onClose }: CommandPaletteProp
           maxHeight: "60vh",
           display: "flex",
           flexDirection: "column",
-          background: "var(--vd-surface)",
+          // "Cards, menus, popovers" — docs/DESIGN.md §2's `--surface-raised`
+          // token, and the §4 "10px overlays" radius (vs. panes' 6px).
+          background: "var(--vd-surface-raised)",
           border: "1px solid var(--vd-border)",
-          borderRadius: 8,
+          borderRadius: 10,
           boxShadow: "0 12px 40px rgba(0, 0, 0, 0.5)",
           overflow: "hidden",
         }}
@@ -129,18 +131,18 @@ export default function CommandPalette({ commands, onClose }: CommandPaletteProp
           onKeyDown={onKeyDown}
           placeholder="Type a command…"
           style={{
-            padding: "0.75rem 1rem",
+            padding: "10px 12px",
             background: "transparent",
             color: "var(--vd-text)",
             border: "none",
             borderBottom: "1px solid var(--vd-border)",
-            fontSize: "0.95rem",
+            fontSize: 13,
             outline: "none",
           }}
         />
         <ul style={{ listStyle: "none", margin: 0, padding: "4px 0", overflowY: "auto" }}>
           {filtered.length === 0 && (
-            <li style={{ padding: "0.6rem 1rem", color: "var(--vd-text-muted)", fontSize: "0.85rem" }}>
+            <li style={{ padding: "8px 12px", color: "var(--vd-text-muted)", fontSize: 12 }}>
               No matching commands.
             </li>
           )}
@@ -158,21 +160,28 @@ export default function CommandPalette({ commands, onClose }: CommandPaletteProp
                 display: "flex",
                 alignItems: "center",
                 gap: 8,
-                padding: "0.5rem 1rem",
+                padding: "6px 12px",
                 cursor: "pointer",
                 background: index === selectedIndex ? "var(--vd-accent)" : "transparent",
                 color: index === selectedIndex ? "var(--vd-accent-text)" : "var(--vd-text)",
-                fontSize: "0.85rem",
+                fontSize: 12,
               }}
             >
               {command.category && (
                 <span
                   style={{
-                    fontSize: "0.7rem",
+                    fontSize: 10,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.04em",
                     padding: "1px 6px",
-                    borderRadius: 3,
+                    borderRadius: 4,
+                    // Selected row: a translucent lighten-over-accent-text
+                    // (works regardless of whether accentText is black or
+                    // white) instead of a hard-coded rgba white overlay.
                     background:
-                      index === selectedIndex ? "rgba(255,255,255,0.25)" : "var(--vd-border)",
+                      index === selectedIndex
+                        ? "color-mix(in srgb, var(--vd-accent-text) 25%, transparent)"
+                        : "var(--vd-border)",
                     color: index === selectedIndex ? "inherit" : "var(--vd-text-muted)",
                     flexShrink: 0,
                   }}
@@ -186,7 +195,7 @@ export default function CommandPalette({ commands, onClose }: CommandPaletteProp
               {command.shortcut && (
                 <span
                   style={{
-                    fontSize: "0.75rem",
+                    fontSize: 11,
                     opacity: 0.8,
                     flexShrink: 0,
                     fontFamily: "monospace",

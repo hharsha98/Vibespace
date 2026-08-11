@@ -60,10 +60,31 @@ describe("THEMES", () => {
     }
   });
 
+  // Every field of UIPalette (see themes.ts) — listed explicitly, same
+  // reasoning as REQUIRED_TERMINAL_FIELDS above: this is the test that
+  // would catch a theme left half-migrated onto the full Phase 4.5 token
+  // set (e.g. an entry missing `surfaceRaised` or one of the status
+  // colours) even if the TS type were ever loosened to allow it.
+  const REQUIRED_UI_FIELDS = [
+    "background",
+    "surface",
+    "surfaceRaised",
+    "border",
+    "text",
+    "textMuted",
+    "textFaint",
+    "accent",
+    "accentText",
+    "ok",
+    "warn",
+    "danger",
+    "idle",
+    "info",
+  ] as const;
+
   it("gives every theme a complete UI palette with valid hex colours", () => {
-    const uiFields = ["background", "surface", "border", "text", "textMuted", "accent", "accentText"] as const;
     for (const theme of THEMES) {
-      for (const field of uiFields) {
+      for (const field of REQUIRED_UI_FIELDS) {
         const value = theme.ui[field];
         expect(value, `${theme.name}.ui.${field} should be a non-empty string`).toBeTruthy();
         expect(HEX_COLOR.test(value), `${theme.name}.ui.${field} = "${value}" is not a valid hex colour`).toBe(
