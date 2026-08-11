@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { SessionManager } from "./session-manager.js";
+import { SessionManager, buildSpawnEnv } from "./session-manager.js";
 
 /**
  * All tests here use the "shell" agent only (never claude/cursor-agent/
@@ -144,4 +144,66 @@ describe("SessionManager", () => {
     },
     10_000
   );
+
+  it(
+    "a 'shell' session's pty actually receives the ZDOTDIR shell-integration env vars",
+    async () => {
+      manager = new SessionManager();
+      const info = manager.create({ agent: "shell" });
+
+      let collected = "";
+      manager.attach(info.id, (event) => {
+        if (event.type === "output") collected += event.data;
+      });
+
+      manager.write(info.id, "echo ZDOTDIR_IS:$ZDOTDIR:REAL_IS:$_VIBEDECK_REAL_ZDOTDIR:END\n");
+
+      // The pty echoes the TYPED line back first (with $ZDOTDIR still
+      // literal, unresolved) — waiting on the RESOLVED pattern (real
+      // slashes where the variables were) is what actually proves the env
+      // vars reached the shell, not just that our keystrokes were echoed.
+      const resolved = /ZDOTDIR_IS:\/.*vibedeck-zdotdir-.*:REAL_IS:\/.*:END/;
+      await waitFor(() => resolved.test(collected));
+      expect(collected).toMatch(resolved);
+    },
+    10_000
+  );
+});
+
+describe("buildSpawnEnv", () => {
+  it("applies shell-integration env only for the 'shell' agent", () => {
+    const integrationEnv = { ZDOTDIR: "/tmp/some-zdotdir", _VIBEDECK_REAL_ZDOTDIR: "/Users/example" };
+
+    const shellEnv = buildSpawnEnv("shell", {}, integrationEnv);
+    expect(shellEnv.ZDOTDIR).toBe("/tmp/some-zdotdir");
+    expect(shellEnv._VIBEDECK_REAL_ZDOTDIR).toBe("/Users/example");
+
+    // claude/cursor-agent/codex are full-screen TUIs, not shells — they
+    // must spawn exactly as before, even if shell-integration env happens
+    // to be available (e.g. it was already created for a "shell" pane
+    // earlier in the same server's lifetime).
+    for (const agent of ["claude", "cursor-agent", "codex"] as const) {
+      const env = buildSpawnEnv(agent, {}, integrationEnv);
+      expect(env.ZDOTDIR).toBeUndefined();
+      expect(env._VIBEDECK_REAL_ZDOTDIR).toBeUndefined();
+    }
+  });
+
+  it("passes through unchanged when shellIntegrationEnv is null (disabled, or non-shell agent)", () => {
+    const env = buildSpawnEnv("shell", { PATH: "/usr/bin" }, null);
+    expect(env.PATH).toBe("/usr/bin");
+    expect(env.ZDOTDIR).toBeUndefined();
+  });
+
+  it("always sets TERM/COLORTERM regardless of agent", () => {
+    const env = buildSpawnEnv("codex", {}, null);
+    expect(env.TERM).toBe("xterm-256color");
+    expect(env.COLORTERM).toBe("truecolor");
+  });
+
+  it("preserves the base env's other variables (e.g. PATH) unchanged", () => {
+    const env = buildSpawnEnv("shell", { PATH: "/usr/bin:/bin", HOME: "/Users/example" }, null);
+    expect(env.PATH).toBe("/usr/bin:/bin");
+    expect(env.HOME).toBe("/Users/example");
+  });
 });

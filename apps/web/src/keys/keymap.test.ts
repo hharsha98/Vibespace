@@ -49,6 +49,13 @@ describe("matchShortcut", () => {
     expect(matchShortcut(key({ key: "Enter", metaKey: true }), true)).toBeNull();
   });
 
+  it("matches Cmd+Up and Cmd+Down to previous/next command block", () => {
+    expect(matchShortcut(key({ key: "ArrowUp", metaKey: true }), true)).toBe("prev-block");
+    expect(matchShortcut(key({ key: "ArrowDown", metaKey: true }), true)).toBe("next-block");
+    // Shift held should NOT match — these shortcuts don't use Shift.
+    expect(matchShortcut(key({ key: "ArrowUp", metaKey: true, shiftKey: true }), true)).toBeNull();
+  });
+
   it("on non-Mac, Ctrl substitutes for Cmd and Cmd does not match", () => {
     expect(matchShortcut(key({ key: "k", ctrlKey: true }), false)).toBe("command-palette");
     expect(matchShortcut(key({ key: "k", metaKey: true }), false)).toBeNull();
@@ -93,6 +100,15 @@ describe("formatShortcut", () => {
     const maximizeShortcut = KEYMAP.find((s) => s.id === "maximize-pane")!;
     expect(formatShortcut(maximizeShortcut, true)).toBe("⌘⇧Return");
     expect(formatShortcut(maximizeShortcut, false)).toBe("Ctrl+Shift+Return");
+  });
+
+  it("renders the block-navigation shortcuts with arrow glyphs", () => {
+    const prevBlock = KEYMAP.find((s) => s.id === "prev-block")!;
+    const nextBlock = KEYMAP.find((s) => s.id === "next-block")!;
+    expect(formatShortcut(prevBlock, true)).toBe("⌘↑");
+    expect(formatShortcut(nextBlock, true)).toBe("⌘↓");
+    expect(formatShortcut(prevBlock, false)).toBe("Ctrl+↑");
+    expect(formatShortcut(nextBlock, false)).toBe("Ctrl+↓");
   });
 });
 

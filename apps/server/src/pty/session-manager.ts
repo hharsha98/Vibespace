@@ -18,6 +18,7 @@ import * as pty from "node-pty";
 import type { AgentId, SessionInfo } from "@vibedeck/shared";
 import { RingBuffer } from "./ring-buffer.js";
 import { resolveAgent } from "./agents.js";
+import { ShellIntegrationManager } from "./shell-integration/zdotdir.js";
 
 export interface CreateSessionOptions {
   agent: AgentId;
@@ -33,6 +34,34 @@ export type SessionEvent =
 
 type Listener = (event: SessionEvent) => void;
 
+/**
+ * Builds the `env` object a pty is spawned with. Pulled out as its own pure
+ * function (inputs in, plain object out — no `pty.spawn`, no `SessionManager`
+ * state) specifically so the "shell integration only ever applies to the
+ * `shell` agent" rule is unit-testable on its own: CI (ubuntu-latest) has no
+ * `claude`/`cursor-agent`/`codex` binaries installed, so actually spawning
+ * one of those agents via `SessionManager.create()` to check its env would
+ * crash the test before it could assert anything. Testing this function
+ * directly needs no process spawn at all.
+ */
+export function buildSpawnEnv(
+  agent: AgentId,
+  baseEnv: NodeJS.ProcessEnv,
+  shellIntegrationEnv: Record<string, string> | null
+): NodeJS.ProcessEnv {
+  // Spread the server's own environment so the spawned process has a normal
+  // PATH etc, then layer on terminal-capability hints so full-color /
+  // interactive CLIs (like the AI agents) render well.
+  const env: NodeJS.ProcessEnv = { ...baseEnv, TERM: "xterm-256color", COLORTERM: "truecolor" };
+  // ONLY the "shell" agent ever gets the ZDOTDIR override — claude,
+  // cursor-agent, and codex are full-screen TUIs, not shells, and must keep
+  // spawning exactly as they always have.
+  if (agent === "shell" && shellIntegrationEnv) {
+    Object.assign(env, shellIntegrationEnv);
+  }
+  return env;
+}
+
 interface Session {
   pty: pty.IPty;
   buffer: RingBuffer;
@@ -44,6 +73,10 @@ interface Session {
 
 export class SessionManager {
   private sessions = new Map<string, Session>();
+  // One shared ZDOTDIR (created lazily, the first time a "shell" pane is
+  // spawned) for this SessionManager's whole lifetime — see zdotdir.ts's
+  // top comment for why this never touches the user's real dotfiles.
+  private shellIntegration = new ShellIntegrationManager();
 
   /** Spawn a new pty for the given agent and start tracking it. */
   create(options: CreateSessionOptions): SessionInfo {
@@ -54,16 +87,18 @@ export class SessionManager {
 
     const { command, args } = resolveAgent(agent);
 
+    // Only ask for shell-integration env when we're actually spawning a
+    // shell — asking unconditionally would create the throwaway ZDOTDIR
+    // temp dir even for a session that will never use it.
+    const shellIntegrationEnv = agent === "shell" ? this.shellIntegration.getEnvForShell() : null;
+
     const id = randomUUID();
     const ptyProcess = pty.spawn(command, args, {
       name: "xterm-256color",
       cols,
       rows,
       cwd,
-      // Spread the server's own environment so the spawned process has a
-      // normal PATH etc, then layer on terminal-capability hints so
-      // full-color / interactive CLIs (like the AI agents) render well.
-      env: { ...process.env, TERM: "xterm-256color", COLORTERM: "truecolor" },
+      env: buildSpawnEnv(agent, process.env, shellIntegrationEnv),
     });
 
     const info: SessionInfo = {
@@ -190,5 +225,8 @@ export class SessionManager {
       }
     }
     this.sessions.clear();
+    // Also removes the shared ZDOTDIR temp dir, if one was ever created —
+    // safe/idempotent even if no "shell" pane was ever spawned.
+    this.shellIntegration.dispose();
   }
 }

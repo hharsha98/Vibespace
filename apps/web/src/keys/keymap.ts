@@ -141,6 +141,18 @@ export const KEYMAP: readonly Shortcut[] = [
     key: "enter",
     shift: true,
   },
+  {
+    id: "prev-block",
+    label: "Previous command block",
+    description: "Scroll the focused pane's terminal to the previous command block (Phase 5, shell panes only).",
+    key: "arrowup",
+  },
+  {
+    id: "next-block",
+    label: "Next command block",
+    description: "Scroll the focused pane's terminal to the next command block (Phase 5, shell panes only).",
+    key: "arrowdown",
+  },
 ];
 
 /**
@@ -177,6 +189,8 @@ const KEY_DISPLAY_OVERRIDES: Record<string, string> = {
   "[": "[",
   "]": "]",
   enter: "Return",
+  arrowup: "↑",
+  arrowdown: "↓",
 };
 
 /**

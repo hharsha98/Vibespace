@@ -17,6 +17,7 @@ import {
 } from "./grid/tree.js";
 import { KEYMAP, formatShortcut, isMacPlatform } from "./keys/keymap.js";
 import { useKeyboardShortcuts, type ShortcutHandlers } from "./keys/useKeyboardShortcuts.js";
+import { getBlocksSnapshot, scrollSessionToLine } from "./term/blockStore.js";
 import {
   DEFAULT_THEME_ID,
   THEMES,
@@ -487,6 +488,43 @@ export default function App() {
     [root, focusedPaneId]
   );
 
+  // The SessionInfo behind whichever pane currently has focus — null if no
+  // pane is focused, or the focused pane is empty. This is what drives the
+  // right dock's "Blocks" tab (Phase 5): it always shows the FOCUSED pane's
+  // command blocks, so switching focus switches which pane's blocks you're
+  // looking at, the same way switching focus already changes which pane
+  // Cmd+D/Cmd+Shift+W etc operate on.
+  const focusedSession = useMemo(() => {
+    if (!root || !focusedPaneId) return null;
+    const pane = findPane(root, focusedPaneId);
+    if (!pane || pane.kind !== "leaf" || !pane.sessionId) return null;
+    return sessions.find((s) => s.id === pane.sessionId) ?? null;
+  }, [root, focusedPaneId, sessions]);
+
+  // Cmd+Up / Cmd+Down (Phase 5): jump the focused pane's terminal to the
+  // previous/next command block. `blockNavIndexRef` remembers, PER
+  // session, which block we last jumped to — so repeated presses walk
+  // through the list in order instead of always snapping back to the most
+  // recent block. A plain ref (not React state) is enough since nothing
+  // ever needs to re-render off of it; it only exists to make repeated key
+  // presses feel like they're moving through a list.
+  const blockNavIndexRef = useRef<Map<string, number>>(new Map());
+  const jumpBlock = useCallback(
+    (delta: 1 | -1) => {
+      if (!focusedSession) return;
+      // BlockTracker.list() (surfaced here via getBlocksSnapshot) is
+      // oldest-first; "previous" (Cmd+Up, like shell history) means older
+      // = lower index, "next" (Cmd+Down) means more recent = higher index.
+      const blocks = getBlocksSnapshot(focusedSession.id);
+      if (blocks.length === 0) return;
+      const current = blockNavIndexRef.current.get(focusedSession.id) ?? blocks.length - 1;
+      const next = Math.min(Math.max(current + delta, 0), blocks.length - 1);
+      blockNavIndexRef.current.set(focusedSession.id, next);
+      scrollSessionToLine(focusedSession.id, blocks[next].startLine);
+    },
+    [focusedSession]
+  );
+
   // Used by the command palette's "Start <agent> in this pane" commands.
   // Deliberately only acts when the focused pane is currently EMPTY — there's
   // no sensible meaning for "start an agent" in a pane that already has one
@@ -698,6 +736,8 @@ export default function App() {
       "maximize-pane": () => {
         if (focusedPaneId) toggleMaximize(focusedPaneId);
       },
+      "prev-block": () => jumpBlock(-1),
+      "next-block": () => jumpBlock(1),
     };
     // The nine "focus pane N" shortcuts all share one handler shape, keyed
     // off `paneIndex` (see keymap.ts) instead of writing out
@@ -709,7 +749,16 @@ export default function App() {
       }
     }
     return handlers;
-  }, [splitFocused, addPane, closeFocusedPane, cycleFocus, focusPaneByIndex, focusedPaneId, toggleMaximize]);
+  }, [
+    splitFocused,
+    addPane,
+    closeFocusedPane,
+    cycleFocus,
+    focusPaneByIndex,
+    focusedPaneId,
+    toggleMaximize,
+    jumpBlock,
+  ]);
 
   // Disabled entirely while any overlay is open — otherwise e.g. Cmd+D would
   // both split a pane in the background AND leave the theme picker open,
@@ -1051,6 +1100,7 @@ export default function App() {
             activeWorkspace={activeWorkspace}
             agents={agents}
             workspaceSessions={activeWorkspace ? sessionsForWorkspace(activeWorkspace) : []}
+            focusedSession={focusedSession}
           />
         )}
       </div>

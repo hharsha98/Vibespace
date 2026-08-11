@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "typecheck": "tsc --noEmit",
-    "build": "tsc",
+    "build": "tsc && mkdir -p dist/pty/shell-integration && cp src/pty/shell-integration/vibedeck-integration.zsh dist/pty/shell-integration/",
     "test": "vitest run",
     "start": "node dist/index.js"
   },

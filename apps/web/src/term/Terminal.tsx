@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Terminal as XTerm } from "@xterm/xterm";
+import type { IDecoration, IMarker } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -7,6 +8,14 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import type { ClientMessage, ServerMessage } from "@vibedeck/shared";
 import { isMacPlatform, matchShortcut } from "../keys/keymap.js";
 import type { Theme } from "../themes/themes.js";
+import { BlockTracker, parseOsc133 } from "./blocks.js";
+import {
+  notifyBlocksChanged,
+  registerBlockTracker,
+  registerScrollHandler,
+  unregisterBlockTracker,
+  unregisterScrollHandler,
+} from "./blockStore.js";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalProps {
@@ -70,6 +79,58 @@ interface ContextMenuState {
 const MAX_WEBGL_TERMINALS = 8;
 let activeWebglTerminals = 0;
 
+// --- Command blocks (Phase 5) -------------------------------------------
+//
+// A shell pane's pty (see apps/server/src/pty/shell-integration) emits OSC
+// 133 escape sequences bracketing each command it runs. Every OTHER agent
+// (claude, cursor-agent, codex — full-screen TUIs, not shells) simply never
+// emits them, so all of the code below is dormant/no-op for those panes:
+// the OSC handler just never fires, no blocks are ever created, and
+// nothing about their rendering changes. That's the "degrade silently"
+// requirement — there's no branch anywhere that checks "is this a shell
+// pane?" because there doesn't need to be one.
+
+/** One gutter decoration's live state — its `IMarker` (the buffer line it
+ * tracks, surviving scrollback trimming) and its currently-rendered
+ * `IDecoration` (the actual coloured bar). Kept as a pair because updating
+ * a decoration's colour means disposing the old one and creating a fresh
+ * one at the SAME marker (xterm.js decorations don't support changing
+ * their background colour in place after creation). */
+interface GutterEntry {
+  marker: IMarker;
+  decoration: IDecoration;
+}
+
+/** Maps a block's state to the DESIGN.md status-colour CSS variable its
+ * gutter bar (and the Blocks tab's status dot) should use: running reads as
+ * "working / attention" (`--vd-warn`), ok as `--vd-ok`, failed as
+ * `--vd-danger` — see docs/DESIGN.md §2's status-colour table. */
+function colorForBlockState(state: "running" | "ok" | "failed"): string {
+  switch (state) {
+    case "running":
+      return "var(--vd-warn)";
+    case "ok":
+      return "var(--vd-ok)";
+    case "failed":
+      return "var(--vd-danger)";
+  }
+}
+
+/** Styles a decoration's rendered element as a thin 2px colour bar. xterm.js
+ * hands us this element ALREADY positioned to the right row and column
+ * (`position: absolute; top: <row offset>px; left: <col offset>px; ...`,
+ * recomputed on every one of its own render passes) — we must only ever
+ * ADD to that (colour, width, no-pointer-events), never touch `position`/
+ * `top`/`bottom`/`left` ourselves. An earlier version of this function DID
+ * hardcode `top`/`bottom`/`left`/`position`, which clobbered xterm's own
+ * row placement and put every single bar at row 0 — caught by hand-testing
+ * (two commands' bars both rendering on the terminal's very first line). */
+function styleGutterBar(el: HTMLElement, color: string): void {
+  el.style.width = "2px";
+  el.style.backgroundColor = color;
+  el.style.pointerEvents = "none";
+}
+
 /**
  * A real, server-backed terminal. Renders one xterm.js instance wired up to
  * a WebSocket that streams a pty's input/output. Closing this component
@@ -82,6 +143,13 @@ export default function Terminal({ sessionId, theme, onClose }: TerminalProps) {
   const fitAddonRef = useRef<FitAddon | null>(null);
   const searchAddonRef = useRef<SearchAddon | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
+  // This pane's command-block state (Phase 5) — created fresh in the main
+  // mount effect below, and reachable here too so `handleClear` (a
+  // component-level function, outside that effect) can reset it when the
+  // user clears the terminal. See the "Command blocks" module comment
+  // above for why every other agent's pane just never touches any of this.
+  const blockTrackerRef = useRef<BlockTracker | null>(null);
+  const gutterDecorationsRef = useRef<Map<string, GutterEntry>>(new Map());
 
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -98,6 +166,16 @@ export default function Terminal({ sessionId, theme, onClose }: TerminalProps) {
     const term = new XTerm({
       cursorBlink: true,
       scrollback: 10000,
+      // Phase 5's gutter decorations (`registerMarker`/`registerDecoration`)
+      // are still a "proposed" (unstable) part of xterm.js's public API —
+      // without this flag, calling either of them throws SYNCHRONOUSLY from
+      // inside the OSC 133 handler below, which aborts xterm's parser
+      // mid-chunk and silently swallows whatever real output shared that
+      // same write() call (discovered exactly this way: `ls`'s own output
+      // vanished because it arrived in the same chunk as the "C" marker
+      // that triggered the throw). Both APIs are used read-only here (a
+      // colour bar, never edited afterward), so opting in is safe.
+      allowProposedApi: true,
       fontFamily: "'SF Mono', Menlo, Monaco, 'Cascadia Code', 'Fira Code', monospace",
       // docs/DESIGN.md §3's type scale: terminals are 13px monospace at
       // 1.2 line-height — a step denser than the 14px/1.0 this shipped
@@ -136,6 +214,135 @@ export default function Terminal({ sessionId, theme, onClose }: TerminalProps) {
     term.loadAddon(searchAddon);
 
     term.loadAddon(new WebLinksAddon());
+
+    // --- Command blocks (Phase 5) ---------------------------------------
+    // A fresh BlockTracker per mount (per `sessionId`, since this whole
+    // effect re-runs on session change) — see the module-level "Command
+    // blocks" comment above for the full picture. Registered into the
+    // shared blockStore immediately (even before any markers arrive) so
+    // the Blocks tab can tell "this pane has shell integration but hasn't
+    // run anything yet" apart from "no tracker was ever created" if it
+    // ever needs that distinction.
+    const blockTracker = new BlockTracker();
+    blockTrackerRef.current = blockTracker;
+    registerBlockTracker(sessionId, blockTracker);
+
+    // Mutable bookkeeping the OSC handler below needs between marker
+    // events (which line "B" fired on, which block is currently open) —
+    // plain closure variables are enough here (unlike blockTrackerRef /
+    // gutterDecorationsRef above, nothing outside this effect needs to
+    // reach these).
+    let promptEndLine: number | null = null;
+    let promptEndCol: number | null = null;
+    let lastOpenBlockId: string | null = null;
+
+    const currentBufferLine = (): number => term.buffer.active.baseY + term.buffer.active.cursorY;
+
+    /** Best-effort capture of the command text typed at the prompt: the
+     * "B" marker told us exactly where the prompt ends (both the line and
+     * the column), so the rest of that same line, from that column
+     * onward, is what the user typed. This is genuinely best-effort — it
+     * assumes the command stayed on one line and the cursor didn't get
+     * moved backward mid-edit (e.g. arrow-key editing, multi-line paste)
+     * — so any doubt returns `null` rather than a wrong guess. */
+    const captureCommandText = (): string | null => {
+      if (promptEndLine === null || promptEndCol === null) return null;
+      const bufferLine = term.buffer.active.getLine(promptEndLine);
+      if (!bufferLine) return null;
+      const fullLine = bufferLine.translateToString(true);
+      const typed = fullLine.slice(promptEndCol).trim();
+      return typed.length > 0 ? typed : null;
+    };
+
+    /** Disposes an existing gutter bar for `blockId` (if any) and draws a
+     * fresh one at `marker` in `color` — decorations can't change colour
+     * in place, so "recolour" always means dispose-and-recreate. */
+    const setGutterBar = (blockId: string, marker: IMarker, color: string): void => {
+      const existing = gutterDecorationsRef.current.get(blockId);
+      existing?.decoration.dispose();
+
+      const decoration = term.registerDecoration({ marker, x: 0, width: 1 });
+      if (!decoration) {
+        // registerDecoration can return undefined (e.g. the marker's line
+        // has already scrolled out of the buffer) — nothing to draw, but
+        // this must never throw or break block tracking itself.
+        gutterDecorationsRef.current.delete(blockId);
+        return;
+      }
+      decoration.onRender((el) => styleGutterBar(el, color));
+      gutterDecorationsRef.current.set(blockId, { marker, decoration });
+    };
+
+    const recolorGutterBar = (blockId: string, state: "running" | "ok" | "failed"): void => {
+      const entry = gutterDecorationsRef.current.get(blockId);
+      if (!entry) return;
+      setGutterBar(blockId, entry.marker, colorForBlockState(state));
+    };
+
+    // The actual OSC 133 handler: xterm.js calls this with everything
+    // between `\x1b]133;` and the terminator, for EVERY OSC 133 sequence
+    // the pty sends. Returning `true` tells xterm "I handled this — do not
+    // print the raw escape text into the terminal," which is what keeps
+    // `133;C`-style garbage from ever appearing on screen. This is
+    // registered unconditionally (every pane, not just "shell" ones) — a
+    // pane that never emits OSC 133 simply never calls this, which is
+    // exactly the "degrade silently" behaviour the phase requires.
+    const oscHandler = term.parser.registerOscHandler(133, (data: string) => {
+      const event = parseOsc133(data);
+      if (!event) return false; // Not one of ours — let xterm's default handling apply.
+
+      const line = currentBufferLine();
+
+      switch (event.marker) {
+        case "A":
+          blockTracker.onPromptStart(line);
+          break;
+
+        case "B":
+          promptEndLine = line;
+          promptEndCol = term.buffer.active.cursorX;
+          blockTracker.onPromptEnd(line);
+          break;
+
+        case "C": {
+          // Two Cs with no D between them: BlockTracker itself closes the
+          // stale block out as "failed" (see blocks.ts), but IT can't touch
+          // the DOM — recolour that block's gutter bar to match here.
+          if (lastOpenBlockId) recolorGutterBar(lastOpenBlockId, "failed");
+
+          blockTracker.onCommandStart(line, Date.now(), captureCommandText());
+          const opened = blockTracker.list().at(-1);
+          if (opened) {
+            lastOpenBlockId = opened.id;
+            const marker = term.registerMarker(0);
+            if (marker) setGutterBar(opened.id, marker, colorForBlockState("running"));
+          }
+          notifyBlocksChanged(sessionId);
+          break;
+        }
+
+        case "D": {
+          blockTracker.onCommandEnd(event.exitCode, line, Date.now());
+          if (lastOpenBlockId) {
+            const closed = blockTracker.list().find((b) => b.id === lastOpenBlockId);
+            if (closed) recolorGutterBar(closed.id, closed.state);
+          }
+          lastOpenBlockId = null;
+          notifyBlocksChanged(sessionId);
+          break;
+        }
+      }
+
+      return true;
+    });
+
+    // The other half of "click a block, jump the terminal there" (see
+    // blockStore.ts) — scrolling to an absolute buffer line and refocusing
+    // so the user can immediately start scrolling/typing from there.
+    registerScrollHandler(sessionId, (targetLine) => {
+      term.scrollToLine(targetLine);
+      term.focus();
+    });
 
     // WebGL rendering is much faster, but its driver support is patchy —
     // some machines/browsers throw when creating the context — and, per the
@@ -241,6 +448,20 @@ export default function Terminal({ sessionId, theme, onClose }: TerminalProps) {
         holdsWebglSlot = false;
         activeWebglTerminals--;
       }
+      // Command blocks (Phase 5): dispose every gutter bar's decoration AND
+      // marker (markers aren't disposed by term.dispose() automatically),
+      // forget this pane's tracker/scroll-handler in the shared stores so a
+      // now-gone view stops answering for this sessionId, and stop
+      // receiving OSC 133 callbacks.
+      for (const { marker, decoration } of gutterDecorationsRef.current.values()) {
+        decoration.dispose();
+        marker.dispose();
+      }
+      gutterDecorationsRef.current.clear();
+      oscHandler.dispose();
+      unregisterScrollHandler(sessionId);
+      unregisterBlockTracker(sessionId);
+      blockTrackerRef.current = null;
       // term.dispose() also disposes any still-loaded addons (including
       // the WebGL one, if context loss hasn't already disposed it).
       term.dispose();
@@ -317,6 +538,17 @@ export default function Terminal({ sessionId, theme, onClose }: TerminalProps) {
 
   const handleClear = () => {
     termRef.current?.clear();
+    // Every tracked block's line numbers refer to buffer positions that
+    // `term.clear()` just made meaningless — forget them (and their gutter
+    // bars) rather than leave stale entries that "jump to block" would
+    // scroll to the wrong place for.
+    blockTrackerRef.current?.clear();
+    for (const { marker, decoration } of gutterDecorationsRef.current.values()) {
+      decoration.dispose();
+      marker.dispose();
+    }
+    gutterDecorationsRef.current.clear();
+    notifyBlocksChanged(sessionId);
     setContextMenu(null);
   };
 
