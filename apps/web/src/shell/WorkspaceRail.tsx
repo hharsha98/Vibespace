@@ -1,5 +1,6 @@
 import type { Workspace } from "@vibedeck/shared";
 import { IconButton, ListRow } from "./ui.js";
+import FileTree from "../files/FileTree.js";
 
 /**
  * The left rail: workspaces as a vertical list (docs/DESIGN.md §1/§5),
@@ -22,6 +23,10 @@ export interface WorkspaceRailProps {
    * `rootPath`, since sessions aren't otherwise tagged with a workspace id). */
   runningCount: (workspace: Workspace) => number;
   onSwitch: (id: string) => void;
+  /** Phase 6: opens a file (workspace-relative path) in the editor —
+   * forwarded straight through to `<FileTree>`, which lives inside this
+   * rail below the workspace list. */
+  onOpenFile: (relPath: string) => void;
 
   showCreateForm: boolean;
   onOpenCreateForm: () => void;
@@ -59,6 +64,7 @@ export default function WorkspaceRail(props: WorkspaceRailProps) {
     onToggleCollapsed,
     runningCount,
     onSwitch,
+    onOpenFile,
     showCreateForm,
     onOpenCreateForm,
     newWorkspaceName,
@@ -147,9 +153,19 @@ export default function WorkspaceRail(props: WorkspaceRailProps) {
         flexDirection: "column",
         borderRight: "1px solid var(--vd-border)",
         background: "var(--vd-surface)",
-        overflowY: "auto",
+        // Phase 6: this column now holds TWO independently-scrolling
+        // regions (the workspace list above, the file tree below) instead
+        // of one big scrolling column — see the FileTree mount at the
+        // bottom of this return. The outer container itself no longer
+        // scrolls; each region owns its own overflow.
+        overflow: "hidden",
       }}
     >
+      {/* Capped at 55% height (not flex:1) so a workspace list long enough
+          to need scrolling still leaves room for the file tree below it,
+          rather than the file tree only appearing once you've scrolled
+          all the way past every workspace. */}
+      <div style={{ maxHeight: "55%", overflowY: "auto", flexShrink: 0 }}>
       <div
         style={{
           display: "flex",
@@ -324,6 +340,9 @@ export default function WorkspaceRail(props: WorkspaceRailProps) {
           </div>
         </div>
       )}
+      </div>
+
+      <FileTree workspaceId={activeWorkspaceId} onOpenFile={onOpenFile} />
     </div>
   );
 }

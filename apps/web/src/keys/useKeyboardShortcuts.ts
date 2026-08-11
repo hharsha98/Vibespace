@@ -26,15 +26,21 @@ export type ShortcutHandlers = Partial<Record<string, (event: KeyboardEvent) => 
  *    unmodified key, so normal typing is never at risk on its own — but a
  *    modified combo (Cmd/Ctrl+something) firing a page-level action while
  *    the user is mid-edit in one of the app's own text fields (workspace
- *    name, the create-workspace path field, the rename input...) would
- *    still be surprising. So while a text `<input>`/`<textarea>` has
- *    focus, every shortcut is suppressed EXCEPT the command palette
- *    (Cmd/Ctrl+K), which should always be reachable no matter what's
- *    focused. Escape needs no special case here: it isn't in `KEYMAP` at
- *    all (nothing maps a bare Escape to an action id), so it always falls
- *    straight through to whatever component-local Escape handler is
- *    listening (the command palette's own, the terminal search box's own).
+ *    name, the create-workspace path field, the rename input, or — as of
+ *    Phase 6 — the CodeMirror editor, whose content-editable root reports
+ *    `isContentEditable`) would still be surprising. So while a text
+ *    `<input>`/`<textarea>`/content-editable element has focus, every
+ *    shortcut is suppressed EXCEPT the ones in `ALWAYS_ON` below — the
+ *    command palette (Cmd/Ctrl+K) and quick open (Cmd/Ctrl+P), both of
+ *    which should always be reachable no matter what's focused (quick open
+ *    especially: jumping to another file while mid-edit in this one is
+ *    exactly when you'd want it). Escape needs no special case here: it
+ *    isn't in `KEYMAP` at all (nothing maps a bare Escape to an action id),
+ *    so it always falls straight through to whatever component-local
+ *    Escape handler is listening (the command palette's own, the terminal
+ *    search box's own).
  */
+const ALWAYS_ON = new Set(["command-palette", "quick-open"]);
 export function useKeyboardShortcuts(handlers: ShortcutHandlers, enabled = true): void {
   // Keep the latest handlers/enabled in a ref so the listener (attached
   // once, on mount) always calls the current version without needing to be
@@ -69,7 +75,7 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers, enabled = true)
         !!target &&
         (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
 
-      if (isTextField && actionId !== "command-palette") {
+      if (isTextField && !ALWAYS_ON.has(actionId)) {
         return; // Let the app's own text field keep the keystroke.
       }
 

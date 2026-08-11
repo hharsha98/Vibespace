@@ -1,0 +1,13 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!--
+    vibedeck favicon. Same mark as src/shell/Logo.tsx, but with colours baked
+    in: a favicon is rendered outside the page, so it cannot inherit CSS
+    custom properties. The dark rounded tile keeps the mark readable against
+    both light and dark browser tab strips.
+  -->
+  <rect width="32" height="32" rx="7" fill="#0f1115"/>
+  <rect x="6.75" y="7.75" width="18.5" height="16.5" rx="3" stroke="#e8e8ea" stroke-width="1.5"/>
+  <path d="M14.25 8V24" stroke="#e8e8ea" stroke-width="1.5"/>
+  <path d="M14.25 16h11" stroke="#e8e8ea" stroke-width="1.5"/>
+  <rect x="8.75" y="9.75" width="3.5" height="12.5" rx="1.25" fill="#2a6df4"/>
+</svg>

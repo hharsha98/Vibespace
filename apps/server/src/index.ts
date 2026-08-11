@@ -5,6 +5,7 @@ import { detectAllAgents } from "./pty/agents.js";
 import { SessionManager } from "./pty/session-manager.js";
 import { WorkspaceStore } from "./db/workspaces.js";
 import { resolveRootPath } from "./workspace-path.js";
+import { registerFileRoutes } from "./files/routes.js";
 
 const VERSION = "0.0.0";
 const PORT = 4317;
@@ -62,6 +63,14 @@ export function buildApp(options: BuildAppOptions = {}) {
   });
 
   app.register(fastifyWebsocket);
+
+  // Phase 6: file tree / editor / preview endpoints. Registered as its own
+  // module (apps/server/src/files/routes.ts) rather than inlined here —
+  // this file was already large before file endpoints existed, and every
+  // one of those routes shares the same "resolve + guard" logic that lives
+  // in files/safe-path.ts, which is easier to keep straight in a dedicated
+  // module than interleaved with session/workspace routes.
+  registerFileRoutes(app, workspaceStore);
 
   app.get("/api/health", async () => ({
     status: "ok" as const,

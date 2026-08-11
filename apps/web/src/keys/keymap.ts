@@ -153,6 +153,43 @@ export const KEYMAP: readonly Shortcut[] = [
     description: "Scroll the focused pane's terminal to the next command block (Phase 5, shell panes only).",
     key: "arrowdown",
   },
+  // --- Phase 6: centre-column view switcher ---------------------------
+  // The centre column is view-switchable (Terminals/Editor/Preview, see
+  // App.tsx's `centerView` state) — these three pick which one shows.
+  // Deliberately NOT Cmd+1/2/3: those nine combos already mean "focus pane
+  // N" (see the `focus-pane-*` block above), and Shift+digit is unreliable
+  // across keyboard layouts (Shift+1 reports as "!" in `event.key` on a US
+  // layout, not "1" — see matchShortcut's key comparison, which is literal).
+  // Plain, unmodified-by-shift letters avoid that AND read as mnemonics —
+  // G(rid)/E(ditor)/B(rowser preview). "v" was deliberately avoided for
+  // preview despite being the obvious mnemonic: Cmd+V is paste, and
+  // useKeyboardShortcuts calls preventDefault() on every match, which would
+  // silently break pasting into the terminal, the editor, and every text
+  // field in the app.
+  {
+    id: "view-terminals",
+    label: "View: Terminals",
+    description: "Show the terminal grid in the centre column.",
+    key: "g",
+  },
+  {
+    id: "view-editor",
+    label: "View: Editor",
+    description: "Show the file editor in the centre column.",
+    key: "e",
+  },
+  {
+    id: "view-preview",
+    label: "View: Preview",
+    description: "Show the browser preview in the centre column.",
+    key: "b",
+  },
+  {
+    id: "quick-open",
+    label: "Quick open file",
+    description: "Fuzzy-find and open a file from the active workspace.",
+    key: "p",
+  },
 ];
 
 /**

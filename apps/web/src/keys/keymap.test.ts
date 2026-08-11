@@ -77,6 +77,16 @@ describe("matchShortcut", () => {
     expect(matchShortcut(key({ key: "z", metaKey: true }), true)).toBeNull();
     expect(matchShortcut(key({ key: "k" }), true)).toBeNull();
   });
+
+  it("matches Cmd+G/E/B to the three centre-column view switchers", () => {
+    expect(matchShortcut(key({ key: "g", metaKey: true }), true)).toBe("view-terminals");
+    expect(matchShortcut(key({ key: "e", metaKey: true }), true)).toBe("view-editor");
+    expect(matchShortcut(key({ key: "b", metaKey: true }), true)).toBe("view-preview");
+  });
+
+  it("matches Cmd+P to quick-open", () => {
+    expect(matchShortcut(key({ key: "p", metaKey: true }), true)).toBe("quick-open");
+  });
 });
 
 describe("formatShortcut", () => {

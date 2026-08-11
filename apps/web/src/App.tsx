@@ -31,14 +31,26 @@ import CommandPalette, { type PaletteCommand } from "./CommandPalette.js";
 import KeyboardCheatSheet from "./KeyboardCheatSheet.js";
 import WorkspaceRail from "./shell/WorkspaceRail.js";
 import RightDock from "./shell/RightDock.js";
+import Logo from "./shell/Logo.js";
 import { GlobalShellStyles, IconButton, StatusDot } from "./shell/ui.js";
+import Editor, { type OpenFileRequest } from "./files/Editor.js";
+import Preview from "./files/Preview.js";
+import QuickOpen from "./files/QuickOpen.js";
 
 /** Which full-screen overlay (if any) is currently open. Only one at a
  * time — opening a new one implicitly replaces whichever was open, and
  * `useKeyboardShortcuts` is disabled entirely while any of them is open, so
  * e.g. Cmd+D can't accidentally split a pane while the user is browsing the
  * theme picker. */
-type OverlayKind = "palette" | "theme" | "help" | null;
+type OverlayKind = "palette" | "theme" | "help" | "quickOpen" | null;
+
+/** Which view the centre column is showing (Phase 6's view switcher, see
+ * docs/DESIGN.md's centre-column note in this phase's spec). All three are
+ * kept MOUNTED at all times once a workspace is active (see the render
+ * below) — only CSS `display` toggles which one is visible — so switching
+ * views never disconnects a running terminal's WebSocket, and never
+ * discards an editor tab's unsaved buffer either. */
+type CenterView = "terminals" | "editor" | "preview";
 
 interface HealthResponse {
   status: string;
@@ -235,6 +247,18 @@ export default function App() {
 
   const [activeOverlay, setActiveOverlay] = useState<OverlayKind>(null);
   const closeOverlay = useCallback(() => setActiveOverlay(null), []);
+
+  // --- Phase 6: centre-column view + editor "open this file" requests -----
+  const [centerView, setCenterView] = useState<CenterView>("terminals");
+  // Bumped every time the file tree or quick-open asks to open a file —
+  // Editor.tsx watches `requestId` (not just `path`) so re-clicking the
+  // SAME file (e.g. after closing its tab) still re-opens it, which a
+  // plain `path` prop's unchanged-value check would otherwise miss.
+  const [editorOpenRequest, setEditorOpenRequest] = useState<OpenFileRequest | null>(null);
+  const openFileInEditor = useCallback((path: string) => {
+    setCenterView("editor");
+    setEditorOpenRequest((prev) => ({ path, requestId: (prev?.requestId ?? 0) + 1 }));
+  }, []);
 
   // Load server health, the agent menu, and (once both resolve) the
   // sessions + workspaces needed to build the initial grid, once on mount.
@@ -738,6 +762,12 @@ export default function App() {
       },
       "prev-block": () => jumpBlock(-1),
       "next-block": () => jumpBlock(1),
+      "view-terminals": () => setCenterView("terminals"),
+      "view-editor": () => setCenterView("editor"),
+      "view-preview": () => setCenterView("preview"),
+      "quick-open": () => {
+        if (activeWorkspaceId) setActiveOverlay("quickOpen");
+      },
     };
     // The nine "focus pane N" shortcuts all share one handler shape, keyed
     // off `paneIndex` (see keymap.ts) instead of writing out
@@ -758,6 +788,7 @@ export default function App() {
     focusedPaneId,
     toggleMaximize,
     jumpBlock,
+    activeWorkspaceId,
   ]);
 
   // Disabled entirely while any overlay is open — otherwise e.g. Cmd+D would
@@ -897,10 +928,7 @@ export default function App() {
           flexShrink: 0,
         }}
       >
-        <span
-          aria-hidden
-          style={{ width: 8, height: 8, borderRadius: 2, background: "var(--vd-accent)", flexShrink: 0 }}
-        />
+        <Logo size={16} accent="var(--vd-accent)" />
         <strong style={{ fontSize: 13, fontWeight: 600, letterSpacing: "-0.01em", flexShrink: 0 }}>
           vibedeck
         </strong>
@@ -940,6 +968,47 @@ export default function App() {
         </span>
 
         <div style={{ flex: 1 }} />
+
+        {/* Phase 6: the centre-column view switcher — Terminals (the
+            existing grid) | Editor | Preview. See CenterView's doc comment
+            above for why all three stay mounted regardless of which is
+            visible. */}
+        <div
+          role="tablist"
+          aria-label="Centre column view"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 2,
+            background: "var(--vd-bg)",
+            border: "1px solid var(--vd-border)",
+            borderRadius: 4,
+            padding: 2,
+            flexShrink: 0,
+          }}
+        >
+          <ViewTabButton
+            active={centerView === "terminals"}
+            onClick={() => setCenterView("terminals")}
+            shortcut={formatShortcut(KEYMAP.find((s) => s.id === "view-terminals")!, isMac)}
+          >
+            Terminals
+          </ViewTabButton>
+          <ViewTabButton
+            active={centerView === "editor"}
+            onClick={() => setCenterView("editor")}
+            shortcut={formatShortcut(KEYMAP.find((s) => s.id === "view-editor")!, isMac)}
+          >
+            Editor
+          </ViewTabButton>
+          <ViewTabButton
+            active={centerView === "preview"}
+            onClick={() => setCenterView("preview")}
+            shortcut={formatShortcut(KEYMAP.find((s) => s.id === "view-preview")!, isMac)}
+          >
+            Preview
+          </ViewTabButton>
+        </div>
 
         <select
           value={defaultAgent}
@@ -1002,6 +1071,7 @@ export default function App() {
             onToggleCollapsed={toggleRailCollapsed}
             runningCount={workspacePaneCount}
             onSwitch={switchWorkspace}
+            onOpenFile={openFileInEditor}
             showCreateForm={showCreateForm}
             onOpenCreateForm={openCreateForm}
             newWorkspaceName={newWorkspaceName}
@@ -1073,22 +1143,42 @@ export default function App() {
                 </div>
               </div>
             ) : root ? (
-              <Grid
-                key={gridEpoch}
-                root={root}
-                sessions={sessions}
-                agents={agents}
-                defaultAgent={defaultAgent}
-                workspaceId={activeWorkspaceId}
-                theme={theme}
-                focusedPaneId={focusedPaneId}
-                onFocus={handleFocus}
-                onSessionStarted={handleSessionStarted}
-                onSplit={handleSplit}
-                onClosePane={handleClosePane}
-                maximizedPaneId={maximizedPaneId}
-                onToggleMaximize={toggleMaximize}
-              />
+              // Phase 6: all three centre-column views stay mounted at
+              // once, toggled with CSS `display` — NOT conditional
+              // rendering — so switching away from Terminals never
+              // disconnects a pane's WebSocket (it would reconnect and
+              // replay scrollback, which technically "works" since sessions
+              // are server-owned, but the reconnect churn is pointless per
+              // this phase's own instruction), and switching away from
+              // Editor never discards an open tab's unsaved buffer.
+              <div style={{ position: "relative", height: "100%" }}>
+                <div
+                  style={{ position: "absolute", inset: 0, display: centerView === "terminals" ? "block" : "none" }}
+                >
+                  <Grid
+                    key={gridEpoch}
+                    root={root}
+                    sessions={sessions}
+                    agents={agents}
+                    defaultAgent={defaultAgent}
+                    workspaceId={activeWorkspaceId}
+                    theme={theme}
+                    focusedPaneId={focusedPaneId}
+                    onFocus={handleFocus}
+                    onSessionStarted={handleSessionStarted}
+                    onSplit={handleSplit}
+                    onClosePane={handleClosePane}
+                    maximizedPaneId={maximizedPaneId}
+                    onToggleMaximize={toggleMaximize}
+                  />
+                </div>
+                <div style={{ position: "absolute", inset: 0, display: centerView === "editor" ? "block" : "none" }}>
+                  <Editor workspaceId={activeWorkspaceId} theme={theme} openRequest={editorOpenRequest} />
+                </div>
+                <div style={{ position: "absolute", inset: 0, display: centerView === "preview" ? "block" : "none" }}>
+                  <Preview />
+                </div>
+              </div>
             ) : (
               <div style={centeredStyle}>Loading…</div>
             )}
@@ -1119,7 +1209,44 @@ export default function App() {
         />
       )}
       {activeOverlay === "help" && <KeyboardCheatSheet onClose={closeOverlay} />}
+      {activeOverlay === "quickOpen" && (
+        <QuickOpen workspaceId={activeWorkspaceId} onClose={closeOverlay} onOpenFile={openFileInEditor} />
+      )}
     </div>
+  );
+}
+
+/** One button in the top bar's Terminals/Editor/Preview segmented control. */
+function ViewTabButton({
+  active,
+  onClick,
+  shortcut,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  shortcut: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      title={`${children} (${shortcut})`}
+      style={{
+        background: active ? "var(--vd-accent)" : "transparent",
+        color: active ? "var(--vd-accent-text)" : "var(--vd-text-muted)",
+        border: "none",
+        borderRadius: 3,
+        padding: "3px 10px",
+        fontSize: 11,
+        cursor: "pointer",
+      }}
+    >
+      {children}
+    </button>
   );
 }
 

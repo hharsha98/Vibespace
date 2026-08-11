@@ -15,6 +15,7 @@
     "@fastify/websocket": "^11.3.0",
     "@vibedeck/shared": "workspace:*",
     "better-sqlite3": "^11.8.1",
+    "chokidar": "^4.0.3",
     "fastify": "^5.2.1",
     "node-pty": "^1.1.0"
   },

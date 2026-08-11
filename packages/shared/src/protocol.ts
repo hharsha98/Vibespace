@@ -112,3 +112,51 @@ export interface Workspace {
   /** ISO 8601 UTC timestamp string, updated on every create/update. */
   updatedAt: string;
 }
+
+/**
+ * Phase 6 (file tree / editor / preview) types. Every one of these describes
+ * a file *inside a workspace's rootPath*, referenced by a workspace-relative
+ * path — never an absolute filesystem path. The server is the only side that
+ * ever turns one of these relative paths into a real, absolute path (see
+ * `apps/server/src/files/safe-path.ts`'s `safeResolve`), and it always
+ * re-validates that translation against the workspace root, no matter how
+ * trustworthy the caller seems — this file itself carries no Node APIs (it's
+ * imported by the browser bundle), so it can't do that validation; it only
+ * describes the wire shapes both sides agree on.
+ */
+
+/** One entry in a directory listing — `GET /api/files/tree`. */
+export interface FileEntry {
+  /** Just the entry's own name, e.g. "index.ts" (not a path). */
+  name: string;
+  /** Workspace-relative path, e.g. "src/index.ts". Uses forward slashes. */
+  path: string;
+  kind: "file" | "dir";
+}
+
+/** Response body for `GET /api/files/tree` — one directory level, sorted
+ * directories-first then alphabetically (case-insensitive) within each. */
+export interface FileTreeResponse {
+  entries: FileEntry[];
+}
+
+/** Response body for `GET /api/files/content`. `truncated` is always false
+ * today — the server refuses (413) anything over 2MB rather than silently
+ * truncating it, but the field is reserved in case that policy ever
+ * changes to "truncate and say so" instead of "refuse". */
+export interface FileContentResponse {
+  path: string;
+  content: string;
+  truncated: boolean;
+}
+
+/**
+ * One live filesystem change, streamed over `GET /api/files/watch`
+ * (WebSocket) while a workspace's file tree is open. `path` is always
+ * workspace-relative, debounced ~100ms per path so a burst of writes to the
+ * same file (e.g. a formatter running) collapses into a single event.
+ */
+export type FileWatchEvent =
+  | { type: "add"; path: string }
+  | { type: "change"; path: string }
+  | { type: "unlink"; path: string };
