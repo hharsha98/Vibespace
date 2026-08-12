@@ -4,20 +4,26 @@
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
+  "bin": {
+    "vibedeck-memory-mcp": "./dist/memory/mcp-server.js"
+  },
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc && mkdir -p dist/pty/shell-integration && cp src/pty/shell-integration/vibedeck-integration.zsh dist/pty/shell-integration/",
     "test": "vitest run",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "memory-mcp": "tsx src/memory/mcp-server.ts"
   },
   "dependencies": {
     "@fastify/websocket": "^11.3.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@vibedeck/shared": "workspace:*",
     "better-sqlite3": "^11.8.1",
     "chokidar": "^4.0.3",
     "fastify": "^5.2.1",
-    "node-pty": "^1.1.0"
+    "node-pty": "^1.1.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",

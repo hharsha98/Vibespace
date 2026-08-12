@@ -206,6 +206,21 @@ export const KEYMAP: readonly Shortcut[] = [
     description: "Fuzzy-find and open a file from the active workspace.",
     key: "p",
   },
+  // Phase 8: the memory Graph joins the same centre-column switcher. "g" is
+  // already Terminals (see the view-terminals comment above) — same
+  // "unshifted letter already spoken for, so its Shift sibling is free"
+  // move Phase 7 made for the board (Cmd+K -> Cmd+Shift+K). Verified by
+  // hand in Chrome (not assumed, per this phase's own instruction, after
+  // Cmd+J burned an earlier phase): Cmd+Shift+G is Chrome's "Find Previous"
+  // binding, but that combo is a no-op with no find session active and
+  // does not swallow the keydown before it reaches the page.
+  {
+    id: "view-graph",
+    label: "View: Memory graph",
+    description: "Show the memory note graph in the centre column.",
+    key: "g",
+    shift: true,
+  },
 ];
 
 /**

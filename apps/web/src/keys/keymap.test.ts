@@ -78,12 +78,15 @@ describe("matchShortcut", () => {
     expect(matchShortcut(key({ key: "k" }), true)).toBeNull();
   });
 
-  it("matches Cmd+G/E/B and Cmd+Shift+K to the four centre-column view switchers", () => {
+  it("matches Cmd+G/E/B, Cmd+Shift+K, and Cmd+Shift+G to the five centre-column view switchers", () => {
     expect(matchShortcut(key({ key: "g", metaKey: true }), true)).toBe("view-terminals");
     expect(matchShortcut(key({ key: "e", metaKey: true }), true)).toBe("view-editor");
     expect(matchShortcut(key({ key: "b", metaKey: true }), true)).toBe("view-preview");
     expect(matchShortcut(key({ key: "k", metaKey: true, shiftKey: true }), true)).toBe(
       "view-board"
+    );
+    expect(matchShortcut(key({ key: "g", metaKey: true, shiftKey: true }), true)).toBe(
+      "view-graph"
     );
   });
 

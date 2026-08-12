@@ -37,6 +37,8 @@ import Editor, { type OpenFileRequest } from "./files/Editor.js";
 import Preview from "./files/Preview.js";
 import QuickOpen from "./files/QuickOpen.js";
 import Board from "./board/Board.js";
+import Graph from "./memory/Graph.js";
+import type { OpenNoteRequest } from "./memory/MemoryPanel.js";
 
 /** Which full-screen overlay (if any) is currently open. Only one at a
  * time — opening a new one implicitly replaces whichever was open, and
@@ -52,7 +54,7 @@ type OverlayKind = "palette" | "theme" | "help" | "quickOpen" | null;
  * which one is visible — so switching views never disconnects a running
  * terminal's WebSocket, never discards an editor tab's unsaved buffer, and
  * never re-fetches the board's card list on every switch either. */
-type CenterView = "terminals" | "editor" | "preview" | "board";
+type CenterView = "terminals" | "editor" | "preview" | "board" | "graph";
 
 interface HealthResponse {
   status: string;
@@ -260,6 +262,22 @@ export default function App() {
   const openFileInEditor = useCallback((path: string) => {
     setCenterView("editor");
     setEditorOpenRequest((prev) => ({ path, requestId: (prev?.requestId ?? 0) + 1 }));
+  }, []);
+
+  // --- Phase 8: memory Graph "click a node" -> Memory tab -------------------
+  // Bumped whenever the Graph view wants the right dock's Memory tab to show
+  // a specific note — RightDock.tsx forwards this to MemoryPanel.tsx, whose
+  // own useEffect (same bumped-requestId pattern as editorOpenRequest above)
+  // reacts by fetching and displaying that note.
+  const [openNoteRequest, setOpenNoteRequest] = useState<OpenNoteRequest | null>(null);
+  const openNoteInMemoryTab = useCallback((slug: string) => {
+    // Switching tabs is useless if the dock itself is collapsed — force it
+    // open the same way toggleDockCollapsed would, so clicking a graph node
+    // always actually shows something rather than silently updating a
+    // panel nobody can see.
+    setDockCollapsedState(false);
+    saveBoolPref(DOCK_COLLAPSED_KEY, false);
+    setOpenNoteRequest((prev) => ({ slug, requestId: (prev?.requestId ?? 0) + 1 }));
   }, []);
 
   // Load server health, the agent menu, and (once both resolve) the
@@ -818,6 +836,7 @@ export default function App() {
       "view-editor": () => setCenterView("editor"),
       "view-preview": () => setCenterView("preview"),
       "view-board": () => setCenterView("board"),
+      "view-graph": () => setCenterView("graph"),
       "quick-open": () => {
         if (activeWorkspaceId) setActiveOverlay("quickOpen");
       },
@@ -1068,6 +1087,13 @@ export default function App() {
           >
             Board
           </ViewTabButton>
+          <ViewTabButton
+            active={centerView === "graph"}
+            onClick={() => setCenterView("graph")}
+            shortcut={formatShortcut(KEYMAP.find((s) => s.id === "view-graph")!, isMac)}
+          >
+            Graph
+          </ViewTabButton>
         </div>
 
         <select
@@ -1248,6 +1274,13 @@ export default function App() {
                     onFocusSession={focusSessionInGrid}
                   />
                 </div>
+                <div style={{ position: "absolute", inset: 0, display: centerView === "graph" ? "block" : "none" }}>
+                  <Graph
+                    workspaceId={activeWorkspaceId}
+                    onOpenNote={openNoteInMemoryTab}
+                    visible={centerView === "graph"}
+                  />
+                </div>
               </div>
             ) : (
               <div style={centeredStyle}>Loading…</div>
@@ -1261,6 +1294,8 @@ export default function App() {
             agents={agents}
             workspaceSessions={activeWorkspace ? sessionsForWorkspace(activeWorkspace) : []}
             focusedSession={focusedSession}
+            workspaceId={activeWorkspaceId}
+            openNoteRequest={openNoteRequest}
           />
         )}
       </div>

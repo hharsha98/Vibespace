@@ -8,6 +8,7 @@ import { BoardStore } from "./db/board.js";
 import { resolveRootPath } from "./workspace-path.js";
 import { registerFileRoutes } from "./files/routes.js";
 import { registerBoardRoutes } from "./board/routes.js";
+import { registerMemoryRoutes } from "./memory/routes.js";
 
 const VERSION = "0.0.0";
 const PORT = 4317;
@@ -63,6 +64,10 @@ export function buildApp(options: BuildAppOptions = {}) {
   // Phase 7: the board — CRUD for cards plus the agent-dispatch action. See
   // board/routes.ts's top comment for why this is its own module too.
   registerBoardRoutes(app, { workspaceStore, boardStore, sessionManager, serverPort: PORT });
+
+  // Phase 8: shared agent memory — CRUD for markdown notes plus the link
+  // graph. See memory/routes.ts's top comment.
+  registerMemoryRoutes(app, { workspaceStore });
 
   app.get("/api/health", async () => ({
     status: "ok" as const,

@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { SessionInfo, Workspace } from "@vibedeck/shared";
 import type { AgentOption } from "../grid/PaneView.js";
 import { formatBlockDuration, type CommandBlock } from "../term/blocks.js";
 import { scrollSessionToLine, useSessionBlocks } from "../term/blockStore.js";
+import MemoryPanel, { type OpenNoteRequest } from "../memory/MemoryPanel.js";
 import { ListRow, Pill, type StatusKind } from "./ui.js";
 
 export const DOCK_WIDTH = 320;
@@ -18,15 +19,21 @@ interface RightDockProps {
    * pane is focused / the focused pane is empty. Drives the "Blocks" tab —
    * it always shows THIS pane's command blocks, not some fixed pane. */
   focusedSession: SessionInfo | null;
+  /** Bumped by App.tsx (from the Graph view, see Graph.tsx) to say "switch
+   * to the Memory tab and show this note" — same pattern as Editor.tsx's
+   * `openRequest`. Forwarded straight down to MemoryPanel; this component's
+   * own job is just noticing it arrived and switching `activeTab` for it. */
+  openNoteRequest: OpenNoteRequest | null;
+  workspaceId: string | null;
 }
 
 /** Which of the right dock's tabs is showing. */
-type DockTab = "info" | "blocks";
+type DockTab = "info" | "blocks" | "memory";
 
 /**
- * The right dock: a tabbed shell per docs/DESIGN.md §1. Ships with two real
- * tabs — "Info" and "Blocks" (Phase 5) — with Board/Memory/Skills
- * (Phases 7/8/10) still to come. Collapsed/hidden by default (see
+ * The right dock: a tabbed shell per docs/DESIGN.md §1. Ships with three
+ * real tabs — "Info", "Blocks" (Phase 5), and "Memory" (Phase 8) — with
+ * Board/Skills (Phases 7/10) still to come. Collapsed/hidden by default (see
  * App.tsx's `dockCollapsed` state) — this component only renders the
  * panel's CONTENTS; App.tsx decides whether to mount it at all.
  *
@@ -39,9 +46,19 @@ export default function RightDock({
   agents,
   workspaceSessions,
   focusedSession,
+  openNoteRequest,
+  workspaceId,
 }: RightDockProps) {
   const [activeTab, setActiveTab] = useState<DockTab>("info");
   const runningCount = workspaceSessions.filter((s) => s.status === "running").length;
+
+  // The Graph view asking to open a note (a bumped requestId, see
+  // MemoryPanel's own top comment) always means "and show me the Memory
+  // tab too" — the request would otherwise land on a tab nobody's looking
+  // at.
+  useEffect(() => {
+    if (openNoteRequest) setActiveTab("memory");
+  }, [openNoteRequest]);
 
   return (
     <div
@@ -71,9 +88,14 @@ export default function RightDock({
           active={activeTab === "blocks"}
           onClick={() => setActiveTab("blocks")}
         />
+        <DockTabButton
+          label="Memory"
+          active={activeTab === "memory"}
+          onClick={() => setActiveTab("memory")}
+        />
       </div>
 
-      {activeTab === "info" ? (
+      {activeTab === "info" && (
         <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 16 }}>
           <Section title="Directory">
             {activeWorkspace ? (
@@ -124,9 +146,15 @@ export default function RightDock({
             </div>
           </Section>
         </div>
-      ) : (
+      )}
+      {activeTab === "blocks" && (
         <div style={{ padding: 12 }}>
           <BlocksPanel session={focusedSession} />
+        </div>
+      )}
+      {activeTab === "memory" && (
+        <div style={{ padding: 12 }}>
+          <MemoryPanel workspaceId={workspaceId} openNoteRequest={openNoteRequest} />
         </div>
       )}
     </div>

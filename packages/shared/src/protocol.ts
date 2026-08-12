@@ -224,3 +224,68 @@ export interface BoardCard {
   /** ISO 8601 UTC timestamp string, updated on every create/update/move. */
   updatedAt: string;
 }
+
+/**
+ * Phase 8 (shared agent memory) types. A `MemoryNote` is a markdown file on
+ * disk at `<workspace>/.vibedeck/memory/<slug>.md` — see
+ * `apps/server/src/memory/store.ts` for the store and `docs/MEMORY.md` for
+ * the wikilink convention and MCP server that expose these same notes to
+ * coding agents. Every field here is what's stored in the file's
+ * frontmatter (or, for `body`, what comes after it) — there is no database
+ * row behind this, unlike `Workspace`/`BoardCard` above.
+ */
+export interface MemoryNote {
+  /** Derived from the title (lowercase, non-alphanumerics collapsed to
+   * "-"), unique within a workspace, and immutable once created — links
+   * (`[[slug]]`) and backlinks are keyed on this, not on `title`, so
+   * renaming a note's title never breaks a link pointing at it. */
+  slug: string;
+  title: string;
+  tags: string[];
+  /** Markdown body, may contain `[[other-slug]]` wikilinks. */
+  body: string;
+  /** ISO 8601 UTC timestamp string. */
+  createdAt: string;
+  /** ISO 8601 UTC timestamp string, updated on every create/update. */
+  updatedAt: string;
+}
+
+/** `GET /api/memory/notes/:slug` response — a note plus the slugs of every
+ * OTHER note that links to it (computed from the whole workspace's link
+ * graph at request time, not stored on the note itself). */
+export interface MemoryNoteWithBacklinks extends MemoryNote {
+  backlinks: string[];
+}
+
+/** `GET /api/memory/notes` response. */
+export interface MemoryNotesResponse {
+  notes: MemoryNote[];
+}
+
+/** One node in the memory graph (`GET /api/memory/graph`) — either a real
+ * note, or a "dangling" target: a `[[slug]]` link that exists in some
+ * note's body but has no note written for it yet. `dangling` is what lets
+ * the Graph view (docs/DESIGN.md §5) render the two differently and offer
+ * a "create this note" affordance for the latter. */
+export interface MemoryGraphNode {
+  slug: string;
+  /** For a dangling node, this is just the slug — there's no note to read
+   * a real title from. */
+  title: string;
+  dangling: boolean;
+}
+
+/** One edge in the memory graph: `source` note links to `target` (a slug).
+ * `dangling` mirrors the target node's own `dangling` flag, duplicated here
+ * so an edge-drawing loop doesn't need to cross-reference the node list. */
+export interface MemoryGraphEdge {
+  source: string;
+  target: string;
+  dangling: boolean;
+}
+
+/** `GET /api/memory/graph` response. */
+export interface MemoryGraphResponse {
+  nodes: MemoryGraphNode[];
+  edges: MemoryGraphEdge[];
+}
