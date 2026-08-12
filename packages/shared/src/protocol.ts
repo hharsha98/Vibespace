@@ -289,3 +289,174 @@ export interface MemoryGraphResponse {
   nodes: MemoryGraphNode[];
   edges: MemoryGraphEdge[];
 }
+
+/**
+ * Phase 9a (swarm core) types. A `Mission` is a prompt split across several
+ * dispatched agent sessions (`MissionAgent`s), coordinating over a shared
+ * mailbox (`MissionMessage`) and a file-ownership ledger (`FileClaim`). See
+ * `apps/server/src/swarm/*.ts` for the stores that own these, and
+ * `docs/SWARM.md` for the REST surface. Every field here is Node-free, same
+ * "wire shapes only" rule as the rest of this file.
+ */
+
+/** Which of the four swarm roles a `MissionAgent` plays. A coordinator
+ * splits work and synthesises results; a builder writes code (and MUST hold
+ * a `FileClaim` before editing a path — see `apps/server/src/swarm/claims.ts`);
+ * a scout explores/reads but never edits; a reviewer reviews but never
+ * edits. */
+export type MissionRole = "coordinator" | "builder" | "scout" | "reviewer";
+
+/** Runtime array of every `MissionRole`, for validating request bodies —
+ * same "type + runtime array kept in sync by hand" pattern as `AGENT_IDS`. */
+export const MISSION_ROLES: readonly MissionRole[] = ["coordinator", "builder", "scout", "reviewer"];
+
+export type MissionStatus = "running" | "paused" | "complete" | "stopped";
+
+/** Runtime array of every `MissionStatus`, for validating `PATCH
+ * /api/swarm/missions/:id` request bodies — same "type + runtime array
+ * kept in sync by hand" pattern as `CARD_PRIORITIES`/`COLUMN_IDS`. */
+export const MISSION_STATUSES: readonly MissionStatus[] = ["running", "paused", "complete", "stopped"];
+
+export interface Mission {
+  id: string;
+  workspaceId: string;
+  prompt: string;
+  status: MissionStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type MissionAgentStatus = "idle" | "working" | "blocked" | "done" | "failed";
+
+/** One dispatched agent within a mission — a pty session running with a
+ * role-specific preamble typed in (see `apps/server/src/swarm/roles.ts`). */
+export interface MissionAgent {
+  id: string;
+  missionId: string;
+  role: MissionRole;
+  /** Human-facing label, e.g. "Builder 2". */
+  label: string;
+  agent: AgentId;
+  /** Set once a pty session has actually been spawned for this agent. */
+  sessionId: string | null;
+  status: MissionAgentStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** One mailbox message. `fromAgentId`/`toAgentId` null mean "from the
+ * human"/"broadcast to every agent", the same NULL-means-unaddressed
+ * convention as `mission_messages`'s schema. */
+export interface MissionMessage {
+  id: string;
+  missionId: string;
+  fromAgentId: string | null;
+  toAgentId: string | null;
+  body: string;
+  createdAt: string;
+}
+
+/**
+ * A file-ownership claim: `agentId` holds `path` (workspace-relative,
+ * POSIX-separated, normalised — see `swarm/claims.ts`'s `normalizeClaimPath`)
+ * within `missionId`. `lastHeartbeatAt` is what staleness is judged
+ * against, not `claimedAt` — see schema.ts's comment on the `file_claims`
+ * table for why the two are separate columns.
+ */
+export interface FileClaim {
+  id: string;
+  missionId: string;
+  path: string;
+  agentId: string;
+  claimedAt: string;
+  lastHeartbeatAt: string;
+}
+
+/**
+ * A DETECTED (not prevented) collision: `path` changed on disk while
+ * `holderAgentId` held the claim on it but — implicitly, since a conflict is
+ * only ever recorded for a change some OTHER agent made — the write did not
+ * come from that holder. This registry can only stop *cooperating* agents;
+ * this row is the evidence when one didn't cooperate. See
+ * `apps/server/src/swarm/watch.ts`'s top comment.
+ */
+export interface ClaimConflict {
+  id: string;
+  missionId: string;
+  path: string;
+  holderAgentId: string;
+  detectedAt: string;
+}
+
+/** `GET /api/swarm/missions/:id` response — a mission plus everything
+ * hanging off it, so the (future, Phase 9b) mission canvas can render the
+ * whole tree from one request. */
+export interface MissionDetail {
+  mission: Mission;
+  agents: MissionAgent[];
+  messages: MissionMessage[];
+  claims: FileClaim[];
+  conflicts: ClaimConflict[];
+  tasks: MissionTask[];
+}
+
+/** `POST /api/swarm/missions/:id/gates` response. Output is captured
+ * combined stdout+stderr, capped at 64KB — see `apps/server/src/swarm/gates.ts`. */
+export interface GateResult {
+  passed: boolean;
+  exitCode: number | null;
+  output: string;
+}
+
+/**
+ * A mission_task: a unit of work with DECLARED paths (what it expects to
+ * touch, known up front) — the input to `swarm/schedule.ts`'s
+ * `planSchedule`, which groups non-overlapping tasks into waves that can
+ * run concurrently. This is a SEQUENCING layer, complementary to (not a
+ * replacement for) `FileClaim`: sequencing prevents planned collisions
+ * before any agent even starts; claims catch unplanned collisions at
+ * claim-time; `ClaimConflict` detects what neither stopped. See
+ * docs/SWARM.md for the full three-layer story — none of the three make
+ * agents "never collide"; each catches what the one before it couldn't.
+ */
+export type MissionTaskStatus = "pending" | "running" | "in_review" | "complete" | "blocked";
+
+/** Runtime array of every `MissionTaskStatus` — same "type + runtime
+ * array" pattern as `MISSION_STATUSES`. */
+export const MISSION_TASK_STATUSES: readonly MissionTaskStatus[] = [
+  "pending",
+  "running",
+  "in_review",
+  "complete",
+  "blocked",
+];
+
+export interface MissionTask {
+  id: string;
+  missionId: string;
+  title: string;
+  prompt: string;
+  /** Workspace-relative paths this task expects to touch. Used ONLY for
+   * scheduling (grouping non-overlapping tasks into the same wave) — it is
+   * not itself a claim and does not reserve anything; the assigned agent
+   * still has to call the claims API for real ownership. */
+  declaredPaths: string[];
+  status: MissionTaskStatus;
+  assignedAgentId: string | null;
+  /** null until a reviewer has weighed in; then true (approved, task moved
+   * to 'complete') or false (rejected, task moved back to 'blocked'). The
+   * ONLY way this task's status becomes 'complete' is through this field
+   * being set true via the review endpoint — see `swarm/tasks.ts`. */
+  reviewApproved: boolean | null;
+  reviewNotes: string | null;
+  reviewedByAgentId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** `GET /api/swarm/missions/:id/tasks/schedule` response — the mission's
+ * current tasks grouped into waves (`waves[0]` = wave 1, the first batch
+ * safe to run concurrently), each wave an array of task ids. */
+export interface TaskScheduleResponse {
+  waves: string[][];
+}

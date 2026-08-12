@@ -125,6 +125,6 @@ export function buildDispatchPrompt(
  * separate half-prompts instead of one whole one. Exactly one trailing
  * newline is added by the caller, and that one is the deliberate submit.
  */
-function toSingleLine(text: string): string {
+export function toSingleLine(text: string): string {
   return text.replace(/\s*\n+\s*/g, " ").trim();
 }

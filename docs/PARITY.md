@@ -77,12 +77,12 @@ Legend: ✅ done · 🟡 partial · ⛔ not started · 🚫 not possible as spec
 | 28 | Shared agent memory | ✅ | Phase 8 |
 | 29 | Memory shared with every agent over MCP | ✅ | Phase 8 |
 | 30 | Memory as a linked graph with backlinks | ✅ | Phase 8 |
-| 31 | **Swarm: roles (coordinator/builder/scout/reviewer)** | ⛔ | Phase 9 |
-| 32 | **Swarm: shared mailbox between agents** | ⛔ | Phase 9 |
-| 33 | **Swarm: file ownership, no two agents on one file** | ⛔ | Phase 9 |
-| 34 | **Swarm: quality gates** | ⛔ | Phase 9 |
-| 35 | **Swarm: live mission tree canvas** | ⛔ | Phase 9 |
-| 36 | **Swarm: @-target one agent, or all, from one bar** | ⛔ | Phase 9 |
+| 31 | **Swarm: roles (coordinator/builder/scout/reviewer)** | ✅ | Phase 9a, server-side; `docs/SWARM.md` |
+| 32 | **Swarm: shared mailbox between agents** | ✅ | Phase 9a |
+| 33 | **Swarm: file ownership, no two agents on one file** | ✅ | Phase 9a — three layers (task sequencing, DB-arbitrated claims, conflict-detection watcher), all **cooperative**, not OS-enforced; see `docs/SWARM.md`'s honesty table for exactly what each layer can and can't guarantee |
+| 34 | **Swarm: quality gates** | ✅ | Phase 9a |
+| 35 | **Swarm: live mission tree canvas** | ⛔ | Phase 9b — needs a UI, not built yet; the REST API it will render is done |
+| 36 | **Swarm: @-target one agent, or all, from one bar** | ⛔ | Phase 9b — the underlying "send to one agent or broadcast" mailbox API exists; the UI command bar doesn't |
 | 37 | **Skills: drag a skill onto a running pane** | ⛔ | Phase 10. Their skills follow the open `agentskills.io` standard — implement that rather than a private format. See `RESEARCH.md` §4. |
 
 ## Workspaces
@@ -122,13 +122,18 @@ Legend: ✅ done · 🟡 partial · ⛔ not started · 🚫 not possible as spec
 ## Remaining work, in order
 
 **Phase 9 — Swarm** (#31–36). The largest piece. Split in two:
-- *9a, server:* missions, roles, mailbox, file-ownership registry, quality
-  gates, REST API, agent docs. The ownership registry must be arbitrated by a
-  database uniqueness constraint, not a check-then-write, or two agents will
-  eventually claim the same file.
-- *9b, canvas:* the live mission tree — dotted canvas, role-coloured nodes and
-  curved edges, zoom controls, and a single command bar that can address one
-  agent or all of them.
+- *9a, server (done — #31–34):* missions, roles, task sequencing (declared
+  paths → waves, reviewer-gated completion), mailbox, file-claims registry,
+  conflict-detection watcher, quality gates, REST API, agent docs
+  (`docs/SWARM.md`). The claims registry is arbitrated by a database
+  uniqueness constraint, not a check-then-write — two agents racing the same
+  claim always resolve to exactly one winner. Ownership overall is
+  **cooperative across all three layers**, not OS-enforced; see
+  `docs/SWARM.md`'s honesty table.
+- *9b, canvas (not started — #35–36):* the live mission tree — dotted
+  canvas, role-coloured nodes and curved edges, zoom controls, and a single
+  command bar that can address one agent or all of them. The REST API this
+  renders already exists.
 
 **Phase 9.5 — Parity sweep.** The scattered gaps that don't belong to a big
 feature. Ordered by how much they change daily use:

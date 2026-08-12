@@ -13,6 +13,7 @@ import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { migrate } from "./migrations.js";
 
 /** Where the database file lives. Reads `VIBEDECK_DATA_DIR` fresh on every
  * call (not cached at module load) so tests can set the env var right
@@ -25,53 +26,30 @@ const DB_FILENAME = "vibedeck.db";
 
 /**
  * Opens (creating if necessary) the vibedeck SQLite database, ensuring the
- * data directory exists and the `workspaces` table is present. Safe to call
- * more than once — `CREATE TABLE IF NOT EXISTS` makes table creation
- * idempotent, and each call opens its own `Database` handle.
+ * data directory exists and every table is present *and up to date*. Safe
+ * to call more than once — `migrate()` (see `./migrations.ts`) tracks the
+ * database's schema version via `PRAGMA user_version` and only applies
+ * migrations the database hasn't seen yet, so repeated calls are a no-op
+ * once the database is current.
+ *
+ * The actual `CREATE TABLE` / `ALTER TABLE` statements live in
+ * `migrations.ts`, not here — see that file's top comment for why
+ * `CREATE TABLE IF NOT EXISTS` alone isn't enough once a table's definition
+ * has grown a new column after some databases already exist.
  */
 export function openDatabase(): Database.Database {
   const dir = getDataDir();
   mkdirSync(dir, { recursive: true });
 
-  const db = new Database(join(dir, DB_FILENAME));
+  const dbPath = join(dir, DB_FILENAME);
+  const db = new Database(dbPath);
   // WAL (write-ahead logging) lets reads and writes avoid blocking each
   // other and is the recommended mode for better-sqlite3 outside of
   // in-memory/test-only databases; it also survives fine for a single-file,
   // single-process app like this one.
   db.pragma("journal_mode = WAL");
 
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS workspaces (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      root_path TEXT NOT NULL,
-      layout TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-
-  // Phase 7: the board. `position` is a fractional index (see board.ts's top
-  // comment for why) rather than an integer row number, so inserting a card
-  // between two neighbours never has to renumber the rest of the column.
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS board_cards (
-      id TEXT PRIMARY KEY,
-      workspace_id TEXT NOT NULL,
-      title TEXT NOT NULL,
-      description TEXT,
-      priority TEXT NOT NULL,
-      column_id TEXT NOT NULL,
-      position REAL NOT NULL,
-      session_id TEXT,
-      agent TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `);
-  db.exec(
-    `CREATE INDEX IF NOT EXISTS idx_board_cards_workspace ON board_cards(workspace_id, column_id, position)`
-  );
+  migrate(db, dbPath);
 
   return db;
 }

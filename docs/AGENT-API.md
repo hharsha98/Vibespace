@@ -223,3 +223,87 @@ error.
 Same conventions as the board endpoints above: `400` for a missing/invalid
 field (`workspaceId`, an empty `title`, non-string `tags`), `404` for an
 unknown `workspaceId` or note `slug`. The body is `{ "error": "..." }`.
+
+## Swarm (Phase 9a)
+
+If you were dispatched as part of a **mission** rather than a single board
+card, you were spawned with a role preamble (coordinator/builder/scout/
+reviewer) naming your own agent id and the mission's mailbox URL. Full
+reference, including the data model and REST bodies, is
+[docs/SWARM.md](./SWARM.md); this section is the "what you, the dispatched
+agent, actually need to do" summary.
+
+**Be honest with yourself about what file ownership here actually is.**
+It is **cooperative**, not enforced by the operating system: sequencing
+(declared task paths → waves) keeps you from being scheduled against a
+task that plans to touch the same file; the claims API catches an
+unplanned collision if you and another agent both reach for a path nobody
+sequenced against; a filesystem watcher detects — after the fact — a
+claimed file changing on disk, whether that was legitimate or not. None of
+that makes two agents *physically unable* to collide — it only works if
+you (a builder) actually call the claims API before editing. Skipping it
+is not a shortcut; it's how you become the collision the watcher then has
+to flag.
+
+### If you're a builder: claim before you edit
+
+```bash
+curl -s -X POST http://localhost:4317/api/swarm/missions/<MISSION_ID>/claims \
+  -H "Content-Type: application/json" \
+  -d '{"agentId":"<YOUR_AGENT_ID>","path":"src/foo.ts"}'
+```
+
+`201` means it's yours. `409` means someone else holds it — the response
+names them (`holder.agentId`); pick different work or ask over the
+mailbox, don't edit the file anyway. Release it when you're done:
+
+```bash
+curl -s -X DELETE http://localhost:4317/api/swarm/missions/<MISSION_ID>/claims \
+  -H "Content-Type: application/json" \
+  -d '{"agentId":"<YOUR_AGENT_ID>","path":"src/foo.ts"}'
+```
+
+If you're going to be working on the same file for a long stretch (more
+than 10 minutes without another claim call touching it), heartbeat it so
+it isn't treated as abandoned:
+
+```bash
+curl -s -X POST http://localhost:4317/api/swarm/missions/<MISSION_ID>/claims/heartbeat \
+  -H "Content-Type: application/json" -d '{"agentId":"<YOUR_AGENT_ID>"}'
+```
+
+### The mailbox
+
+```bash
+curl -s http://localhost:4317/api/swarm/missions/<MISSION_ID>/messages
+curl -s -X POST http://localhost:4317/api/swarm/missions/<MISSION_ID>/messages \
+  -H "Content-Type: application/json" \
+  -d '{"fromAgentId":"<YOUR_AGENT_ID>","body":"Status: claimed src/foo.ts, starting now."}'
+```
+
+Omit `toAgentId` to broadcast to every agent in the mission; set it to send
+directly to one (it's typed into that agent's terminal if it has a live
+session).
+
+### If you're a reviewer: approving/rejecting a task
+
+Only an agent whose `role` is `reviewer` in this mission can do this — a
+builder or scout calling it gets `403`.
+
+```bash
+curl -s -X POST http://localhost:4317/api/swarm/missions/<MISSION_ID>/tasks/<TASK_ID>/review \
+  -H "Content-Type: application/json" \
+  -d '{"reviewerAgentId":"<YOUR_AGENT_ID>","approved":true,"notes":"Looks good"}'
+```
+
+`approved:true` moves the task to `complete` — the ONLY way a task reaches
+that status. `approved:false` moves it back to `blocked` with your notes
+so the builder knows what to fix.
+
+### Error responses
+
+Same conventions as everywhere else in this API: `400` for a
+missing/invalid field, `404` for an unknown mission/task/agent id, `409`
+for a lost claim race (names the holder) or an unready task wave (names
+the blocking task ids), `403` for a non-reviewer trying to approve a task.
+Full REST reference: [docs/SWARM.md](./SWARM.md).

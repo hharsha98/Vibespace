@@ -9,6 +9,11 @@ import { resolveRootPath } from "./workspace-path.js";
 import { registerFileRoutes } from "./files/routes.js";
 import { registerBoardRoutes } from "./board/routes.js";
 import { registerMemoryRoutes } from "./memory/routes.js";
+import { MissionsStore } from "./swarm/missions.js";
+import { ClaimsStore } from "./swarm/claims.js";
+import { MailboxStore } from "./swarm/mailbox.js";
+import { TasksStore } from "./swarm/tasks.js";
+import { registerSwarmRoutes } from "./swarm/routes.js";
 
 const VERSION = "0.0.0";
 const PORT = 4317;
@@ -20,6 +25,14 @@ export interface BuildAppOptions {
   workspaceStore?: WorkspaceStore;
   /** Inject a BoardStore (mainly for tests). Defaults to a fresh one. */
   boardStore?: BoardStore;
+  /** Inject a MissionsStore (mainly for tests). Defaults to a fresh one. */
+  missionsStore?: MissionsStore;
+  /** Inject a ClaimsStore (mainly for tests). Defaults to a fresh one. */
+  claimsStore?: ClaimsStore;
+  /** Inject a MailboxStore (mainly for tests). Defaults to a fresh one. */
+  mailboxStore?: MailboxStore;
+  /** Inject a TasksStore (mainly for tests). Defaults to a fresh one. */
+  tasksStore?: TasksStore;
 }
 
 /**
@@ -32,13 +45,21 @@ export function buildApp(options: BuildAppOptions = {}) {
   const sessionManager = options.sessionManager ?? new SessionManager();
   const workspaceStore = options.workspaceStore ?? new WorkspaceStore();
   const boardStore = options.boardStore ?? new BoardStore();
+  const missionsStore = options.missionsStore ?? new MissionsStore();
+  const claimsStore = options.claimsStore ?? new ClaimsStore();
+  const mailboxStore = options.mailboxStore ?? new MailboxStore();
+  const tasksStore = options.tasksStore ?? new TasksStore();
 
   // Make the manager/store reachable from outside (tests call
-  // app.sessionManager/app.workspaceStore/app.boardStore directly to assert
-  // on state, and to tear down in test teardown).
+  // app.sessionManager/app.workspaceStore/app.boardStore/etc directly to
+  // assert on state, and to tear down in test teardown).
   app.decorate("sessionManager", sessionManager);
   app.decorate("workspaceStore", workspaceStore);
   app.decorate("boardStore", boardStore);
+  app.decorate("missionsStore", missionsStore);
+  app.decorate("tasksStore", tasksStore);
+  app.decorate("claimsStore", claimsStore);
+  app.decorate("mailboxStore", mailboxStore);
 
   // Kill every pty and close the database when the Fastify instance closes,
   // so `app.close()` in tests (and a real process shutdown) doesn't leave
@@ -48,6 +69,10 @@ export function buildApp(options: BuildAppOptions = {}) {
     sessionManager.disposeAll();
     workspaceStore.close();
     boardStore.close();
+    missionsStore.close();
+    claimsStore.close();
+    mailboxStore.close();
+    tasksStore.close();
     done();
   });
 
@@ -68,6 +93,18 @@ export function buildApp(options: BuildAppOptions = {}) {
   // Phase 8: shared agent memory — CRUD for markdown notes plus the link
   // graph. See memory/routes.ts's top comment.
   registerMemoryRoutes(app, { workspaceStore });
+
+  // Phase 9a: swarm core — missions, mailbox, file claims, conflicts, and
+  // quality gates. See swarm/routes.ts's top comment.
+  registerSwarmRoutes(app, {
+    workspaceStore,
+    missionsStore,
+    claimsStore,
+    mailboxStore,
+    tasksStore,
+    sessionManager,
+    serverPort: PORT,
+  });
 
   app.get("/api/health", async () => ({
     status: "ok" as const,
@@ -307,6 +344,10 @@ declare module "fastify" {
     sessionManager: SessionManager;
     workspaceStore: WorkspaceStore;
     boardStore: BoardStore;
+    missionsStore: MissionsStore;
+    claimsStore: ClaimsStore;
+    mailboxStore: MailboxStore;
+    tasksStore: TasksStore;
   }
 }
 
