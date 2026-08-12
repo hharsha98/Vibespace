@@ -43,6 +43,9 @@ Legend: ✅ done · 🟡 partial · ⛔ not started · 🚫 not possible as spec
 | 11 | **Inline image preview** (terminal image protocols) | ⛔ | Needs the xterm image addon wired up |
 | 12 | **Scroll-to-bottom floating indicator** | ⛔ | |
 | 13 | Sessions survive closing the window | ✅ | Better than parity — server-owned sessions |
+| 13a | **Per-pane prompt bar that queues while the agent works** | ⛔ | From their demo: each pane has its own input below the terminal reading "Claude Code is working — queue the next prompt…". You type there, not into the terminal. Significant workflow feature. |
+| 13b | **Git branch chip in the pane header** | ⛔ | Their header is `● agent · workspace  ⑂ main  ▣ ▤ ✕` |
+| 13c | **Pane header names the workspace as well as the agent** | ⛔ | We show the agent only |
 
 ## Editor and files
 
@@ -89,7 +92,9 @@ Legend: ✅ done · 🟡 partial · ⛔ not started · 🚫 not possible as spec
 | 38 | Multiple workspaces, each with its own layout | ✅ | Phase 3 — a rail rather than tabs; same capability |
 | 39 | Layout persists across restart | ✅ | Phase 3 |
 | 40 | Panes open in the workspace's directory | ✅ | Phase 3 |
-| 41 | **Colour-code a workspace** | ⛔ | |
+| 41 | **Colour-code a workspace** | ⛔ | Their demo shows a coloured glyph per workspace, and the active row carries a thick accent left edge |
+| 41a | **Board and Swarm live in the left rail, not the top bar** | 🟡 | Their rail lists workspaces *and* BridgeBoard *and* BridgeSwarm as sibling rows, each with its own coloured icon. We put Board/Graph in the top-bar view switcher. Same capability, different navigation model. |
+| 41b | **Workspace badge counts panes** | 🟡 | Theirs appears to count panes; ours counts running sessions |
 | 42 | Templates: 1/2/4/6/8/10/12/14/16 | ✅ | Phase 2 |
 
 ## Shell
@@ -126,10 +131,23 @@ Legend: ✅ done · 🟡 partial · ⛔ not started · 🚫 not possible as spec
   agent or all of them.
 
 **Phase 9.5 — Parity sweep.** The scattered gaps that don't belong to a big
-feature: terminal image preview (#11), scroll-to-bottom indicator (#12),
-split in the context menu (#9), file-tree drag and drop (#20), workspace
-colours (#41), a Settings screen (#45), the Agents page (#26) and the Prompts
-library (#27).
+feature. Ordered by how much they change daily use:
+
+1. **Per-pane prompt bar** (#13a) — the largest of these. Their demo makes it
+   the primary way you talk to an agent: a dedicated input under each pane
+   that accepts a prompt *while the agent is still working* and queues it.
+2. Agents page (#26) and Prompts library (#27) — shapes now known from
+   BridgeMCP's tool reference.
+3. `taskKnowledge` (#27b), `cancelled` state (#27a), board over MCP (#27c),
+   onboarding MCP prompt (#27d).
+4. Git branch chip (#13b) and workspace name (#13c) in the pane header.
+5. Workspace colours (#41), Settings screen (#45).
+6. Terminal image preview (#11), scroll-to-bottom indicator (#12), split in
+   the context menu (#9), file-tree drag and drop (#20).
+
+Navigation (#41a) is a judgement call rather than a gap: moving Board and
+Swarm into the left rail would match their model exactly. Worth doing for a
+faithful clone, but it is a restructure, not a missing feature.
 
 **Phase 10 — Skills** (#37).
 
