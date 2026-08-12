@@ -35,7 +35,7 @@ Legend: ✅ done · 🟡 partial · ⛔ not started · 🚫 not possible as spec
 | 3 | Resize panes by dragging | ✅ | Phase 2 |
 | 4 | GPU-accelerated rendering | ✅ | Phase 1; capped at 8 WebGL contexts, rest fall back |
 | 5 | Command block: command text, output, exit code, timestamp | ✅ | Phase 5, via OSC 133 |
-| 6 | Command blocks **collapsible** | 🚫 | xterm.js cannot hide buffer lines. We ship gutter markers, a block list, exit codes, durations and jump-to-block instead. Faking a collapse would be worse than not having one. |
+| 6 | Command blocks **collapsible** | ⛔ | Solved by a second renderer rather than fighting xterm: a per-pane Blocks view that reads each block's line range out of the buffer and renders it as collapsible HTML. Design in `COLLAPSIBLE-BLOCKS.md`. Phase 9.5. |
 | 7 | Search terminal output (⌘F) | ✅ | Phase 1 |
 | 8 | Context menu: copy / paste / clear | ✅ | Phase 1 |
 | 9 | Context menu: **split** entry | ⛔ | Split exists on the pane header, not in the right-click menu |
@@ -156,10 +156,21 @@ can claim ⌘T/⌘W/⌘N that a browser tab cannot.
 
 ## Where we will still differ when this is finished
 
-- **#6, collapsible command blocks** — a real limitation of the terminal
-  renderer, documented rather than faked.
-- **No account, no paid tier** — deliberate.
-- **Different theme names and our own logo** — deliberate.
+Only where you asked us to:
 
-Everything else on this list is reachable, and this file is the record of
-whether we got there.
+- **No account, no paid tier.** They gate workspace tabs, the kanban board,
+  agent configuration and the prompts library behind Pro. Ours are all free.
+- **Our own name, logo and theme set.** Community palettes rather than their
+  proprietary named list, and vibedeck's own mark.
+
+Everything functional on this list is reachable. Two items that were
+previously written off are now designed rather than abandoned:
+
+- **#6, collapsible blocks** — `COLLAPSIBLE-BLOCKS.md`. Not possible *inside*
+  xterm; entirely possible in a second renderer built from the block model.
+- **#31–36, the swarm** — `SWARM-MECHANISM.md`. Their mechanism is
+  unpublished, so we specified our own: wave scheduling, database-arbitrated
+  claims, conflict detection, quality gates, reviewer approval, stall
+  detection and failure escalation.
+
+This file is the record of whether we got there.
