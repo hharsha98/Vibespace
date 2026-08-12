@@ -221,6 +221,19 @@ export const KEYMAP: readonly Shortcut[] = [
     key: "g",
     shift: true,
   },
+  // Phase 9b: the swarm mission canvas joins the same centre-column
+  // switcher. "s" (the obvious Swarm mnemonic) is still free — none of the
+  // shortcuts above claim it — so unlike Board/Graph (whose natural letters
+  // were already taken and had to fall back to their Shift sibling), this
+  // one gets the plain unshifted key, same as Terminals/Editor/Preview's
+  // G/E/B. Verified by hand in Chrome, same "don't assume, check" discipline
+  // as every other shortcut in this table after the Cmd+J trap below.
+  {
+    id: "view-swarm",
+    label: "View: Swarm",
+    description: "Show the mission canvas in the centre column.",
+    key: "s",
+  },
 ];
 
 /**

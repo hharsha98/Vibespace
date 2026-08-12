@@ -1278,4 +1278,13 @@ export function applyThemeCssVars(theme: Theme): void {
   for (const key of Object.keys(CSS_VAR_NAMES) as (keyof UIPalette)[]) {
     root.style.setProperty(CSS_VAR_NAMES[key], theme.ui[key]);
   }
+  // Phase 9b's swarm canvas needs a "reviewer" role colour, and
+  // docs/DESIGN.md §2 gives it as one flat literal (`#c084fc`) rather than a
+  // per-theme token — no theme's `UIPalette` defines a "reviewer" colour of
+  // its own, unlike coordinator/builder/scout, which reuse the existing
+  // warn/ok/info status tokens. Setting it here, once, keeps that one
+  // literal in a single place while still letting every component read it
+  // as `var(--vd-role-reviewer)` instead of a hard-coded hex (see
+  // `swarm/logic.ts`'s `roleColorVar`).
+  root.style.setProperty("--vd-role-reviewer", "#c084fc");
 }

@@ -39,6 +39,7 @@ import QuickOpen from "./files/QuickOpen.js";
 import Board from "./board/Board.js";
 import Graph from "./memory/Graph.js";
 import type { OpenNoteRequest } from "./memory/MemoryPanel.js";
+import Swarm from "./swarm/Swarm.js";
 
 /** Which full-screen overlay (if any) is currently open. Only one at a
  * time — opening a new one implicitly replaces whichever was open, and
@@ -54,7 +55,7 @@ type OverlayKind = "palette" | "theme" | "help" | "quickOpen" | null;
  * which one is visible — so switching views never disconnects a running
  * terminal's WebSocket, never discards an editor tab's unsaved buffer, and
  * never re-fetches the board's card list on every switch either. */
-type CenterView = "terminals" | "editor" | "preview" | "board" | "graph";
+type CenterView = "terminals" | "editor" | "preview" | "board" | "graph" | "swarm";
 
 interface HealthResponse {
   status: string;
@@ -440,14 +441,44 @@ export default function App() {
   // to Terminals and focus whichever pane that session ended up attached
   // to (via handleSessionDispatched above, or wherever else it may have
   // landed since).
+  //
+  // Phase 9b reuses this SAME function for the swarm canvas's "Show
+  // terminal" action (see swarm/SidePanel.tsx) — but a mission agent's pty
+  // session is created entirely server-side (`swarm/dispatch.ts` calls
+  // `sessionManager.create` directly), unlike a board card's, which always
+  // gets attached to a pane client-side via `handleSessionDispatched`
+  // above at the moment it's dispatched. So a swarm agent's session ID
+  // never has a matching pane to find — the search below would silently
+  // do nothing. The fallback (attach to an empty pane, or split the
+  // focused one) is exactly `handleSessionDispatched`'s own logic, reused
+  // rather than forked, so "jump to this session's terminal" behaves
+  // identically everywhere it's offered, regardless of how that session
+  // came to exist.
   const focusSessionInGrid = useCallback(
     (sessionId: string) => {
       setCenterView("terminals");
       if (!root) return;
-      const pane = listPanes(root).find((p) => p.sessionId === sessionId);
-      if (pane) setFocusedPaneId(pane.id);
+      const panes = listPanes(root);
+      const existing = panes.find((p) => p.sessionId === sessionId);
+      if (existing) {
+        setFocusedPaneId(existing.id);
+        return;
+      }
+
+      const emptyPane = panes.find((p) => p.sessionId === null);
+      if (emptyPane) {
+        setRoot(attachSession(root, emptyPane.id, sessionId));
+        setFocusedPaneId(emptyPane.id);
+        return;
+      }
+      const target = panes.find((p) => p.id === focusedPaneId) ?? panes[0];
+      const split = splitPane(root, target.id, "row");
+      const beforeIds = new Set(panes.map((p) => p.id));
+      const newLeafId = listPanes(split).find((p) => !beforeIds.has(p.id))?.id;
+      setRoot(newLeafId ? attachSession(split, newLeafId, sessionId) : split);
+      if (newLeafId) setFocusedPaneId(newLeafId);
     },
-    [root]
+    [root, focusedPaneId]
   );
 
   const handleSplit = useCallback((paneId: PaneId, direction: Direction) => {
@@ -837,6 +868,7 @@ export default function App() {
       "view-preview": () => setCenterView("preview"),
       "view-board": () => setCenterView("board"),
       "view-graph": () => setCenterView("graph"),
+      "view-swarm": () => setCenterView("swarm"),
       "quick-open": () => {
         if (activeWorkspaceId) setActiveOverlay("quickOpen");
       },
@@ -1094,6 +1126,13 @@ export default function App() {
           >
             Graph
           </ViewTabButton>
+          <ViewTabButton
+            active={centerView === "swarm"}
+            onClick={() => setCenterView("swarm")}
+            shortcut={formatShortcut(KEYMAP.find((s) => s.id === "view-swarm")!, isMac)}
+          >
+            Swarm
+          </ViewTabButton>
         </div>
 
         <select
@@ -1279,6 +1318,14 @@ export default function App() {
                     workspaceId={activeWorkspaceId}
                     onOpenNote={openNoteInMemoryTab}
                     visible={centerView === "graph"}
+                  />
+                </div>
+                <div style={{ position: "absolute", inset: 0, display: centerView === "swarm" ? "block" : "none" }}>
+                  <Swarm
+                    workspaceId={activeWorkspaceId}
+                    agents={agents}
+                    visible={centerView === "swarm"}
+                    onFocusSession={focusSessionInGrid}
                   />
                 </div>
               </div>

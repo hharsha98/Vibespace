@@ -90,6 +90,10 @@ describe("matchShortcut", () => {
     );
   });
 
+  it("matches Cmd+S to view-swarm", () => {
+    expect(matchShortcut(key({ key: "s", metaKey: true }), true)).toBe("view-swarm");
+  });
+
   it("does not bind Cmd+J, which Chrome reserves for itself", () => {
     // The board was originally on Cmd+J. Chrome intercepts it before the
     // page ever sees the keydown, so the board never opened — the same trap
