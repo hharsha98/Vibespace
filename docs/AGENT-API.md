@@ -2,9 +2,16 @@
 
 You are a coding agent running inside a vibedeck terminal pane, dispatched
 to work on a specific board card. This page is the plain HTTP surface for
-finding and updating that card — no MCP server, no SDK, just `curl`. (An
-MCP server that wraps this same API is planned for a later phase; until
-then, this is the whole interface.)
+finding and updating that card — plain `curl`, no MCP client required. If
+you ARE connected to vibedeck over MCP (see docs/MEMORY.md's "The MCP
+server" section — the same server also exposes the board, agent profiles,
+and the prompts library as of Phase 9.5b), prefer its tools
+(`list_tasks`/`get_task`/`create_task`/`update_task` and friends) over
+these HTTP calls where available; they're the same underlying stores, just
+without needing to know your `workspaceId`. The MCP server also serves a
+`vibedeck_developer_guide` prompt that's a shorter, task-oriented version
+of everything on this page — ask your MCP client to insert it if you want
+the condensed version.
 
 The server listens on `http://localhost:4317` by default.
 
@@ -55,8 +62,10 @@ Response:
 }
 ```
 
-`columnId` is one of `todo`, `in_progress`, `in_review`, `complete` — the
-board's four columns, always in that order.
+`columnId` is one of `todo`, `in_progress`, `in_review`, `complete`, or
+`cancelled` — the board's five columns, always in that order. `cancelled`
+is a terminal state for a task that got abandoned rather than finished;
+see "What NOT to do" below for when it's appropriate to use it.
 
 ## Look up your own card
 
@@ -92,9 +101,10 @@ send only what you're changing):
 | Field | Type | Notes |
 |---|---|---|
 | `title` | string | Must be non-empty. |
-| `description` | string \| null | `null` clears it. |
+| `description` | string \| null | What to do. `null` clears it. Max 5,000 characters — a 400 names the limit if you exceed it. |
+| `taskKnowledge` | string \| null | What you need to know: architecture decisions, file paths, API specs, links — kept SEPARATE from `description` on purpose (Phase 9.5b). `null` clears it. Max 50,000 characters. |
 | `priority` | `"critical" \| "high" \| "medium" \| "low"` | |
-| `columnId` | `"todo" \| "in_progress" \| "in_review" \| "complete"` | |
+| `columnId` | `"todo" \| "in_progress" \| "in_review" \| "complete" \| "cancelled"` | |
 | `position` | number | Fractional ordering within the column — leave this alone unless you're deliberately reordering; omitting `position` while changing `columnId` just appends your card to the end of the new column, which is what you want when moving to In Review. |
 
 Example — update your card's description on the way to In Review:
@@ -120,6 +130,46 @@ curl -s -X PATCH http://localhost:4317/api/board/cards/<YOUR_CARD_ID> \
 - Don't move your card straight to `complete` — `in_review` is the honest
   status for "I'm done working, a human hasn't confirmed it yet." Someone
   reviewing the board moves it to Complete once they've checked your work.
+- Don't move your card to `cancelled` unless you were explicitly told to
+  abandon it — that's a human decision, not something to decide on your
+  own because a task looks hard or out of scope.
+
+## Agent profiles (Phase 9.5b)
+
+A stored `{name, systemPrompt}` persona scoped to a workspace, naming which
+CLI (`baseAgent`) it runs as — the shape BridgeMCP documents for agent
+records. `systemPrompt` is capped at 100,000 characters; `name` must be
+unique within a workspace (a duplicate 409s, naming the conflict).
+
+```bash
+curl -s "http://localhost:4317/api/agent-profiles?workspaceId=<WORKSPACE_ID>"
+curl -s -X POST http://localhost:4317/api/agent-profiles \
+  -H "Content-Type: application/json" \
+  -d '{"workspaceId":"<WORKSPACE_ID>","name":"Reviewer Bot","systemPrompt":"You are a careful code reviewer.","baseAgent":"claude"}'
+curl -s -X PATCH http://localhost:4317/api/agent-profiles/<ID> \
+  -H "Content-Type: application/json" -d '{"name":"New name"}'
+curl -s -X DELETE http://localhost:4317/api/agent-profiles/<ID>
+```
+
+Registered under `/api/agent-profiles`, not `/api/agents` — that path is
+already the "which CLIs are installed on this machine" endpoint (`GET
+/api/agents`, no workspace, no database row).
+
+## Prompts library (Phase 9.5b)
+
+Saved, reusable prompt bodies. A prompt with no `workspaceId` (or
+`workspaceId: null`) is GLOBAL — available in every workspace; one scoped
+to a workspace is local to it.
+
+```bash
+curl -s "http://localhost:4317/api/prompts"                              # global prompts only
+curl -s "http://localhost:4317/api/prompts?workspaceId=<WORKSPACE_ID>"   # global + this workspace's
+curl -s -X POST http://localhost:4317/api/prompts \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Write tests","body":"Write tests for the function above."}'
+curl -s -X PATCH http://localhost:4317/api/prompts/<ID> -H "Content-Type: application/json" -d '{"body":"..."}'
+curl -s -X DELETE http://localhost:4317/api/prompts/<ID>
+```
 
 ## Shared memory (Phase 8)
 
@@ -223,6 +273,48 @@ error.
 Same conventions as the board endpoints above: `400` for a missing/invalid
 field (`workspaceId`, an empty `title`, non-string `tags`), `404` for an
 unknown `workspaceId` or note `slug`. The body is `{ "error": "..." }`.
+
+## Board, agents, and prompts over MCP (Phase 9.5b)
+
+The same MCP server docs/MEMORY.md sets up for memory tools also exposes
+the board, agent profiles, and the prompts library — no REST calls needed,
+and no `workspaceId` to look up, since the server is already rooted at
+your workspace. Ten tools:
+
+| Tool | What |
+|---|---|
+| `list_tasks` | Every task on the board (id, title, priority, columnId, agent, updatedAt) |
+| `get_task` | One task's full detail — including `description` AND `taskKnowledge` |
+| `create_task` | Create a task. `description` max 5,000 chars, `taskKnowledge` max 50,000 |
+| `update_task` | Update any field, including `columnId` (`todo`/`in_progress`/`in_review`/`complete`/`cancelled`) |
+| `list_agents` | Every stored agent profile in this workspace |
+| `get_agent` | One profile's full detail, including `systemPrompt` |
+| `create_agent` | Create `{name, systemPrompt, baseAgent}`. `systemPrompt` max 100,000 chars; `name` unique per workspace |
+| `update_agent` | Update a profile's name/systemPrompt/baseAgent |
+| `delete_agent` | Delete a profile |
+| `list_prompts` | Saved, reusable prompts — global ones plus this workspace's own |
+
+Plus one MCP **prompt** (not a tool — see docs/MEMORY.md for the
+tool/prompt distinction): `vibedeck_developer_guide`, a condensed onboarding
+doc covering everything on this page (tasks, `taskKnowledge` vs
+`description`, the board lifecycle, memory, and swarm claims) that your MCP
+client can insert on request.
+
+Setup is identical to the memory-only setup in docs/MEMORY.md — same
+command, same config, same one-process-per-workspace model:
+
+```bash
+node /absolute/path/to/vibedeck/apps/server/dist/memory/mcp-server.js /absolute/path/to/your/workspace
+```
+
+Errors follow the same convention as everywhere else: a validation or
+lookup failure returns a tool result with `isError: true` and a message
+naming what went wrong (e.g. a duplicate agent name, a task id that
+doesn't exist, or — for `create_task`/`create_agent`/`list_agents`/etc —
+"this directory is not a registered vibedeck workspace yet" if you're
+connected before ever opening the workspace in the vibedeck app itself).
+Memory tools and `list_prompts` are unaffected by that last case; they
+work regardless.
 
 ## Swarm (Phase 9a)
 

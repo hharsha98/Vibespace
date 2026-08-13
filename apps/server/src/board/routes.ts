@@ -10,7 +10,9 @@
 import type { FastifyInstance } from "fastify";
 import {
   AGENT_IDS,
+  CARD_DESCRIPTION_MAX_LENGTH,
   CARD_PRIORITIES,
+  CARD_TASK_KNOWLEDGE_MAX_LENGTH,
   COLUMN_IDS,
   type AgentId,
   type CardPriority,
@@ -63,6 +65,7 @@ export function registerBoardRoutes(app: FastifyInstance, deps: BoardRoutesDeps)
       workspaceId?: unknown;
       title?: unknown;
       description?: unknown;
+      taskKnowledge?: unknown;
       priority?: unknown;
       columnId?: unknown;
     };
@@ -79,6 +82,23 @@ export function registerBoardRoutes(app: FastifyInstance, deps: BoardRoutesDeps)
     if (body.description !== undefined && body.description !== null && typeof body.description !== "string") {
       return reply.status(400).send({ error: '"description" must be a string or null' });
     }
+    if (typeof body.description === "string" && body.description.length > CARD_DESCRIPTION_MAX_LENGTH) {
+      return reply
+        .status(400)
+        .send({ error: `"description" must be at most ${CARD_DESCRIPTION_MAX_LENGTH} characters` });
+    }
+    if (
+      body.taskKnowledge !== undefined &&
+      body.taskKnowledge !== null &&
+      typeof body.taskKnowledge !== "string"
+    ) {
+      return reply.status(400).send({ error: '"taskKnowledge" must be a string or null' });
+    }
+    if (typeof body.taskKnowledge === "string" && body.taskKnowledge.length > CARD_TASK_KNOWLEDGE_MAX_LENGTH) {
+      return reply
+        .status(400)
+        .send({ error: `"taskKnowledge" must be at most ${CARD_TASK_KNOWLEDGE_MAX_LENGTH} characters` });
+    }
     if (body.priority !== undefined && !isCardPriority(body.priority)) {
       return reply.status(400).send({ error: `"priority" must be one of: ${CARD_PRIORITIES.join(", ")}` });
     }
@@ -90,6 +110,7 @@ export function registerBoardRoutes(app: FastifyInstance, deps: BoardRoutesDeps)
       workspaceId: body.workspaceId,
       title: body.title.trim(),
       description: (body.description as string | null | undefined) ?? null,
+      taskKnowledge: (body.taskKnowledge as string | null | undefined) ?? null,
       priority: body.priority as CardPriority | undefined,
       columnId: body.columnId as ColumnId | undefined,
     });
@@ -105,6 +126,7 @@ export function registerBoardRoutes(app: FastifyInstance, deps: BoardRoutesDeps)
     const body = (request.body ?? {}) as {
       title?: unknown;
       description?: unknown;
+      taskKnowledge?: unknown;
       priority?: unknown;
       columnId?: unknown;
       position?: unknown;
@@ -121,7 +143,26 @@ export function registerBoardRoutes(app: FastifyInstance, deps: BoardRoutesDeps)
       if (body.description !== null && typeof body.description !== "string") {
         return reply.status(400).send({ error: '"description" must be a string or null' });
       }
+      if (typeof body.description === "string" && body.description.length > CARD_DESCRIPTION_MAX_LENGTH) {
+        return reply
+          .status(400)
+          .send({ error: `"description" must be at most ${CARD_DESCRIPTION_MAX_LENGTH} characters` });
+      }
       patch.description = body.description as string | null;
+    }
+    if ("taskKnowledge" in body) {
+      if (body.taskKnowledge !== null && typeof body.taskKnowledge !== "string") {
+        return reply.status(400).send({ error: '"taskKnowledge" must be a string or null' });
+      }
+      if (
+        typeof body.taskKnowledge === "string" &&
+        body.taskKnowledge.length > CARD_TASK_KNOWLEDGE_MAX_LENGTH
+      ) {
+        return reply
+          .status(400)
+          .send({ error: `"taskKnowledge" must be at most ${CARD_TASK_KNOWLEDGE_MAX_LENGTH} characters` });
+      }
+      patch.taskKnowledge = body.taskKnowledge as string | null;
     }
     if ("priority" in body) {
       if (!isCardPriority(body.priority)) {

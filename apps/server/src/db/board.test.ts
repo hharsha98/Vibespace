@@ -62,6 +62,20 @@ describe("BoardStore CRUD", () => {
     expect(card.columnId).toBe("in_review");
   });
 
+  it("creates a card with taskKnowledge, defaulting to null when omitted", () => {
+    const withKnowledge = store.create({
+      workspaceId: WORKSPACE_A,
+      title: "Has context",
+      taskKnowledge: "The parser lives in src/parser.ts; see ADR-3 for why it's recursive.",
+    });
+    expect(withKnowledge.taskKnowledge).toBe(
+      "The parser lives in src/parser.ts; see ADR-3 for why it's recursive."
+    );
+
+    const withoutKnowledge = store.create({ workspaceId: WORKSPACE_A, title: "No context yet" });
+    expect(withoutKnowledge.taskKnowledge).toBeNull();
+  });
+
   it("get() returns undefined for an unknown id", () => {
     expect(store.get("does-not-exist")).toBeUndefined();
   });
@@ -87,6 +101,18 @@ describe("BoardStore CRUD", () => {
     const created = store.create({ workspaceId: WORKSPACE_A, title: "Has a description", description: "hi" });
     const cleared = store.update(created.id, { description: null });
     expect(cleared?.description).toBeNull();
+  });
+
+  it("update() can set and explicitly clear taskKnowledge, independently of description", () => {
+    const created = store.create({ workspaceId: WORKSPACE_A, title: "Learn me" });
+    expect(created.taskKnowledge).toBeNull();
+
+    const withKnowledge = store.update(created.id, { taskKnowledge: "Auth lives in src/auth/*.ts." });
+    expect(withKnowledge?.taskKnowledge).toBe("Auth lives in src/auth/*.ts.");
+    expect(withKnowledge?.description).toBeNull(); // untouched by the taskKnowledge-only patch
+
+    const cleared = store.update(created.id, { taskKnowledge: null });
+    expect(cleared?.taskKnowledge).toBeNull();
   });
 
   it("update() omitting a field entirely leaves it untouched", () => {

@@ -145,6 +145,42 @@ describe("POST /api/board/cards", () => {
     expect(response.statusCode).toBe(404);
     await app.close();
   });
+
+  it("creates a card with taskKnowledge, and 400s when it exceeds the length cap", async () => {
+    const app = buildApp();
+    const workspace = await createWorkspace(app);
+
+    const ok = await app.inject({
+      method: "POST",
+      url: "/api/board/cards",
+      payload: { workspaceId: workspace.id, title: "x", taskKnowledge: "Auth lives in src/auth/*.ts." },
+    });
+    expect(ok.statusCode).toBe(201);
+    expect((ok.json() as BoardCard).taskKnowledge).toBe("Auth lives in src/auth/*.ts.");
+
+    const tooLong = await app.inject({
+      method: "POST",
+      url: "/api/board/cards",
+      payload: { workspaceId: workspace.id, title: "x", taskKnowledge: "a".repeat(50_001) },
+    });
+    expect(tooLong.statusCode).toBe(400);
+
+    await app.close();
+  });
+
+  it("400s when description exceeds the length cap", async () => {
+    const app = buildApp();
+    const workspace = await createWorkspace(app);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/board/cards",
+      payload: { workspaceId: workspace.id, title: "x", description: "a".repeat(5001) },
+    });
+    expect(response.statusCode).toBe(400);
+
+    await app.close();
+  });
 });
 
 describe("PATCH /api/board/cards/:id", () => {
@@ -257,6 +293,64 @@ describe("PATCH /api/board/cards/:id", () => {
       payload: { title: "x" },
     });
     expect(response.statusCode).toBe(404);
+    await app.close();
+  });
+
+  it("updates taskKnowledge independently, clears it back to null, and 400s past the length cap", async () => {
+    const app = buildApp();
+    const workspace = await createWorkspace(app);
+    const created = (
+      await app.inject({
+        method: "POST",
+        url: "/api/board/cards",
+        payload: { workspaceId: workspace.id, title: "x" },
+      })
+    ).json() as BoardCard;
+
+    const set = await app.inject({
+      method: "PATCH",
+      url: `/api/board/cards/${created.id}`,
+      payload: { taskKnowledge: "See ADR-3 for the schema decision." },
+    });
+    expect(set.statusCode).toBe(200);
+    expect((set.json() as BoardCard).taskKnowledge).toBe("See ADR-3 for the schema decision.");
+
+    const cleared = await app.inject({
+      method: "PATCH",
+      url: `/api/board/cards/${created.id}`,
+      payload: { taskKnowledge: null },
+    });
+    expect((cleared.json() as BoardCard).taskKnowledge).toBeNull();
+
+    const tooLong = await app.inject({
+      method: "PATCH",
+      url: `/api/board/cards/${created.id}`,
+      payload: { taskKnowledge: "a".repeat(50_001) },
+    });
+    expect(tooLong.statusCode).toBe(400);
+
+    await app.close();
+  });
+
+  it("accepts moving a card to the cancelled column", async () => {
+    const app = buildApp();
+    const workspace = await createWorkspace(app);
+    const created = (
+      await app.inject({
+        method: "POST",
+        url: "/api/board/cards",
+        payload: { workspaceId: workspace.id, title: "x" },
+      })
+    ).json() as BoardCard;
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: `/api/board/cards/${created.id}`,
+      payload: { columnId: "cancelled" },
+    });
+    expect(response.statusCode).toBe(200);
+    expect((response.json() as BoardCard).columnId).toBe("cancelled");
+
     await app.close();
   });
 });

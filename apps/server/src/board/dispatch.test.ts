@@ -17,6 +17,7 @@ const card: BoardCard = {
   workspaceId: "ws-1",
   title: "echo hello",
   description: null,
+  taskKnowledge: null,
   priority: "medium",
   columnId: "in_progress",
   position: 1,
@@ -77,5 +78,59 @@ describe("buildDispatchPrompt", () => {
     const withDescription: BoardCard = { ...card, description: "and then stop" };
 
     expect(buildDispatchPrompt(withDescription, PORT, "shell")).toContain("and then stop");
+  });
+
+  it("includes taskKnowledge, clearly delimited from the instructions, for an agent pane", () => {
+    const withKnowledge: BoardCard = {
+      ...card,
+      description: "Fix the login bug",
+      taskKnowledge: "Auth lives in src/auth/*.ts; see ADR-3 for why sessions are cookie-based.",
+    };
+
+    const prompt = buildDispatchPrompt(withKnowledge, PORT, "claude");
+
+    expect(prompt).toContain("Fix the login bug");
+    expect(prompt).toContain("Auth lives in src/auth/*.ts; see ADR-3 for why sessions are cookie-based.");
+    // "Clearly delimited from the instructions": the task knowledge sits
+    // behind its own labelled marker, not silently concatenated onto the
+    // instructions with no seam.
+    expect(prompt).toContain("Task knowledge");
+    // The instructions/task body still appears BEFORE the task-knowledge
+    // marker — knowledge is appended context, not the lead instruction.
+    expect(prompt.indexOf("Fix the login bug")).toBeLessThan(prompt.indexOf("Task knowledge"));
+  });
+
+  it("omits the taskKnowledge marker entirely when there is none", () => {
+    const withoutKnowledge: BoardCard = { ...card, taskKnowledge: null };
+    expect(buildDispatchPrompt(withoutKnowledge, PORT, "claude")).not.toContain("Task knowledge");
+  });
+
+  it("NEVER sends taskKnowledge to a shell pane — only the bare command, exactly as before", () => {
+    const withKnowledge: BoardCard = {
+      ...card,
+      taskKnowledge: "Auth lives in src/auth/*.ts; see ADR-3 for why sessions are cookie-based.",
+    };
+
+    const prompt = buildDispatchPrompt(withKnowledge, PORT, "shell");
+
+    // Identical to the plain "echo hello\n" a shell pane has always
+    // received — a shell must receive ONLY the bare command, never prose
+    // it would try (and fail) to execute.
+    expect(prompt).toBe("echo hello\n");
+    expect(prompt).not.toContain("Auth lives");
+    expect(prompt).not.toContain("Task knowledge");
+  });
+
+  it("folds a multi-line taskKnowledge onto the same single line, never introducing a raw newline", () => {
+    const multilineKnowledge: BoardCard = {
+      ...card,
+      taskKnowledge: "line one\nline two\n\nline three",
+    };
+
+    const prompt = buildDispatchPrompt(multilineKnowledge, PORT, "claude");
+
+    expect(prompt.endsWith("\n")).toBe(true);
+    expect(prompt.slice(0, -1).includes("\n")).toBe(false); // no newline before the trailing one
+    expect(prompt).toContain("line one line two line three");
   });
 });

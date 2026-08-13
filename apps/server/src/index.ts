@@ -14,6 +14,10 @@ import { ClaimsStore } from "./swarm/claims.js";
 import { MailboxStore } from "./swarm/mailbox.js";
 import { TasksStore } from "./swarm/tasks.js";
 import { registerSwarmRoutes } from "./swarm/routes.js";
+import { AgentProfileStore } from "./agents/store.js";
+import { registerAgentRoutes } from "./agents/routes.js";
+import { SavedPromptStore } from "./prompts/store.js";
+import { registerPromptRoutes } from "./prompts/routes.js";
 
 const VERSION = "0.0.0";
 const PORT = 4317;
@@ -33,6 +37,10 @@ export interface BuildAppOptions {
   mailboxStore?: MailboxStore;
   /** Inject a TasksStore (mainly for tests). Defaults to a fresh one. */
   tasksStore?: TasksStore;
+  /** Inject an AgentProfileStore (mainly for tests). Defaults to a fresh one. */
+  agentProfileStore?: AgentProfileStore;
+  /** Inject a SavedPromptStore (mainly for tests). Defaults to a fresh one. */
+  savedPromptStore?: SavedPromptStore;
 }
 
 /**
@@ -49,6 +57,8 @@ export function buildApp(options: BuildAppOptions = {}) {
   const claimsStore = options.claimsStore ?? new ClaimsStore();
   const mailboxStore = options.mailboxStore ?? new MailboxStore();
   const tasksStore = options.tasksStore ?? new TasksStore();
+  const agentProfileStore = options.agentProfileStore ?? new AgentProfileStore();
+  const savedPromptStore = options.savedPromptStore ?? new SavedPromptStore();
 
   // Make the manager/store reachable from outside (tests call
   // app.sessionManager/app.workspaceStore/app.boardStore/etc directly to
@@ -60,6 +70,8 @@ export function buildApp(options: BuildAppOptions = {}) {
   app.decorate("tasksStore", tasksStore);
   app.decorate("claimsStore", claimsStore);
   app.decorate("mailboxStore", mailboxStore);
+  app.decorate("agentProfileStore", agentProfileStore);
+  app.decorate("savedPromptStore", savedPromptStore);
 
   // Kill every pty and close the database when the Fastify instance closes,
   // so `app.close()` in tests (and a real process shutdown) doesn't leave
@@ -73,6 +85,8 @@ export function buildApp(options: BuildAppOptions = {}) {
     claimsStore.close();
     mailboxStore.close();
     tasksStore.close();
+    agentProfileStore.close();
+    savedPromptStore.close();
     done();
   });
 
@@ -105,6 +119,14 @@ export function buildApp(options: BuildAppOptions = {}) {
     sessionManager,
     serverPort: PORT,
   });
+
+  // Phase 9.5b: agent profiles (stored {name, systemPrompt} personas,
+  // PARITY #26) and the saved-prompts library (PARITY #27). See
+  // agents/routes.ts's top comment for why agent profiles are registered
+  // under /api/agent-profiles rather than /api/agents — the latter is
+  // already the "which CLIs are installed" endpoint below.
+  registerAgentRoutes(app, { workspaceStore, agentProfileStore });
+  registerPromptRoutes(app, { workspaceStore, savedPromptStore });
 
   app.get("/api/health", async () => ({
     status: "ok" as const,
@@ -348,6 +370,8 @@ declare module "fastify" {
     claimsStore: ClaimsStore;
     mailboxStore: MailboxStore;
     tasksStore: TasksStore;
+    agentProfileStore: AgentProfileStore;
+    savedPromptStore: SavedPromptStore;
   }
 }
 

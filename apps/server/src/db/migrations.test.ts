@@ -43,6 +43,7 @@ const EXPECTED_SCHEMA: Record<string, string[]> = {
     "agent",
     "created_at",
     "updated_at",
+    "task_knowledge",
   ],
   missions: ["id", "workspace_id", "prompt", "status", "created_at", "updated_at"],
   mission_agents: [
@@ -73,6 +74,17 @@ const EXPECTED_SCHEMA: Record<string, string[]> = {
     "created_at",
     "updated_at",
   ],
+  // Phase 9.5b (migration 4): agent records and the saved-prompts library.
+  agent_profiles: [
+    "id",
+    "workspace_id",
+    "name",
+    "system_prompt",
+    "base_agent",
+    "created_at",
+    "updated_at",
+  ],
+  saved_prompts: ["id", "workspace_id", "title", "body", "created_at", "updated_at"],
 };
 
 function columnsOf(db: Database.Database, table: string): string[] {

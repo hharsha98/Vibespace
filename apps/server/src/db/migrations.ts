@@ -238,6 +238,73 @@ function up002FileClaimsLastHeartbeatAt(db: Database): void {
 }
 
 /**
+ * Migration 3 (Phase 9.5b, PARITY #27b): `taskKnowledge`, a field separate
+ * from `description` for long-form context (architecture notes, file
+ * paths, API specs) handed to a dispatched agent alongside its
+ * instructions. Nullable, same reasoning as every other optional
+ * `board_cards` column (`description`, `session_id`, `agent`) — an existing
+ * card simply has no task knowledge until someone adds it.
+ */
+function up003BoardCardsTaskKnowledge(db: Database): void {
+  if (!hasColumn(db, "board_cards", "task_knowledge")) {
+    db.exec(`ALTER TABLE board_cards ADD COLUMN task_knowledge TEXT`);
+  }
+}
+
+/**
+ * Migration 4 (Phase 9.5b, PARITY #26/#27): two brand-new tables, bundled
+ * into one migration because neither touches an existing table (both are
+ * fresh `CREATE TABLE`s, so there's nothing an earlier database could be
+ * missing that an `ALTER TABLE` would need to repair) — same "bundle
+ * unrelated but simultaneous additions" reasoning migration 1 itself used
+ * for `missions`/`mission_agents`/`mission_messages`/`file_claims`/
+ * `claim_conflicts`/`mission_tasks` all at once.
+ *
+ * `agent_profiles`: a stored `{name, systemPrompt}` persona scoped to a
+ * workspace (BridgeMCP's agent-records shape, docs/RESEARCH.md §2).
+ * `UNIQUE(workspace_id, name)` is the same "let the database arbitrate,
+ * don't check-then-insert" pattern `file_claims`'s `UNIQUE(mission_id,
+ * path)` uses — see `swarm/claims.ts`'s top comment for the full reasoning
+ * (two concurrent creates of the same name in the same workspace always
+ * resolve to exactly one winner, with no race window to close by hand).
+ *
+ * `saved_prompts`: a reusable prompt, optionally workspace-scoped.
+ * `workspace_id` is nullable ON PURPOSE — see `SavedPrompt`'s doc comment
+ * in `packages/shared/src/protocol.ts` — a NULL means "global", not "not
+ * yet set", so it's never backfilled or treated as an error.
+ */
+function up004AgentProfilesAndSavedPrompts(db: Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS agent_profiles (
+      id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      system_prompt TEXT NOT NULL,
+      base_agent TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(workspace_id, name)
+    )
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_agent_profiles_workspace ON agent_profiles(workspace_id)`);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS saved_prompts (
+      id TEXT PRIMARY KEY,
+      workspace_id TEXT,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+  // Not UNIQUE-constrained on workspace_id since it's nullable and many
+  // rows deliberately share the same (or a NULL) workspace_id — this index
+  // only speeds up "every prompt for this workspace, or global" lookups.
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_saved_prompts_workspace ON saved_prompts(workspace_id)`);
+}
+
+/**
  * Every migration, in ascending version order. Audited against the live
  * `~/.vibedeck/vibedeck.db` on this machine by comparing each `CREATE
  * TABLE` above to `PRAGMA table_info` on every table that db actually had:
@@ -245,10 +312,15 @@ function up002FileClaimsLastHeartbeatAt(db: Database): void {
  * `mission_messages`, `claim_conflicts`, and `mission_tasks` all already
  * matched the current schema column-for-column. `file_claims` was the only
  * table missing a column (`last_heartbeat_at`), which migration 2 repairs.
+ * Migrations 3 and 4 (Phase 9.5b) are new additions, not repairs — no
+ * existing database has ever had `task_knowledge`, `agent_profiles`, or
+ * `saved_prompts`, so there's nothing to audit them against yet.
  */
 export const MIGRATIONS: Migration[] = [
   { version: 1, name: "full schema", up: up001FullSchema },
   { version: 2, name: "add file_claims.last_heartbeat_at", up: up002FileClaimsLastHeartbeatAt },
+  { version: 3, name: "add board_cards.task_knowledge", up: up003BoardCardsTaskKnowledge },
+  { version: 4, name: "add agent_profiles and saved_prompts", up: up004AgentProfilesAndSavedPrompts },
 ];
 
 /** Copies the database file to `<dbPath>.backup-v<version>`. Flushes WAL

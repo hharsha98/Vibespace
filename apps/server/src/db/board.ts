@@ -40,6 +40,7 @@ interface BoardCardRow {
   agent: string | null;
   created_at: string;
   updated_at: string;
+  task_knowledge: string | null;
 }
 
 function rowToCard(row: BoardCardRow): BoardCard {
@@ -48,6 +49,7 @@ function rowToCard(row: BoardCardRow): BoardCard {
     workspaceId: row.workspace_id,
     title: row.title,
     description: row.description,
+    taskKnowledge: row.task_knowledge,
     priority: row.priority as CardPriority,
     columnId: row.column_id as ColumnId,
     position: row.position,
@@ -62,6 +64,11 @@ export interface CreateCardOptions {
   workspaceId: string;
   title: string;
   description?: string | null;
+  /** Long-form context separate from `description` — see `BoardCard`'s
+   * doc comment in `packages/shared/src/protocol.ts`. Length limits are
+   * enforced by the caller (the REST/MCP route), not here — same division
+   * of responsibility as `title`'s emptiness check. */
+  taskKnowledge?: string | null;
   priority?: CardPriority;
   /** Defaults to "todo" — a freshly-created card always starts in the first column. */
   columnId?: ColumnId;
@@ -70,6 +77,7 @@ export interface CreateCardOptions {
 export interface UpdateCardOptions {
   title?: string;
   description?: string | null;
+  taskKnowledge?: string | null;
   priority?: CardPriority;
   columnId?: ColumnId;
   /** Explicit fractional position, e.g. the midpoint of the two cards this
@@ -128,8 +136,8 @@ export class BoardStore {
     this.db
       .prepare(
         `INSERT INTO board_cards
-           (id, workspace_id, title, description, priority, column_id, position, session_id, agent, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)`
+           (id, workspace_id, title, description, priority, column_id, position, session_id, agent, created_at, updated_at, task_knowledge)
+         VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?)`
       )
       .run(
         id,
@@ -140,7 +148,8 @@ export class BoardStore {
         columnId,
         position,
         now,
-        now
+        now,
+        options.taskKnowledge ?? null
       );
 
     // Re-read rather than constructing the object by hand, same reasoning
@@ -159,6 +168,7 @@ export class BoardStore {
     // back to the existing value when the caller didn't mention the field
     // at all, not whenever the new value is falsy.
     const description = "description" in patch ? (patch.description ?? null) : existing.description;
+    const taskKnowledge = "taskKnowledge" in patch ? (patch.taskKnowledge ?? null) : existing.taskKnowledge;
     const priority = patch.priority ?? existing.priority;
     const columnId = patch.columnId ?? existing.columnId;
     const changingColumn = patch.columnId !== undefined && patch.columnId !== existing.columnId;
@@ -181,10 +191,10 @@ export class BoardStore {
     this.db
       .prepare(
         `UPDATE board_cards
-         SET title = ?, description = ?, priority = ?, column_id = ?, position = ?, session_id = ?, agent = ?, updated_at = ?
+         SET title = ?, description = ?, priority = ?, column_id = ?, position = ?, session_id = ?, agent = ?, updated_at = ?, task_knowledge = ?
          WHERE id = ?`
       )
-      .run(title, description, priority, columnId, position, sessionId, agent, now, id);
+      .run(title, description, priority, columnId, position, sessionId, agent, now, taskKnowledge, id);
 
     // Only a column/position change can possibly have shrunk a gap, so only
     // bother checking then — every other field edit can't affect ordering.

@@ -79,7 +79,17 @@ error codes). Summary:
 This is the part that makes memory genuinely *shared* across different
 agent CLIs, not just something the vibedeck web UI happens to show. One
 process, one workspace, talking [MCP](https://modelcontextprotocol.io) over
-stdio — exposing four tools:
+stdio.
+
+As of Phase 9.5b, this is no longer a memory-only server: the SAME process
+also exposes the board, agent profiles, and the prompts library as MCP
+tools, plus a `vibedeck_developer_guide` MCP *prompt* that onboards a
+connected agent into the whole workflow. See `apps/server/src/mcp/build-server.ts`'s
+top comment for why board/agents/prompts share this one process rather
+than a second server, and [docs/AGENT-API.md](./AGENT-API.md#board-agents-and-prompts-over-mcp-phase-95b)
+for the full ten-tool reference. This section covers the original four
+memory tools and how to connect; the setup below is identical either way —
+one server process gives you all of it.
 
 | Tool | What |
 |---|---|
@@ -87,6 +97,12 @@ stdio — exposing four tools:
 | `memory_read` | Read one note by slug: full body + backlinks |
 | `memory_write` | Create a note (omit `slug`, give a `title`) or update one (give `slug`) |
 | `memory_search` | Case-insensitive search over title, body, and tags |
+
+A **tool** is something an agent calls; a **prompt** is boilerplate text an
+MCP client can insert into the conversation on request (e.g. Claude Code's
+`/mcp` prompt picker) — `vibedeck_developer_guide` is the latter, not
+something you `callTool` on. See `apps/server/src/mcp/developer-guide.ts`
+for its exact text.
 
 ### Running it
 
@@ -181,6 +197,16 @@ subprocess, which is what actually runs in CI — the subprocess smoke test
 above was a one-off manual verification, not a CI test, since spawning a
 `tsx` child process in CI would be slower and flakier than calling the
 handler functions directly for the same coverage).
+
+The Phase 9.5b board/agents/prompts tools use a real MCP `Client` too, just
+without the subprocess: `apps/server/src/mcp/build-server.test.ts` connects
+a `Client` to the actual composed server over the SDK's `InMemoryTransport`
+(two linked in-process transports, one for each end — no stdio, no child
+process) and drives it through `tools/list`, `create_task` -> `list_tasks`
+-> `get_task`, `create_agent` -> `list_agents`, `list_prompts`, and
+`prompts/get` for `vibedeck_developer_guide`. This runs in CI (unlike the
+memory subprocess smoke test above) since there's no subprocess involved
+to make it slow or flaky.
 
 ## Path safety
 

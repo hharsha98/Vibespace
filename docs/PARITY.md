@@ -68,12 +68,12 @@ Legend: ✅ done · 🟡 partial · ⛔ not started · 🚫 not possible as spec
 | 23 | Dispatch a task to an agent from the board | ✅ | Phase 7 |
 | 24 | Wait for the shell prompt before sending | ✅ | Phase 7, settle delay after first output |
 | 25 | Agents read and move their own cards | ✅ | Phase 7, `docs/AGENT-API.md` |
-| 26 | **Agents page — per-agent custom system prompts** | ⛔ | Shape known from BridgeMCP: `{name, systemPrompt}` scoped to a project, full CRUD |
-| 27 | **Prompts library — save and reuse prompts** | ⛔ | |
-| 27a | **`cancelled` task state** | ⛔ | Their lifecycle has five states; our board has four columns |
-| 27b | **`taskKnowledge` — long context separate from instructions** | ⛔ | Up to 50k chars of architecture notes, file paths and specs, handed to the agent with the task |
-| 27c | **Board exposed over MCP, not only HTTP** | ⛔ | Their agents drive tasks through MCP tools; we ship memory over MCP but the board only over REST |
-| 27d | **An MCP prompt that onboards an agent** | ⛔ | Equivalent of their `bridgemind_developer_guide` |
+| 26 | **Agents page — per-agent custom system prompts** | 🟡 | Server done (Phase 9.5b): `{name, systemPrompt}` scoped to a workspace, full CRUD over REST (`/api/agent-profiles`) and MCP (`list_agents`/`get_agent`/`create_agent`/`update_agent`/`delete_agent`). No web UI page yet. |
+| 27 | **Prompts library — save and reuse prompts** | 🟡 | Server done (Phase 9.5b): global or workspace-scoped, full CRUD over REST (`/api/prompts`), read-only `list_prompts` over MCP. No web UI page yet. |
+| 27a | **`cancelled` task state** | ✅ | Phase 9.5b — a fifth `ColumnId`, modelled as a real column (see `packages/shared/src/protocol.ts`'s `ColumnId` doc comment for why). Renders automatically wherever the board iterates `COLUMNS`, though its icon/styling haven't been hand-tuned in the web UI yet. |
+| 27b | **`taskKnowledge` — long context separate from instructions** | ✅ | Phase 9.5b — up to 50,000 chars (`description` capped at 5,000, matching their `instructions`), threaded through the store, REST, dispatch prompt (agent panes only, clearly delimited — never shell panes), and MCP. No web UI form field yet. |
+| 27c | **Board exposed over MCP, not only HTTP** | ✅ | Phase 9.5b — `list_tasks`/`get_task`/`create_task`/`update_task` plus the agent/prompt tools above, all on the same MCP server memory already used. See `apps/server/src/mcp/build-server.ts` for the architecture decision (opens the shared SQLite database directly rather than calling the HTTP API). |
+| 27d | **An MCP prompt that onboards an agent** | ✅ | Phase 9.5b — `vibedeck_developer_guide`, `apps/server/src/mcp/developer-guide.ts`. |
 | 28 | Shared agent memory | ✅ | Phase 8 |
 | 29 | Memory shared with every agent over MCP | ✅ | Phase 8 |
 | 30 | Memory as a linked graph with backlinks | ✅ | Phase 8 |

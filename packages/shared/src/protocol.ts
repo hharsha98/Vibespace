@@ -178,26 +178,76 @@ export type CardPriority = "critical" | "high" | "medium" | "low";
  * pattern as `AGENT_IDS` above. */
 export const CARD_PRIORITIES: readonly CardPriority[] = ["critical", "high", "medium", "low"];
 
-/** Which of the board's four columns a card is in. */
-export type ColumnId = "todo" | "in_progress" | "in_review" | "complete";
+/**
+ * Which column a card is in. `cancelled` (Phase 9.5b, PARITY #27a) matches
+ * BridgeMCP's published task lifecycle — `todo -> in-progress -> in-review
+ * -> complete`, plus `cancelled` as a fifth, terminal state.
+ *
+ * It's modelled as a full column, not a separate boolean/flag on the card,
+ * even though conceptually it's "a task that got abandoned" rather than a
+ * step in the main flow. Making it a real `ColumnId` means every existing
+ * column-based code path (validation against `COLUMN_IDS`, `BoardStore`'s
+ * per-column position sequencing, the REST routes, the MCP tools added in
+ * this same phase) handles it automatically, with no "and also check the
+ * cancelled flag" special case anywhere. The cost is that it renders as a
+ * fifth column in the (unmodified-by-this-phase) web board UI rather than,
+ * say, a strikethrough on a card in its original column — an acceptable
+ * trade for not forking every column-shaped code path in two.
+ *
+ * No migration was needed to store this: `board_cards.column_id` is a free
+ * TEXT column with no CHECK constraint (verified against `migrations.ts`'s
+ * `up001FullSchema`), so a new string value is just... a new string value.
+ */
+export type ColumnId = "todo" | "in_progress" | "in_review" | "complete" | "cancelled";
+
+/**
+ * Every status colour a `Pill`/`StatusDot` can be tinted with (see
+ * `apps/web/src/shell/ui.tsx`'s `StatusKind`, which this mirrors exactly —
+ * duplicated rather than imported because `packages/shared` must stay
+ * Node/React-free, wire-shapes-only). Widened from `"idle" | "warn" |
+ * "info" | "ok"` (Phase 7's original four columns) to also include
+ * `"danger"` so `cancelled` below gets a colour that actually reads as
+ * "stopped", not a warm/cool tint borrowed from another column's meaning.
+ * `apps/web/src/board/Column.tsx`'s `meaning` prop is already typed as the
+ * full `StatusKind` (not the narrower union this used to be), so this
+ * widening is a pure addition from that file's point of view — nothing
+ * there needed to change to keep compiling or rendering correctly.
+ */
+export type ColumnMeaning = "idle" | "warn" | "info" | "ok" | "danger";
 
 /**
  * Every board column, in display order, with the semantic status colour
  * (docs/DESIGN.md §2) its header is tinted with. Both the server (for
  * validating a `columnId` in a request body) and the client (for rendering
- * the four columns in order) import this single array so they can never
- * disagree about what columns exist or what order they render in.
+ * the columns in order) import this single array so they can never disagree
+ * about what columns exist or what order they render in.
  */
-export const COLUMNS: readonly { id: ColumnId; label: string; meaning: "idle" | "warn" | "info" | "ok" }[] = [
+export const COLUMNS: readonly { id: ColumnId; label: string; meaning: ColumnMeaning }[] = [
   { id: "todo", label: "To do", meaning: "idle" },
   { id: "in_progress", label: "In progress", meaning: "warn" },
   { id: "in_review", label: "In review", meaning: "info" },
   { id: "complete", label: "Complete", meaning: "ok" },
+  { id: "cancelled", label: "Cancelled", meaning: "danger" },
 ];
 
 /** Runtime array of every `ColumnId`, derived from `COLUMNS` so the two can
  * never drift apart. */
 export const COLUMN_IDS: readonly ColumnId[] = COLUMNS.map((c) => c.id);
+
+/**
+ * Server-enforced length caps for `BoardCard.description` and
+ * `.taskKnowledge` (Phase 9.5b, PARITY #27b). Exported from `packages/shared`
+ * — not just declared inline in the server's route validation — specifically
+ * so a client (a future settings/board UI) can enforce the same limit in a
+ * textarea's `maxLength` and show an honest character counter, instead of
+ * letting a user type 40,000 characters only to have the server reject it.
+ * The two are different sizes on purpose, mirroring BridgeMCP: `description`
+ * (their `instructions`) is "what to do", short by design; `taskKnowledge` is
+ * "what you need to know" — architecture notes, file paths, API specs — and
+ * is allowed to be far longer.
+ */
+export const CARD_DESCRIPTION_MAX_LENGTH = 5000;
+export const CARD_TASK_KNOWLEDGE_MAX_LENGTH = 50000;
 
 /**
  * A task on the board, as seen over the REST API. `sessionId`/`agent` are
@@ -210,6 +260,17 @@ export interface BoardCard {
   workspaceId: string;
   title: string;
   description: string | null;
+  /**
+   * Long-form context SEPARATE from `description` (Phase 9.5b, PARITY
+   * #27b): architecture decisions, file paths, API specs, links — the
+   * "what you need to know" a dispatched agent should read alongside "what
+   * to do". Capped at `CARD_TASK_KNOWLEDGE_MAX_LENGTH`, ten times
+   * `description`'s cap, by design — see that constant's comment. Included
+   * in the dispatch prompt for AGENT panes only (see
+   * `apps/server/src/board/dispatch.ts`); a plain `shell` pane never
+   * receives it, same as it never receives `description`'s English either.
+   */
+  taskKnowledge: string | null;
   priority: CardPriority;
   columnId: ColumnId;
   /** Fractional ordering position within its column — see board.ts's top
@@ -459,4 +520,74 @@ export interface MissionTask {
  * safe to run concurrently), each wave an array of task ids. */
 export interface TaskScheduleResponse {
   waves: string[][];
+}
+
+/**
+ * Phase 9.5b types: agent records and a saved-prompts library, per
+ * BridgeMCP (docs/RESEARCH.md §2, PARITY #26/#27). See
+ * `apps/server/src/agents/store.ts` and `apps/server/src/prompts/store.ts`
+ * for the SQLite-backed stores, `apps/server/src/agents/routes.ts` /
+ * `apps/server/src/prompts/routes.ts` for the REST surface, and
+ * `apps/server/src/agents/mcp.ts` / `apps/server/src/prompts/mcp.ts` for the
+ * MCP tools that expose the same data to a connected agent CLI.
+ */
+
+/** Server-enforced cap on `AgentProfile.systemPrompt` — per BridgeMCP's
+ * documented 100,000-character limit (docs/RESEARCH.md §2). Exported here,
+ * same reasoning as `CARD_TASK_KNOWLEDGE_MAX_LENGTH` above, so client and
+ * server can never drift on what "too long" means. */
+export const AGENT_PROFILE_SYSTEM_PROMPT_MAX_LENGTH = 100_000;
+
+/**
+ * A stored agent "persona": a name plus a system prompt, scoped to one
+ * workspace, that gets typed into `baseAgent`'s pty ahead of a dispatched
+ * task — the same idea as `apps/server/src/swarm/roles.ts`'s role
+ * preambles, but user-authored and reusable rather than hard-coded per
+ * swarm role. `name` is unique within a workspace (enforced by a UNIQUE
+ * constraint on `(workspace_id, name)` — see `db/migrations.ts`'s migration
+ * 4 and `swarm/claims.ts`'s top comment for why a constraint, not a
+ * check-then-insert, is what actually arbitrates the race).
+ */
+export interface AgentProfile {
+  id: string;
+  workspaceId: string;
+  name: string;
+  systemPrompt: string;
+  /** Which underlying CLI this profile runs as when dispatched. */
+  baseAgent: AgentId;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** `GET /api/agents` (Phase 9.5b's agent-records endpoint — distinct from
+ * the existing top-level `GET /api/agents` agent-*availability* check in
+ * `index.ts`; this one is registered under `/api/agents` too and returns
+ * the STORED profiles for a workspace, not CLI-installation status). See
+ * `apps/server/src/agents/routes.ts`'s top comment for how the two
+ * "/api/agents"-shaped things coexist without colliding. */
+export interface AgentProfilesResponse {
+  agents: AgentProfile[];
+}
+
+/**
+ * A saved, reusable prompt (PARITY #27, "Prompts library"). `workspaceId`
+ * is deliberately NULLABLE: a `null` workspaceId means the prompt is
+ * GLOBAL — available in every workspace, not just one — which is the
+ * deliberate way to save a prompt you reuse across projects (e.g. "write
+ * tests for the function above") without re-creating it per workspace. A
+ * non-null `workspaceId` scopes the prompt to just that one.
+ */
+export interface SavedPrompt {
+  id: string;
+  workspaceId: string | null;
+  title: string;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** `GET /api/prompts` response — see `apps/server/src/prompts/routes.ts`
+ * for the "global + this workspace's" merge rule. */
+export interface SavedPromptsResponse {
+  prompts: SavedPrompt[];
 }

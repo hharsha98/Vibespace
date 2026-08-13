@@ -84,11 +84,13 @@ export function writePromptWhenReady(sessionManager: SessionManager, sessionId: 
  * Builds the text typed into a freshly-dispatched agent's pty: a short,
  * factual preamble telling the agent which card it's working on and the
  * exact `curl` call to move that card to In Review when it's done, followed
- * by the card's own title/description as the actual task. See
- * `docs/AGENT-API.md` for the full HTTP surface this curl call is drawn
- * from. Ends with a trailing newline so the pty actually "submits" it
- * (equivalent to the agent's user pressing Enter) rather than leaving it
- * sitting unsent in the input buffer.
+ * by the card's own title/description as the actual task, and — for an
+ * AGENT pane only — the card's `taskKnowledge` (Phase 9.5b, PARITY #27b) as
+ * a clearly separate, clearly labelled block. See `docs/AGENT-API.md` for
+ * the full HTTP surface this curl call is drawn from. Ends with a trailing
+ * newline so the pty actually "submits" it (equivalent to the agent's user
+ * pressing Enter) rather than leaving it sitting unsent in the input
+ * buffer.
  */
 export function buildDispatchPrompt(
   card: BoardCard,
@@ -101,7 +103,9 @@ export function buildDispatchPrompt(
   // "move this card when you're done", it would just try to *execute* that
   // English as a command and spew errors. So for `shell` we type the card's
   // body verbatim and nothing else — for a shell, the card body IS the
-  // command.
+  // command. `taskKnowledge` is prose (architecture notes, links) same as
+  // the preamble, so it's withheld here too: a shell pane must receive ONLY
+  // the bare command, never anything it would try to execute as one.
   if (agent === "shell") {
     return `${toSingleLine(body)}\n`;
   }
@@ -113,7 +117,21 @@ export function buildDispatchPrompt(
     `[vibedeck] You are working on board card ${card.id} ("${card.title}"). ` +
     `When you are done, move it to In Review by running: ${moveCommand} — the task follows. `;
 
-  return `${toSingleLine(preamble + body)}\n`;
+  // `taskKnowledge` is reference material (architecture decisions, file
+  // paths, API specs), not the instruction itself — appended after the task
+  // body with its own labelled marker so an agent can tell "what to do"
+  // from "what you need to know" apart, the same split BridgeMCP's
+  // `create_task` documents. Folded through the SAME `toSingleLine` call as
+  // everything else below, so a `taskKnowledge` value containing its own
+  // newlines can never introduce a stray mid-prompt "submit" — precisely
+  // the bug this file's test suite exists to guard against, and nothing
+  // added here is exempt from that guard.
+  const knowledgeBlock =
+    card.taskKnowledge && card.taskKnowledge.trim().length > 0
+      ? ` [Task knowledge — reference context, not instructions: ${card.taskKnowledge}]`
+      : "";
+
+  return `${toSingleLine(preamble + body + knowledgeBlock)}\n`;
 }
 
 /**
