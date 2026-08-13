@@ -35,7 +35,7 @@ Legend: ✅ done · 🟡 partial · ⛔ not started · 🚫 not possible as spec
 | 3 | Resize panes by dragging | ✅ | Phase 2 |
 | 4 | GPU-accelerated rendering | ✅ | Phase 1; capped at 8 WebGL contexts, rest fall back |
 | 5 | Command block: command text, output, exit code, timestamp | ✅ | Phase 5, via OSC 133 |
-| 6 | Command blocks **collapsible** | ⛔ | Solved by a second renderer rather than fighting xterm: a per-pane Blocks view that reads each block's line range out of the buffer and renders it as collapsible HTML. Design in `COLLAPSIBLE-BLOCKS.md`. Phase 9.5. |
+| 6 | Command blocks **collapsible** | ✅ | Phase 9.5a. Solved by a second renderer rather than fighting xterm: a per-pane Blocks view that reads each block's line range out of the buffer and renders it as collapsible HTML, where "collapsed" is just a CSS class. Successes auto-collapse, failures auto-expand, per-block copy, first/last-500-line cap. Design in `COLLAPSIBLE-BLOCKS.md`. |
 | 7 | Search terminal output (⌘F) | ✅ | Phase 1 |
 | 8 | Context menu: copy / paste / clear | ✅ | Phase 1 |
 | 9 | Context menu: **split** entry | ⛔ | Split exists on the pane header, not in the right-click menu |
@@ -43,7 +43,7 @@ Legend: ✅ done · 🟡 partial · ⛔ not started · 🚫 not possible as spec
 | 11 | **Inline image preview** (terminal image protocols) | ⛔ | Needs the xterm image addon wired up |
 | 12 | **Scroll-to-bottom floating indicator** | ⛔ | |
 | 13 | Sessions survive closing the window | ✅ | Better than parity — server-owned sessions |
-| 13a | **Per-pane prompt bar that queues while the agent works** | ⛔ | From their demo: each pane has its own input below the terminal reading "Claude Code is working — queue the next prompt…". You type there, not into the terminal. Significant workflow feature. |
+| 13a | **Per-pane prompt bar that queues while the agent works** | ✅ | Phase 9.5a. Busy detection is **exact** for shell panes (an open OSC 133 block) but a **heuristic** for agent TUIs (output seen within 750ms), which will sometimes be wrong — an agent thinking silently reads as idle. Documented in `promptQueue.ts` rather than hidden. Queued prompts live in the tab only; a reload loses them. |
 | 13b | **Git branch chip in the pane header** | ⛔ | Their header is `● agent · workspace  ⑂ main  ▣ ▤ ✕` |
 | 13c | **Pane header names the workspace as well as the agent** | ⛔ | We show the agent only |
 

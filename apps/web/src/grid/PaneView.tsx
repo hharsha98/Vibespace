@@ -171,7 +171,18 @@ export default function PaneView({
 
       <div style={{ flex: 1, minHeight: 0 }}>
         {sessionId ? (
-          <Terminal sessionId={sessionId} theme={theme} onClose={() => onClosePane(paneId)} />
+          <Terminal
+            sessionId={sessionId}
+            // `session` is looked up by sessionId in the same render pass
+            // that sets sessionId itself (Grid.tsx's onSessionStarted path
+            // updates both together), so this should always be populated
+            // by the time a session id exists — the "shell" fallback only
+            // guards the theoretical instant it isn't, defaulting to the
+            // SAFER of the two busy-detection paths (exact, not heuristic).
+            agentId={session?.agent ?? "shell"}
+            theme={theme}
+            onClose={() => onClosePane(paneId)}
+          />
         ) : (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>
             <div style={{ textAlign: "center" }}>
