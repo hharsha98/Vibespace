@@ -36,7 +36,14 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
-import { COLUMNS, type AgentId, type BoardCard, type ColumnId, type SessionInfo } from "@vibedeck/shared";
+import {
+  COLUMNS,
+  type AgentId,
+  type BoardCard,
+  type CardPriority,
+  type ColumnId,
+  type SessionInfo,
+} from "@vibedeck/shared";
 import type { AgentOption } from "../grid/PaneView.js";
 import Column from "./Column.js";
 
@@ -167,6 +174,39 @@ export default function Board({
       setActionError(err instanceof Error ? err.message : "Failed to delete card");
     });
   }, []);
+
+  // Phase 9.5b (PARITY #27b): PATCHes a card's title/description/
+  // taskKnowledge/priority — see CardEditor.tsx, opened from Card.tsx's
+  // "Edit" action. Unlike addCard/deleteCard/dispatchCard above, this
+  // deliberately returns the fetch's Promise (and does NOT catch it) rather
+  // than tracking its own saving/error state here — CardEditor is a modal
+  // overlay with exactly one edit in flight at a time, so it's simpler for
+  // Card.tsx to own that attempt's saving/error state locally (the same way
+  // Card.tsx already owns `pickingAgent` locally) than to thread a
+  // card-keyed "which id is updating" id through Board -> Column -> Card
+  // the way `dispatchingId` has to (dispatch can be triggered from
+  // anywhere: a card button OR a drag-into-In-Progress).
+  const updateCard = useCallback(
+    (
+      id: string,
+      patch: { title: string; description: string | null; taskKnowledge: string | null; priority: CardPriority }
+    ): Promise<BoardCard> => {
+      return fetch(`/api/board/cards/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      }).then(async (res) => {
+        if (!res.ok) {
+          const body = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(body.error ?? `Server responded with ${res.status}`);
+        }
+        const updated = (await res.json()) as BoardCard;
+        setCards((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+        return updated;
+      });
+    },
+    []
+  );
 
   const dispatchCard = useCallback(
     (card: BoardCard, agent: AgentId) => {
@@ -305,6 +345,7 @@ export default function Board({
               onAddCard={addCard}
               onDeleteCard={deleteCard}
               onDispatchCard={dispatchCard}
+              onUpdateCard={updateCard}
               onFocusSession={onFocusSession}
             />
           ))}

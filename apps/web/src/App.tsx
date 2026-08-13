@@ -40,6 +40,8 @@ import Board from "./board/Board.js";
 import Graph from "./memory/Graph.js";
 import type { OpenNoteRequest } from "./memory/MemoryPanel.js";
 import Swarm from "./swarm/Swarm.js";
+import Agents from "./agents/Agents.js";
+import Prompts from "./prompts/Prompts.js";
 
 /** Which full-screen overlay (if any) is currently open. Only one at a
  * time — opening a new one implicitly replaces whichever was open, and
@@ -50,12 +52,13 @@ type OverlayKind = "palette" | "theme" | "help" | "quickOpen" | null;
 
 /** Which view the centre column is showing (Phase 6's view switcher, see
  * docs/DESIGN.md's centre-column note in this phase's spec; Phase 7 adds
- * "board" as the fourth). All four are kept MOUNTED at all times once a
- * workspace is active (see the render below) — only CSS `display` toggles
- * which one is visible — so switching views never disconnects a running
- * terminal's WebSocket, never discards an editor tab's unsaved buffer, and
- * never re-fetches the board's card list on every switch either. */
-type CenterView = "terminals" | "editor" | "preview" | "board" | "graph" | "swarm";
+ * "board" as the fourth, Phase 9.5b adds "agents"/"prompts" as the
+ * seventh/eighth). All are kept MOUNTED at all times once a workspace is
+ * active (see the render below) — only CSS `display` toggles which one is
+ * visible — so switching views never disconnects a running terminal's
+ * WebSocket, never discards an editor tab's unsaved buffer, and never
+ * re-fetches the board's card list on every switch either. */
+type CenterView = "terminals" | "editor" | "preview" | "board" | "graph" | "swarm" | "agents" | "prompts";
 
 interface HealthResponse {
   status: string;
@@ -869,6 +872,8 @@ export default function App() {
       "view-board": () => setCenterView("board"),
       "view-graph": () => setCenterView("graph"),
       "view-swarm": () => setCenterView("swarm"),
+      "view-agents": () => setCenterView("agents"),
+      "view-prompts": () => setCenterView("prompts"),
       "quick-open": () => {
         if (activeWorkspaceId) setActiveOverlay("quickOpen");
       },
@@ -1133,6 +1138,20 @@ export default function App() {
           >
             Swarm
           </ViewTabButton>
+          <ViewTabButton
+            active={centerView === "agents"}
+            onClick={() => setCenterView("agents")}
+            shortcut={formatShortcut(KEYMAP.find((s) => s.id === "view-agents")!, isMac)}
+          >
+            Agents
+          </ViewTabButton>
+          <ViewTabButton
+            active={centerView === "prompts"}
+            onClick={() => setCenterView("prompts")}
+            shortcut={formatShortcut(KEYMAP.find((s) => s.id === "view-prompts")!, isMac)}
+          >
+            Prompts
+          </ViewTabButton>
         </div>
 
         <select
@@ -1327,6 +1346,12 @@ export default function App() {
                     visible={centerView === "swarm"}
                     onFocusSession={focusSessionInGrid}
                   />
+                </div>
+                <div style={{ position: "absolute", inset: 0, display: centerView === "agents" ? "block" : "none" }}>
+                  <Agents workspaceId={activeWorkspaceId} visible={centerView === "agents"} />
+                </div>
+                <div style={{ position: "absolute", inset: 0, display: centerView === "prompts" ? "block" : "none" }}>
+                  <Prompts workspaceId={activeWorkspaceId} visible={centerView === "prompts"} />
                 </div>
               </div>
             ) : (

@@ -11,7 +11,7 @@
 import { useState, type CSSProperties } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import type { AgentId, BoardCard, ColumnId, SessionInfo } from "@vibedeck/shared";
+import type { AgentId, BoardCard, CardPriority, ColumnId, SessionInfo } from "@vibedeck/shared";
 import type { AgentOption } from "../grid/PaneView.js";
 import { Pill, statusColorVar, type StatusKind } from "../shell/ui.js";
 import Card from "./Card.js";
@@ -28,6 +28,13 @@ export interface ColumnProps {
   onAddCard: (columnId: ColumnId, title: string) => void;
   onDeleteCard: (id: string) => void;
   onDispatchCard: (card: BoardCard, agent: AgentId) => void;
+  /** PATCHes a card's title/description/taskKnowledge/priority — see
+   * Board.tsx's `updateCard` (this is that same function, threaded straight
+   * through, same as every other card action here). */
+  onUpdateCard: (
+    id: string,
+    patch: { title: string; description: string | null; taskKnowledge: string | null; priority: CardPriority }
+  ) => Promise<BoardCard>;
   onFocusSession: (sessionId: string) => void;
 }
 
@@ -43,6 +50,7 @@ export default function Column({
   onAddCard,
   onDeleteCard,
   onDispatchCard,
+  onUpdateCard,
   onFocusSession,
 }: ColumnProps) {
   // A droppable id distinct from any card id (`column:<id>`), so dropping
@@ -86,6 +94,7 @@ export default function Column({
               session={card.sessionId ? (sessionsById.get(card.sessionId) ?? null) : null}
               onDelete={onDeleteCard}
               onDispatch={onDispatchCard}
+              onUpdate={onUpdateCard}
               onFocusSession={onFocusSession}
             />
           ))}
@@ -153,6 +162,18 @@ function ColumnIcon({ id, color }: { id: ColumnId; color: string }) {
       return (
         <svg {...common}>
           <path d="M2 6.2 L4.8 9 L10 3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      );
+    case "cancelled":
+      // A plain X in a circle — reads as "stopped/abandoned" (docs/DESIGN.md
+      // §2's `--danger` meaning, already applied via `color` from the
+      // header's own tint) without borrowing the visual weight of a real
+      // error glyph like a triangle-bang, which this isn't: a cancelled
+      // card isn't broken, it's just not being worked on any more.
+      return (
+        <svg {...common}>
+          <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.2" />
+          <path d="M4.2 4.2 L7.8 7.8 M7.8 4.2 L4.2 7.8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
         </svg>
       );
   }

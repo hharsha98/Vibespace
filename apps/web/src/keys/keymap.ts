@@ -234,6 +234,26 @@ export const KEYMAP: readonly Shortcut[] = [
     description: "Show the mission canvas in the centre column.",
     key: "s",
   },
+  // Phase 9.5b: the Agents page and Prompts library join the same
+  // centre-column switcher. "a" (the obvious Agents mnemonic) is still
+  // free — same reasoning as Swarm's plain "s" above. Prompts' natural
+  // mnemonic "p" is already Quick Open (see that shortcut above), so it
+  // falls back to its Shift sibling, the same "already spoken for -> use
+  // Shift" move Board (Cmd+K -> Cmd+Shift+K) and Graph (Cmd+G ->
+  // Cmd+Shift+G) already made.
+  {
+    id: "view-agents",
+    label: "View: Agents",
+    description: "Show the agent profiles page in the centre column.",
+    key: "a",
+  },
+  {
+    id: "view-prompts",
+    label: "View: Prompts",
+    description: "Show the saved prompts library in the centre column.",
+    key: "p",
+    shift: true,
+  },
 ];
 
 /**

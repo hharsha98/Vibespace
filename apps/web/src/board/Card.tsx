@@ -18,9 +18,10 @@
 import { useState, type CSSProperties } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { AgentId, BoardCard, ColumnId, SessionInfo } from "@vibedeck/shared";
+import type { AgentId, BoardCard, CardPriority, ColumnId, SessionInfo } from "@vibedeck/shared";
 import type { AgentOption } from "../grid/PaneView.js";
 import { Pill, StatusDot, sessionStatusKind, type StatusKind } from "../shell/ui.js";
+import CardEditor from "./CardEditor.js";
 
 const PRIORITY_STATUS: Record<BoardCard["priority"], StatusKind> = {
   critical: "danger",
@@ -42,6 +43,16 @@ export interface CardProps {
   session: SessionInfo | null;
   onDelete: (id: string) => void;
   onDispatch: (card: BoardCard, agent: AgentId) => void;
+  /** PATCHes this card's title/description/taskKnowledge/priority — see
+   * Board.tsx's `updateCard`. Returns the Promise (rather than the caller
+   * pre-resolving it) specifically so CardEditor's Save button can show its
+   * OWN saving/error state without Board.tsx having to track "which card is
+   * currently being edited" centrally (Phase 9.5b, PARITY #27b — see
+   * Board.tsx's `updateCard` comment for the full reasoning). */
+  onUpdate: (
+    id: string,
+    patch: { title: string; description: string | null; taskKnowledge: string | null; priority: CardPriority }
+  ) => Promise<BoardCard>;
   onFocusSession: (sessionId: string) => void;
 }
 
@@ -54,9 +65,33 @@ export default function Card({
   session,
   onDelete,
   onDispatch,
+  onUpdate,
   onFocusSession,
 }: CardProps) {
   const [pickingAgent, setPickingAgent] = useState(false);
+  // The card-detail editor overlay (Phase 9.5b, PARITY #27b) — local state,
+  // same "this card owns its own transient UI state" pattern `pickingAgent`
+  // above already uses, rather than Board.tsx tracking "which card is being
+  // edited" centrally.
+  const [editing, setEditing] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  const saveEdit = (patch: {
+    title: string;
+    description: string | null;
+    taskKnowledge: string | null;
+    priority: CardPriority;
+  }) => {
+    setSavingEdit(true);
+    setEditError(null);
+    onUpdate(card.id, patch)
+      .then(() => setEditing(false))
+      .catch((err: unknown) => {
+        setEditError(err instanceof Error ? err.message : "Failed to update card");
+      })
+      .finally(() => setSavingEdit(false));
+  };
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: card.id,
     data: { type: "card", columnId },
@@ -94,6 +129,9 @@ export default function Card({
               ▶
             </button>
           )}
+          <button type="button" title="Edit card" onClick={() => setEditing(true)} style={miniIconButtonStyle}>
+            ✎
+          </button>
           <button type="button" title="Delete card" onClick={() => onDelete(card.id)} style={miniIconButtonStyle}>
             ✕
           </button>
@@ -125,7 +163,19 @@ export default function Card({
       )}
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 6, gap: 6 }}>
-        <Pill status={PRIORITY_STATUS[card.priority]}>{card.priority}</Pill>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+          <Pill status={PRIORITY_STATUS[card.priority]}>{card.priority}</Pill>
+          {/* Phase 9.5b (PARITY #27b): a small at-a-glance indicator that
+              this card carries taskKnowledge — the long-form reference
+              context a dispatched agent also gets, separate from the
+              (already-visible) description. `--vd-info` per docs/DESIGN.md
+              §2: this is informational, not a status/priority signal. */}
+          {card.taskKnowledge && (
+            <span title="Has task knowledge" style={taskKnowledgeIndicatorStyle}>
+              <TaskKnowledgeIcon />
+            </span>
+          )}
+        </div>
         {card.sessionId && card.agent && (
           <button
             type="button"
@@ -139,7 +189,24 @@ export default function Card({
           </button>
         )}
       </div>
+
+      {editing && (
+        <CardEditor card={card} saving={savingEdit} error={editError} onSave={saveEdit} onClose={() => setEditing(false)} />
+      )}
     </div>
+  );
+}
+
+/** A small "document with lines" glyph — plain inline SVG per the app's
+ * icon language (no icon library, no emoji — see Column.tsx's `ColumnIcon`
+ * comment for the same rule), `stroke="currentColor"` so it inherits the
+ * `--vd-info` tint from its wrapping `<span>`'s `color`. */
+function TaskKnowledgeIcon() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden>
+      <rect x="2" y="1.5" width="8" height="9" rx="1" stroke="currentColor" strokeWidth="1.1" />
+      <path d="M4 4.2 H8 M4 6.2 H8 M4 8.2 H6" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
+    </svg>
   );
 }
 
@@ -174,6 +241,14 @@ const descriptionStyle: CSSProperties = {
   WebkitLineClamp: 2,
   WebkitBoxOrient: "vertical",
   overflow: "hidden",
+};
+
+const taskKnowledgeIndicatorStyle: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  color: "var(--vd-info)",
+  flexShrink: 0,
 };
 
 const miniIconButtonStyle: CSSProperties = {
