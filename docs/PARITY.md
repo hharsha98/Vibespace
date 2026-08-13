@@ -38,14 +38,14 @@ Legend: ✅ done · 🟡 partial · ⛔ not started · 🚫 not possible as spec
 | 6 | Command blocks **collapsible** | ✅ | Phase 9.5a. Solved by a second renderer rather than fighting xterm: a per-pane Blocks view that reads each block's line range out of the buffer and renders it as collapsible HTML, where "collapsed" is just a CSS class. Successes auto-collapse, failures auto-expand, per-block copy, first/last-500-line cap. Design in `COLLAPSIBLE-BLOCKS.md`. |
 | 7 | Search terminal output (⌘F) | ✅ | Phase 1 |
 | 8 | Context menu: copy / paste / clear | ✅ | Phase 1 |
-| 9 | Context menu: **split** entry | ⛔ | Split exists on the pane header, not in the right-click menu |
+| 9 | Context menu: **split** entry | ✅ | Phase 9.5c — "Split right" / "Split down" call the same handlers the header icons do, not a second copy of the logic |
 | 10 | Drag a file in to paste its path | ✅ | Phase 1 |
-| 11 | **Inline image preview** (terminal image protocols) | ⛔ | Needs the xterm image addon wired up |
-| 12 | **Scroll-to-bottom floating indicator** | ⛔ | |
+| 11 | **Inline image preview** (terminal image protocols) | ✅ | Phase 9.5c, `@xterm/addon-image`. Sixel output confirmed rendering as real pixels in a browser, not just confirmed to compile. |
+| 12 | **Scroll-to-bottom floating indicator** | ✅ | Phase 9.5c — Live view only; hidden when already at the bottom |
 | 13 | Sessions survive closing the window | ✅ | Better than parity — server-owned sessions |
 | 13a | **Per-pane prompt bar that queues while the agent works** | ✅ | Phase 9.5a. Busy detection is **exact** for shell panes (an open OSC 133 block) but a **heuristic** for agent TUIs (output seen within 750ms), which will sometimes be wrong — an agent thinking silently reads as idle. Documented in `promptQueue.ts` rather than hidden. Queued prompts live in the tab only; a reload loses them. |
-| 13b | **Git branch chip in the pane header** | ⛔ | Their header is `● agent · workspace  ⑂ main  ▣ ▤ ✕` |
-| 13c | **Pane header names the workspace as well as the agent** | ⛔ | We show the agent only |
+| 13b | **Git branch chip in the pane header** | ✅ | Phase 9.5c. Polled every 15s rather than watching `.git`, so the chip can be up to 15s stale after a checkout. Detached HEAD shows a short hash; a non-repo directory shows no chip at all. |
+| 13c | **Pane header names the workspace as well as the agent** | ✅ | Phase 9.5c — carries the workspace's colour dot too |
 
 ## Editor and files
 
@@ -57,7 +57,7 @@ Legend: ✅ done · 🟡 partial · ⛔ not started · 🚫 not possible as spec
 | 17 | Quick Open (⌘P) | ✅ | Phase 6 |
 | 18 | Open files in tabs | ✅ | Phase 6 |
 | 19 | File tree with expand/collapse and icons | ✅ | Phase 6 |
-| 20 | **Drag and drop in the file sidebar** | ⛔ | Move/reorder files by dragging |
+| 20 | **Drag and drop in the file sidebar** | ✅ | Phase 9.5c. `POST /api/files/move` resolves both ends through `safeResolve`; `../` escapes, absolute paths outside the root, and symlinks pointing out of the workspace are all refused, as is overwriting a file or moving a directory into its own descendant. Verified adversarially against the running server with a canary file outside the root. |
 | 21 | Embedded browser for localhost | ✅ | Phase 6 |
 
 ## Agent workflows
@@ -81,8 +81,8 @@ Legend: ✅ done · 🟡 partial · ⛔ not started · 🚫 not possible as spec
 | 32 | **Swarm: shared mailbox between agents** | ✅ | Phase 9a |
 | 33 | **Swarm: file ownership, no two agents on one file** | ✅ | Phase 9a — three layers (task sequencing, DB-arbitrated claims, conflict-detection watcher), all **cooperative**, not OS-enforced; see `docs/SWARM.md`'s honesty table for exactly what each layer can and can't guarantee |
 | 34 | **Swarm: quality gates** | ✅ | Phase 9a |
-| 35 | **Swarm: live mission tree canvas** | ⛔ | Phase 9b — needs a UI, not built yet; the REST API it will render is done |
-| 36 | **Swarm: @-target one agent, or all, from one bar** | ⛔ | Phase 9b — the underlying "send to one agent or broadcast" mailbox API exists; the UI command bar doesn't |
+| 35 | **Swarm: live mission tree canvas** | ✅ | Phase 9b — `apps/web/src/swarm/MissionCanvas.tsx` |
+| 36 | **Swarm: @-target one agent, or all, from one bar** | ✅ | Phase 9b — `apps/web/src/swarm/CommandBar.tsx` |
 | 37 | **Skills: drag a skill onto a running pane** | ⛔ | Phase 10. Their skills follow the open `agentskills.io` standard — implement that rather than a private format. See `RESEARCH.md` §4. |
 
 ## Workspaces
@@ -92,7 +92,7 @@ Legend: ✅ done · 🟡 partial · ⛔ not started · 🚫 not possible as spec
 | 38 | Multiple workspaces, each with its own layout | ✅ | Phase 3 — a rail rather than tabs; same capability |
 | 39 | Layout persists across restart | ✅ | Phase 3 |
 | 40 | Panes open in the workspace's directory | ✅ | Phase 3 |
-| 41 | **Colour-code a workspace** | ⛔ | Their demo shows a coloured glyph per workspace, and the active row carries a thick accent left edge |
+| 41 | **Colour-code a workspace** | ✅ | Phase 9.5c, migration 5. Eight-colour palette; null means no colour chosen, so existing workspaces keep the neutral look. Active row gets the thick accent edge; the colour also reaches the pane header. |
 | 41a | **Board and Swarm live in the left rail, not the top bar** | 🟡 | Their rail lists workspaces *and* BridgeBoard *and* BridgeSwarm as sibling rows, each with its own coloured icon. We put Board/Graph in the top-bar view switcher. Same capability, different navigation model. |
 | 41b | **Workspace badge counts panes** | 🟡 | Theirs appears to count panes; ours counts running sessions |
 | 42 | Templates: 1/2/4/6/8/10/12/14/16 | ✅ | Phase 2 |
@@ -103,7 +103,7 @@ Legend: ✅ done · 🟡 partial · ⛔ not started · 🚫 not possible as spec
 |---|---|---|---|
 | 43 | 25+ themes, dark-first | ✅ | 26, Phase 4 |
 | 44 | Theme picker in the nav bar | ✅ | Phase 4 |
-| 45 | **Settings screen** | ⛔ | Preferences are scattered across the top bar today |
+| 45 | **Settings screen** | ✅ | Phase 9.5c — themes, default agent (now actually persisted; the picker never remembered anything before), and a shortcut table derived from `KEYMAP` so it cannot drift |
 | 46 | Keyboard-first operation | ✅ | Phase 4 |
 | 47 | ⌘P quick open · ⌘F search · ⌘D split | ✅ | Exact parity |
 | 48 | ⌘T new tab · ⌘W close tab · ⌘1–9 switch tab | 🟡 | Chrome reserves ⌘T/⌘W/⌘N — we use ⌘⇧ variants, and ⌘1–9 focuses panes. Full parity arrives with the desktop build (#50). |
@@ -121,43 +121,38 @@ Legend: ✅ done · 🟡 partial · ⛔ not started · 🚫 not possible as spec
 
 ## Remaining work, in order
 
-**Phase 9 — Swarm** (#31–36). The largest piece. Split in two:
-- *9a, server (done — #31–34):* missions, roles, task sequencing (declared
-  paths → waves, reviewer-gated completion), mailbox, file-claims registry,
-  conflict-detection watcher, quality gates, REST API, agent docs
-  (`docs/SWARM.md`). The claims registry is arbitrated by a database
-  uniqueness constraint, not a check-then-write — two agents racing the same
-  claim always resolve to exactly one winner. Ownership overall is
-  **cooperative across all three layers**, not OS-enforced; see
-  `docs/SWARM.md`'s honesty table.
-- *9b, canvas (not started — #35–36):* the live mission tree — dotted
-  canvas, role-coloured nodes and curved edges, zoom controls, and a single
-  command bar that can address one agent or all of them. The REST API this
-  renders already exists.
+Phases 1–9.5 are done. Everything below is what is genuinely left.
 
-**Phase 9.5 — Parity sweep.** The scattered gaps that don't belong to a big
-feature. Ordered by how much they change daily use:
+**Phase 10 — Skills** (#37). Their skills follow the open `agentskills.io`
+standard, so implement that rather than inventing a private format. See
+`RESEARCH.md` §4.
 
-1. **Per-pane prompt bar** (#13a) — the largest of these. Their demo makes it
-   the primary way you talk to an agent: a dedicated input under each pane
-   that accepts a prompt *while the agent is still working* and queues it.
-2. Agents page (#26) and Prompts library (#27) — shapes now known from
-   BridgeMCP's tool reference.
-3. `taskKnowledge` (#27b), `cancelled` state (#27a), board over MCP (#27c),
-   onboarding MCP prompt (#27d).
-4. Git branch chip (#13b) and workspace name (#13c) in the pane header.
-5. Workspace colours (#41), Settings screen (#45).
-6. Terminal image preview (#11), scroll-to-bottom indicator (#12), split in
-   the context menu (#9), file-tree drag and drop (#20).
+**Phase 11 — Desktop** (#50–52). Tauri 2, signed macOS/Windows/Linux
+builds, auto-updates. Also closes #48, because a desktop window can claim
+⌘T/⌘W/⌘N that a browser tab never sees.
 
-Navigation (#41a) is a judgement call rather than a gap: moving Board and
-Swarm into the left rail would match their model exactly. Worth doing for a
-faithful clone, but it is a restructure, not a missing feature.
+Two open judgement calls, neither a missing feature:
 
-**Phase 10 — Skills** (#37).
+- **#41a, navigation.** Their left rail lists workspaces *and* the board
+  *and* the swarm as sibling rows. We put those in the top-bar view
+  switcher. Same capability, different model; matching them exactly is a
+  restructure, not a gap.
+- **#41b, the workspace badge.** Theirs appears to count panes; ours counts
+  running sessions.
 
-**Phase 11 — Desktop** (#50–52). Also closes #48, because a desktop window
-can claim ⌘T/⌘W/⌘N that a browser tab cannot.
+Known limitations we chose rather than missed, all documented where they
+live rather than only here:
+
+- The prompt bar's "is the agent busy" signal is **exact** for shell panes
+  (an open OSC 133 block) and a **heuristic** for agent TUIs — output seen
+  within 750ms. An agent thinking silently reads as idle. None of the three
+  CLIs emit a real "done" signal, so there is no general fix.
+- Queued prompts live in the browser tab. A reload loses any not yet sent.
+- The git branch chip polls every 15s, so it can be that stale after a
+  checkout.
+- Swarm file ownership is **cooperative** across all three layers, not
+  OS-enforced. `docs/SWARM.md`'s honesty table says exactly what each layer
+  can and cannot guarantee.
 
 ## Where we will still differ when this is finished
 
