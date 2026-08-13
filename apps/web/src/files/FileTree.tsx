@@ -1,4 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
+import {
+  DndContext,
+  PointerSensor,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import { CSS } from "@dnd-kit/utilities";
 import type { FileEntry, FileTreeResponse } from "@vibedeck/shared";
 
 interface FileTreeProps {
@@ -19,6 +29,30 @@ async function fetchDir(workspaceId: string, path: string): Promise<FileEntry[]>
     throw new Error(body.error ?? `Server responded with ${res.status}`);
   }
   return ((await res.json()) as FileTreeResponse).entries;
+}
+
+/** Calls `POST /api/files/move` (Phase 9.5c, PARITY #20) — throws with the
+ * server's own error text on failure (403 traversal, 404 missing source,
+ * 409 destination exists, 400 self/descendant), which `handleDragEnd`
+ * below surfaces verbatim rather than a generic "something went wrong". */
+async function moveFile(workspaceId: string, from: string, to: string): Promise<void> {
+  const res = await fetch("/api/files/move", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ workspaceId, from, to }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `Server responded with ${res.status}`);
+  }
+}
+
+/** The workspace-relative parent of `path` — "." for a root-level entry
+ * (no "/" in the path at all). Used to know which cached directory listing
+ * needs refreshing after a move. */
+function parentPath(path: string): string {
+  const idx = path.lastIndexOf("/");
+  return idx === -1 ? "." : path.slice(0, idx);
 }
 
 /**
@@ -47,6 +81,14 @@ export default function FileTree({ workspaceId, onOpenFile }: FileTreeProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [loadingPaths, setLoadingPaths] = useState<Set<string>>(new Set());
   const [errorPaths, setErrorPaths] = useState<Map<string, string>>(new Map());
+  // Phase 9.5c, PARITY #20: the most recent drag-and-drop move's failure
+  // reason, or null. Cleared on the next successful move (or dismissed by
+  // hand) — see `handleDragEnd` below. A failed move is never silently
+  // reverted-and-forgotten: the row simply never optimistically moved in
+  // the first place (this component doesn't mutate `childrenByPath` until
+  // the server confirms success), so there's nothing TO revert — the only
+  // job left is telling the user why.
+  const [moveError, setMoveError] = useState<string | null>(null);
 
   // Reset everything and (re)load the root listing whenever the active
   // workspace changes — a stale cache from a different project's directory
@@ -115,6 +157,71 @@ export default function FileTree({ workspaceId, onOpenFile }: FileTreeProps) {
     [childrenByPath, loadChildren]
   );
 
+  // Re-fetches ONE directory's listing after a successful move — either the
+  // root (".") or, if it's currently expanded, that directory's cached
+  // children. A directory that's cached but currently COLLAPSED is
+  // deliberately left stale here: this file has no live filesystem watch of
+  // its own (unlike Editor.tsx's file-content watch), so a collapsed-then-
+  // re-expanded directory already has this same "shows what it last fetched
+  // until you re-open it" property for any OTHER out-of-band change (an
+  // external `mv`, a git checkout...) — drag-and-drop doesn't introduce a
+  // new staleness window, it just doesn't go out of its way to close the
+  // pre-existing one either.
+  const refreshDir = useCallback(
+    (path: string) => {
+      if (!workspaceId) return;
+      if (path === ".") {
+        fetchDir(workspaceId, ".")
+          .then((entries) => setRootEntries(entries))
+          .catch((err: unknown) => setRootError(err instanceof Error ? err.message : "Failed to load"));
+        return;
+      }
+      if (expanded.has(path)) loadChildren(path);
+    },
+    [workspaceId, expanded, loadChildren]
+  );
+
+  // Pointer-only drag (no keyboard sensor): file-tree drag-and-drop is a
+  // mouse convenience, not a required interaction path — every move it can
+  // do is also reachable today by other means (the editor's Save-As isn't
+  // built yet, but nothing about this feature is the ONLY way to
+  // reorganise files on disk). `distance: 4` is the same activation
+  // constraint Board.tsx's cards use, so a plain click still opens a file /
+  // toggles a directory instead of every click being swallowed as a
+  // zero-distance "drag".
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
+
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (!over || !workspaceId) return;
+
+      const sourcePath = active.data.current?.path as string | undefined;
+      const targetDirPath = over.data.current?.path as string | undefined;
+      if (!sourcePath || !targetDirPath) return;
+
+      const baseName = sourcePath.slice(sourcePath.lastIndexOf("/") + 1);
+      const destPath = targetDirPath === "." ? baseName : `${targetDirPath}/${baseName}`;
+
+      // Dropped a file back into the directory it's already in — a no-op,
+      // and not worth a round trip (the server would refuse it anyway as
+      // "moving a directory into itself", a confusing message for what's
+      // really just "nothing to do").
+      if (destPath === sourcePath) return;
+
+      moveFile(workspaceId, sourcePath, destPath)
+        .then(() => {
+          setMoveError(null);
+          refreshDir(parentPath(sourcePath));
+          refreshDir(targetDirPath);
+        })
+        .catch((err: unknown) => {
+          setMoveError(err instanceof Error ? err.message : "Failed to move file");
+        });
+    },
+    [workspaceId, refreshDir]
+  );
+
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <button
@@ -147,30 +254,58 @@ export default function FileTree({ workspaceId, onOpenFile }: FileTreeProps) {
       </button>
 
       {!sectionCollapsed && (
-        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", paddingBottom: 8 }}>
-          {!workspaceId ? (
-            <EmptyRow>No active workspace.</EmptyRow>
-          ) : rootLoading ? (
-            <EmptyRow>Loading…</EmptyRow>
-          ) : rootError ? (
-            <EmptyRow error>{rootError}</EmptyRow>
-          ) : rootEntries && rootEntries.length === 0 ? (
-            <EmptyRow>Empty directory.</EmptyRow>
-          ) : (
-            rootEntries?.map((entry) => (
-              <FileTreeNode
-                key={entry.path}
-                entry={entry}
-                depth={0}
-                expanded={expanded}
-                childrenByPath={childrenByPath}
-                loadingPaths={loadingPaths}
-                errorPaths={errorPaths}
-                onToggleDir={toggleDir}
-                onOpenFile={onOpenFile}
-              />
-            ))
+        <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+          {moveError && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 6,
+                padding: "4px 8px",
+                fontSize: 11,
+                color: "var(--vd-danger)",
+                background: "color-mix(in srgb, var(--vd-danger) 12%, var(--vd-bg))",
+                flexShrink: 0,
+              }}
+            >
+              <span style={{ flex: 1, overflowWrap: "anywhere" }}>{moveError}</span>
+              <button
+                type="button"
+                onClick={() => setMoveError(null)}
+                title="Dismiss"
+                style={{ background: "transparent", border: "none", color: "inherit", cursor: "pointer", padding: 0 }}
+              >
+                ✕
+              </button>
+            </div>
           )}
+          <div style={{ flex: 1, minHeight: 0, overflowY: "auto", paddingBottom: 8 }}>
+            {!workspaceId ? (
+              <EmptyRow>No active workspace.</EmptyRow>
+            ) : rootLoading ? (
+              <EmptyRow>Loading…</EmptyRow>
+            ) : rootError ? (
+              <EmptyRow error>{rootError}</EmptyRow>
+            ) : rootEntries && rootEntries.length === 0 ? (
+              <EmptyRow>Empty directory.</EmptyRow>
+            ) : (
+              <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+                {rootEntries?.map((entry) => (
+                  <FileTreeNode
+                    key={entry.path}
+                    entry={entry}
+                    depth={0}
+                    expanded={expanded}
+                    childrenByPath={childrenByPath}
+                    loadingPaths={loadingPaths}
+                    errorPaths={errorPaths}
+                    onToggleDir={toggleDir}
+                    onOpenFile={onOpenFile}
+                  />
+                ))}
+              </DndContext>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -189,7 +324,17 @@ interface FileTreeNodeProps {
 }
 
 /** One row (and, if it's an expanded directory, its children) — recursive,
- * so a deeply nested tree is just this component calling itself. */
+ * so a deeply nested tree is just this component calling itself.
+ *
+ * Phase 9.5c, PARITY #20: every row is a dnd-kit drag SOURCE (`useDraggable`,
+ * id `file:<path>`); directory rows are ALSO a drop TARGET (`useDroppable`,
+ * id `dir:<path>` — disabled for plain files, since dropping a file "into"
+ * a file makes no sense). Both hooks read/write the SAME DOM node (merged
+ * via `setDragRef`/`setDropRef` in one ref callback below), which is the
+ * standard dnd-kit pattern for "this element can both be picked up and be
+ * landed on" — see Board's Card.tsx (draggable) + Column.tsx (droppable)
+ * for the same split applied to two DIFFERENT components; here it's one
+ * component wearing both hats because a directory row genuinely is both. */
 function FileTreeNode({
   entry,
   depth,
@@ -204,9 +349,25 @@ function FileTreeNode({
   const isExpanded = isDir && expanded.has(entry.path);
   const indent = 8 + depth * 12;
 
+  const draggable = useDraggable({
+    id: `file:${entry.path}`,
+    data: { path: entry.path, kind: entry.kind },
+  });
+  const droppable = useDroppable({
+    id: `dir:${entry.path}`,
+    disabled: !isDir,
+    data: { path: entry.path },
+  });
+
   return (
     <>
       <div
+        ref={(node) => {
+          draggable.setNodeRef(node);
+          droppable.setNodeRef(node);
+        }}
+        {...draggable.listeners}
+        {...draggable.attributes}
         onClick={() => (isDir ? onToggleDir(entry.path) : onOpenFile(entry.path))}
         title={entry.path}
         className="vd-list-row"
@@ -221,6 +382,17 @@ function FileTreeNode({
           fontSize: 12,
           color: "var(--vd-text)",
           borderRadius: 4,
+          // Dragged row lifts and follows the pointer; a directory row
+          // currently being dragged OVER gets an obvious accent
+          // outline+tint — "make the drop target visually obvious" per this
+          // phase's own instruction, not just a subtle background shift.
+          opacity: draggable.isDragging ? 0.4 : 1,
+          transform: CSS.Translate.toString(draggable.transform),
+          zIndex: draggable.isDragging ? 10 : undefined,
+          position: draggable.isDragging ? "relative" : undefined,
+          outline: droppable.isOver && isDir ? "2px solid var(--vd-accent)" : undefined,
+          outlineOffset: droppable.isOver && isDir ? -2 : undefined,
+          background: droppable.isOver && isDir ? "color-mix(in srgb, var(--vd-accent) 15%, transparent)" : undefined,
         }}
       >
         {isDir ? <ChevronGlyph direction={isExpanded ? "down" : "right"} /> : <span style={{ width: 10, flexShrink: 0 }} />}

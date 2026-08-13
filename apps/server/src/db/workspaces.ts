@@ -14,6 +14,9 @@ interface WorkspaceRow {
   name: string;
   root_path: string;
   layout: string | null;
+  /** Nullable — see migrations.ts's migration 5 and `Workspace.color`'s own
+   * doc comment in packages/shared/src/protocol.ts. */
+  color: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -24,6 +27,7 @@ function rowToWorkspace(row: WorkspaceRow): Workspace {
     name: row.name,
     rootPath: row.root_path,
     layout: row.layout,
+    color: row.color,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -38,6 +42,10 @@ export interface UpdateWorkspaceOptions {
   name?: string;
   rootPath?: string;
   layout?: string | null;
+  /** Phase 9.5c (PARITY #41) — one of `WORKSPACE_COLORS`, or explicitly
+   * null to clear a previously-chosen colour. Same "explicit null means
+   * clear, undefined means leave alone" rule `layout` already uses below. */
+  color?: string | null;
 }
 
 export class WorkspaceStore {
@@ -68,8 +76,8 @@ export class WorkspaceStore {
     const now = new Date().toISOString();
     this.db
       .prepare(
-        `INSERT INTO workspaces (id, name, root_path, layout, created_at, updated_at)
-         VALUES (?, ?, ?, NULL, ?, ?)`
+        `INSERT INTO workspaces (id, name, root_path, layout, color, created_at, updated_at)
+         VALUES (?, ?, ?, NULL, NULL, ?, ?)`
       )
       .run(id, name, rootPath, now, now);
     // Re-read rather than constructing the object by hand, so this always
@@ -85,17 +93,19 @@ export class WorkspaceStore {
 
     const name = changes.name ?? existing.name;
     const rootPath = changes.rootPath ?? existing.rootPath;
-    // `layout` is allowed to be explicitly set to null (clearing it), so we
-    // can't use `??` here the way we do above — only fall back to the
-    // existing value when the caller didn't mention `layout` at all.
+    // `layout`/`color` are both allowed to be explicitly set to null
+    // (clearing them), so we can't use `??` here the way we do above — only
+    // fall back to the existing value when the caller didn't mention that
+    // field at all.
     const layout = "layout" in changes ? (changes.layout ?? null) : existing.layout;
+    const color = "color" in changes ? (changes.color ?? null) : existing.color;
     const now = new Date().toISOString();
 
     this.db
       .prepare(
-        `UPDATE workspaces SET name = ?, root_path = ?, layout = ?, updated_at = ? WHERE id = ?`
+        `UPDATE workspaces SET name = ?, root_path = ?, layout = ?, color = ?, updated_at = ? WHERE id = ?`
       )
-      .run(name, rootPath, layout, now, id);
+      .run(name, rootPath, layout, color, now, id);
 
     return this.get(id);
   }

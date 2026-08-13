@@ -12,8 +12,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import type { AddressInfo } from "node:net";
 import {
+  existsSync,
   mkdtempSync,
   mkdirSync,
+  readFileSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -305,6 +307,174 @@ describe("PUT /api/files/content", () => {
       payload: { workspaceId, path: "big.txt", content: "a".repeat(2 * 1024 * 1024 + 1) },
     });
     expect(response.statusCode).toBe(413);
+    await app.close();
+  });
+});
+
+describe("POST /api/files/move", () => {
+  it("moves a file to a new location within the workspace", async () => {
+    const app = buildApp();
+    const workspaceId = await createWorkspace(app);
+    writeFileSync(join(projectDir, "a.txt"), "hello");
+    mkdirSync(join(projectDir, "sub"));
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/files/move",
+      payload: { workspaceId, from: "a.txt", to: "sub/a.txt" },
+    });
+    expect(response.statusCode).toBe(204);
+    expect(existsSync(join(projectDir, "a.txt"))).toBe(false);
+    expect(existsSync(join(projectDir, "sub", "a.txt"))).toBe(true);
+    expect(readFileSync(join(projectDir, "sub", "a.txt"), "utf8")).toBe("hello");
+    await app.close();
+  });
+
+  it("renames a file in place (same directory, new basename)", async () => {
+    const app = buildApp();
+    const workspaceId = await createWorkspace(app);
+    writeFileSync(join(projectDir, "old-name.txt"), "content");
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/files/move",
+      payload: { workspaceId, from: "old-name.txt", to: "new-name.txt" },
+    });
+    expect(response.statusCode).toBe(204);
+    expect(existsSync(join(projectDir, "old-name.txt"))).toBe(false);
+    expect(existsSync(join(projectDir, "new-name.txt"))).toBe(true);
+    await app.close();
+  });
+
+  it("moves a directory (and its contents) to a new parent", async () => {
+    const app = buildApp();
+    const workspaceId = await createWorkspace(app);
+    mkdirSync(join(projectDir, "dir-a"));
+    writeFileSync(join(projectDir, "dir-a", "inner.txt"), "inner");
+    mkdirSync(join(projectDir, "dir-b"));
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/files/move",
+      payload: { workspaceId, from: "dir-a", to: "dir-b/dir-a" },
+    });
+    expect(response.statusCode).toBe(204);
+    expect(existsSync(join(projectDir, "dir-a"))).toBe(false);
+    expect(readFileSync(join(projectDir, "dir-b", "dir-a", "inner.txt"), "utf8")).toBe("inner");
+    await app.close();
+  });
+
+  it("404s when the source doesn't exist", async () => {
+    const app = buildApp();
+    const workspaceId = await createWorkspace(app);
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/files/move",
+      payload: { workspaceId, from: "does-not-exist.txt", to: "somewhere.txt" },
+    });
+    expect(response.statusCode).toBe(404);
+    await app.close();
+  });
+
+  it("403s a source path that traverses outside the workspace root", async () => {
+    const app = buildApp();
+    const workspaceId = await createWorkspace(app);
+    writeFileSync(join(projectDir, "a.txt"), "hello");
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/files/move",
+      payload: { workspaceId, from: "../../etc/passwd", to: "a.txt" },
+    });
+    expect(response.statusCode).toBe(403);
+    await app.close();
+  });
+
+  it("403s a destination path that traverses outside the workspace root", async () => {
+    const app = buildApp();
+    const workspaceId = await createWorkspace(app);
+    writeFileSync(join(projectDir, "a.txt"), "hello");
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/files/move",
+      payload: { workspaceId, from: "a.txt", to: "../../etc/passwd" },
+    });
+    expect(response.statusCode).toBe(403);
+    // The refused move must not have happened — the source file is untouched.
+    expect(existsSync(join(projectDir, "a.txt"))).toBe(true);
+    await app.close();
+  });
+
+  it("403s a destination path that escapes via an absolute path", async () => {
+    const app = buildApp();
+    const workspaceId = await createWorkspace(app);
+    writeFileSync(join(projectDir, "a.txt"), "hello");
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/files/move",
+      payload: { workspaceId, from: "a.txt", to: "/etc/passwd" },
+    });
+    expect(response.statusCode).toBe(403);
+    await app.close();
+  });
+
+  it("409s when the destination already exists — never silently overwrites", async () => {
+    const app = buildApp();
+    const workspaceId = await createWorkspace(app);
+    writeFileSync(join(projectDir, "a.txt"), "source content");
+    writeFileSync(join(projectDir, "b.txt"), "existing destination content");
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/files/move",
+      payload: { workspaceId, from: "a.txt", to: "b.txt" },
+    });
+    expect(response.statusCode).toBe(409);
+    // Neither file was touched by the refused move.
+    expect(readFileSync(join(projectDir, "a.txt"), "utf8")).toBe("source content");
+    expect(readFileSync(join(projectDir, "b.txt"), "utf8")).toBe("existing destination content");
+    await app.close();
+  });
+
+  it("400s moving a directory into itself", async () => {
+    const app = buildApp();
+    const workspaceId = await createWorkspace(app);
+    mkdirSync(join(projectDir, "dir-a"));
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/files/move",
+      payload: { workspaceId, from: "dir-a", to: "dir-a" },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(existsSync(join(projectDir, "dir-a"))).toBe(true);
+    await app.close();
+  });
+
+  it("400s moving a directory into one of its own descendants", async () => {
+    const app = buildApp();
+    const workspaceId = await createWorkspace(app);
+    mkdirSync(join(projectDir, "dir-a"));
+    mkdirSync(join(projectDir, "dir-a", "nested"));
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/files/move",
+      payload: { workspaceId, from: "dir-a", to: "dir-a/nested/dir-a" },
+    });
+    expect(response.statusCode).toBe(400);
+    // The refused move must not have partially applied.
+    expect(existsSync(join(projectDir, "dir-a", "nested"))).toBe(true);
+    await app.close();
+  });
+
+  it("400s when workspaceId is missing", async () => {
+    const app = buildApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/files/move",
+      payload: { from: "a.txt", to: "b.txt" },
+    });
+    expect(response.statusCode).toBe(400);
     await app.close();
   });
 });

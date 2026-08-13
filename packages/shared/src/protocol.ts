@@ -107,10 +107,49 @@ export interface Workspace {
   rootPath: string;
   /** JSON-serialised GridNode tree, or null if this workspace has never had a layout saved. */
   layout: string | null;
+  /**
+   * Phase 9.5c (PARITY #41): one of `WORKSPACE_COLORS` below, or null. Null
+   * means "no colour chosen" — the rail and pane header both fall back to
+   * the neutral/theme-accent look in that case, never a randomly-assigned
+   * colour, so an un-coloured workspace looks exactly like it did before
+   * this field existed.
+   */
+  color: string | null;
   /** ISO 8601 UTC timestamp string, e.g. "2026-08-10T12:34:56.000Z". */
   createdAt: string;
   /** ISO 8601 UTC timestamp string, updated on every create/update. */
   updatedAt: string;
+}
+
+/**
+ * The fixed palette a workspace's colour picker offers (PARITY #41, Phase
+ * 9.5c) — 8 hand-picked hues, distinguishable from each other and legible on
+ * both dark and light themes' surfaces. Deliberately NOT theme-derived (a
+ * workspace's identity colour should stay recognisable across every theme
+ * you switch to, the same reason a person's avatar colour doesn't change
+ * when they switch apps), which is the one deliberate exception to
+ * docs/DESIGN.md §6 rule 2 ("colour means status, never decoration") — this
+ * is decoration, but *chosen* decoration that carries identity, matching
+ * BridgeSpace's own coloured-glyph-per-workspace parity item.
+ */
+export const WORKSPACE_COLORS = [
+  "#f87171", // red
+  "#fb923c", // orange
+  "#fbbf24", // amber
+  "#4ade80", // green
+  "#2dd4bf", // teal
+  "#60a5fa", // blue
+  "#a78bfa", // violet
+  "#f472b6", // pink
+] as const;
+
+export type WorkspaceColor = (typeof WORKSPACE_COLORS)[number];
+
+/** True if `value` is one of `WORKSPACE_COLORS` — the runtime check both the
+ * server's PATCH validation and any client-side guard use, so the two can
+ * never drift on what a "valid" colour is. */
+export function isWorkspaceColor(value: unknown): value is WorkspaceColor {
+  return typeof value === "string" && (WORKSPACE_COLORS as readonly string[]).includes(value);
 }
 
 /**
@@ -590,4 +629,18 @@ export interface SavedPrompt {
  * for the "global + this workspace's" merge rule. */
 export interface SavedPromptsResponse {
   prompts: SavedPrompt[];
+}
+
+/**
+ * Phase 9.5c (PARITY #13b) response shape for `GET /api/git/branch` — see
+ * `apps/server/src/git/branch.ts`. `isRepo: false` is a normal, successful
+ * answer (a plain non-git directory), NOT an error the caller has to guess
+ * about from a status code — that honesty is the whole point of this type
+ * having two fields instead of one nullable string.
+ */
+export interface GitBranchResponse {
+  isRepo: boolean;
+  /** The current branch name, or null for a repo with detached HEAD / no
+   * commits yet, or whenever `isRepo` is false. */
+  branch: string | null;
 }

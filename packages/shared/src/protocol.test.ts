@@ -163,6 +163,7 @@ describe("Workspace", () => {
       name: "vibedeck",
       rootPath: "/Users/harsha/projects/vibedeck",
       layout: null,
+      color: null,
       createdAt: "2026-08-10T12:00:00.000Z",
       updatedAt: "2026-08-10T12:00:00.000Z",
     };
@@ -188,6 +189,7 @@ describe("Workspace", () => {
       name: "api-project",
       rootPath: "/tmp/api-project",
       layout: JSON.stringify(tree),
+      color: null,
       createdAt: "2026-08-10T12:00:00.000Z",
       updatedAt: "2026-08-10T12:05:00.000Z",
     };
@@ -202,6 +204,7 @@ describe("Workspace", () => {
       name: "renamed-project",
       rootPath: "/tmp/renamed-project",
       layout: null,
+      color: null,
       createdAt: "2026-08-10T09:00:00.000Z",
       updatedAt: "2026-08-10T10:30:00.000Z",
     };

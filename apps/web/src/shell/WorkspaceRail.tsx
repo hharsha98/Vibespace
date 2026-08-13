@@ -1,4 +1,5 @@
-import type { Workspace } from "@vibedeck/shared";
+import { useEffect, useState } from "react";
+import { WORKSPACE_COLORS, type Workspace } from "@vibedeck/shared";
 import { IconButton, ListRow } from "./ui.js";
 import FileTree from "../files/FileTree.js";
 
@@ -51,6 +52,14 @@ export interface WorkspaceRailProps {
   onRequestDelete: (id: string) => void;
   onConfirmDelete: () => void;
   onCancelDelete: () => void;
+
+  /** Phase 9.5c, PARITY #41: sets (or, with `null`, clears) a workspace's
+   * chosen colour. The picker popover's own open/closed state is transient
+   * UI state owned locally by this component (see the file's top comment
+   * for why that split, not App.tsx-lifted state, is the right call here) —
+   * only the actual mutation is lifted up, same as every other write in
+   * this file. */
+  onSetWorkspaceColor: (id: string, color: string | null) => void;
 }
 
 const RAIL_WIDTH = 220;
@@ -86,7 +95,13 @@ export default function WorkspaceRail(props: WorkspaceRailProps) {
     onRequestDelete,
     onConfirmDelete,
     onCancelDelete,
+    onSetWorkspaceColor,
   } = props;
+
+  // Phase 9.5c: which row's colour-picker popover is currently open, if
+  // any — purely transient UI state, same "local, not lifted to App.tsx"
+  // treatment Terminal.tsx's right-click `contextMenu` state gets.
+  const [colorPickerOpenId, setColorPickerOpenId] = useState<string | null>(null);
 
   if (collapsed) {
     return (
@@ -125,7 +140,9 @@ export default function WorkspaceRail(props: WorkspaceRailProps) {
               background: workspace.id === activeWorkspaceId ? "var(--vd-surface-raised)" : "transparent",
               border: "none",
               borderLeft:
-                workspace.id === activeWorkspaceId ? "2px solid var(--vd-accent)" : "2px solid transparent",
+                workspace.id === activeWorkspaceId
+                  ? `${workspace.color ? 3 : 2}px solid ${workspace.color ?? "var(--vd-accent)"}`
+                  : "2px solid transparent",
               borderRadius: 4,
               cursor: "pointer",
             }}
@@ -226,6 +243,14 @@ export default function WorkspaceRail(props: WorkspaceRailProps) {
                 label={workspace.name}
                 title={workspace.rootPath}
                 onClick={() => onSwitch(workspace.id)}
+                // Phase 9.5c, PARITY #41: an active row with a chosen
+                // colour gets ITS colour as the thick left edge instead of
+                // the theme's default accent — see ListRow's own
+                // `accentColor` doc comment. `undefined` (not `workspace.
+                // color` directly, which is `string | null`) so a null
+                // colour genuinely falls back to ListRow's own default
+                // rather than passing `null` through as a CSS value.
+                accentColor={workspace.color ?? undefined}
                 trailing={
                   // Stop the click from bubbling up to the ListRow's own
                   // onClick (which switches the active workspace) — without
@@ -236,8 +261,37 @@ export default function WorkspaceRail(props: WorkspaceRailProps) {
                   // written inline on each button instead of once here.
                   <div
                     onClick={(e) => e.stopPropagation()}
-                    style={{ display: "flex", alignItems: "center", gap: 2 }}
+                    style={{ display: "flex", alignItems: "center", gap: 2, position: "relative" }}
                   >
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setColorPickerOpenId((open) => (open === workspace.id ? null : workspace.id))
+                      }
+                      title={workspace.color ? "Change workspace colour" : "Set workspace colour"}
+                      style={{
+                        width: 12,
+                        height: 12,
+                        borderRadius: "50%",
+                        flexShrink: 0,
+                        cursor: "pointer",
+                        padding: 0,
+                        background: workspace.color ?? "transparent",
+                        border: workspace.color
+                          ? "1px solid var(--vd-border)"
+                          : "1px dashed var(--vd-text-faint)",
+                      }}
+                    />
+                    {colorPickerOpenId === workspace.id && (
+                      <ColorPickerPopover
+                        current={workspace.color}
+                        onPick={(color) => {
+                          onSetWorkspaceColor(workspace.id, color);
+                          setColorPickerOpenId(null);
+                        }}
+                        onClose={() => setColorPickerOpenId(null)}
+                      />
+                    )}
                     {runningCount(workspace) > 0 && (
                       <span
                         style={{
@@ -343,6 +397,105 @@ export default function WorkspaceRail(props: WorkspaceRailProps) {
       </div>
 
       <FileTree workspaceId={activeWorkspaceId} onOpenFile={onOpenFile} />
+    </div>
+  );
+}
+
+/**
+ * The small swatch-grid popover opened by a workspace row's colour dot
+ * (Phase 9.5c, PARITY #41) — the fixed 8-colour palette plus a "None"
+ * option that clears it back to null. Closes on any outside click, same
+ * "document click-away listener" pattern Terminal.tsx's own right-click
+ * context menu uses (see that file's `contextMenu` effect).
+ */
+function ColorPickerPopover({
+  current,
+  onPick,
+  onClose,
+}: {
+  current: string | null;
+  onPick: (color: string | null) => void;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onClickAway = () => onClose();
+    // Deferred to the next tick: the swatch dot's own onClick (which opens
+    // this popover) also bubbles to `document` in the SAME click event —
+    // without a delay, this listener would fire immediately and close the
+    // popover the instant it opens.
+    const timer = setTimeout(() => document.addEventListener("click", onClickAway), 0);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("click", onClickAway);
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      onClick={(e) => e.stopPropagation()}
+      style={{
+        position: "absolute",
+        top: "100%",
+        left: 0,
+        marginTop: 4,
+        zIndex: 30,
+        display: "grid",
+        gridTemplateColumns: "repeat(4, 1fr)",
+        gap: 4,
+        padding: 6,
+        background: "var(--vd-surface-raised)",
+        border: "1px solid var(--vd-border)",
+        borderRadius: 6,
+        boxShadow: "0 8px 24px rgba(0, 0, 0, 0.4)",
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => onPick(null)}
+        title="No colour"
+        style={{
+          width: 18,
+          height: 18,
+          borderRadius: "50%",
+          cursor: "pointer",
+          background: "transparent",
+          border: current === null ? "2px solid var(--vd-accent)" : "1px dashed var(--vd-text-faint)",
+          padding: 0,
+        }}
+      />
+      {WORKSPACE_COLORS.map((color) => (
+        <button
+          key={color}
+          type="button"
+          onClick={() => onPick(color)}
+          title={color}
+          style={{
+            width: 18,
+            height: 18,
+            borderRadius: "50%",
+            cursor: "pointer",
+            background: color,
+            border: current === color ? "2px solid var(--vd-text)" : "1px solid var(--vd-border)",
+            padding: 0,
+          }}
+        />
+      ))}
+      <button
+        type="button"
+        onClick={onClose}
+        title="Close"
+        style={{
+          gridColumn: "1 / -1",
+          background: "transparent",
+          border: "none",
+          color: "var(--vd-text-faint)",
+          fontSize: 10,
+          cursor: "pointer",
+          padding: "2px 0 0",
+        }}
+      >
+        Close
+      </button>
     </div>
   );
 }

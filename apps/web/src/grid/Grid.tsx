@@ -1,6 +1,6 @@
 import { Allotment } from "allotment";
 import "allotment/dist/style.css";
-import type { AgentId, SessionInfo } from "@vibedeck/shared";
+import type { AgentId, SessionInfo, Workspace } from "@vibedeck/shared";
 import PaneView, { type AgentOption } from "./PaneView.js";
 import type { Theme } from "../themes/themes.js";
 import { findPane, type Direction, type GridNode, type PaneId } from "./tree.js";
@@ -11,6 +11,9 @@ interface GridProps {
   agents: AgentOption[];
   defaultAgent: AgentId | "";
   workspaceId: string | null;
+  /** Phase 9.5c, PARITY #13c/#41 — threaded straight through to every pane's
+   * header (see PaneView.tsx's own `workspace` prop doc comment). */
+  workspace: Workspace | null;
   /** The active theme, threaded down to every pane's `<Terminal>`. */
   theme: Theme;
   focusedPaneId: PaneId | null;
@@ -64,6 +67,7 @@ function GridNodeView({ node, ...rest }: GridProps & { node: GridNode }) {
     agents,
     defaultAgent,
     workspaceId,
+    workspace,
     theme,
     focusedPaneId,
     onFocus,
@@ -84,6 +88,7 @@ function GridNodeView({ node, ...rest }: GridProps & { node: GridNode }) {
         agents={agents}
         defaultAgent={defaultAgent}
         workspaceId={workspaceId}
+        workspace={workspace}
         theme={theme}
         isFocused={focusedPaneId === node.id}
         onFocus={() => onFocus(node.id)}

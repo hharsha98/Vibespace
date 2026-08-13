@@ -7,12 +7,12 @@
  * file calls `fs` with a path that hasn't been through `safeResolve` first.
  */
 import chokidar, { type FSWatcher } from "chokidar";
-import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { relative, sep } from "node:path";
 import type { FastifyInstance } from "fastify";
 import type { FileEntry, FileWatchEvent } from "@vibedeck/shared";
 import type { WorkspaceStore } from "../db/workspaces.js";
-import { isProbablyBinary, safeResolve } from "./safe-path.js";
+import { isInside, isProbablyBinary, safeResolve } from "./safe-path.js";
 
 /** Refuse to read/write anything bigger than this — both for the text
  * editor's own sanity (nobody wants a 50MB file dumped into CodeMirror) and
@@ -176,6 +176,71 @@ export function registerFileRoutes(app: FastifyInstance, workspaceStore: Workspa
         return reply.status(400).send({ error: "Not a file" });
       }
       return reply.status(500).send({ error: "Failed to write file" });
+    }
+
+    return reply.status(204).send();
+  });
+
+  // Phase 9.5c (PARITY #20): move/rename a file or directory within a
+  // workspace — the server side of file-tree drag-and-drop (see
+  // apps/web/src/files/FileTree.tsx). Named "move" (not "rename") because
+  // it's the same operation either way: `to` can change the basename
+  // (rename), the parent directory (move), or both at once.
+  //
+  // This is the highest-risk endpoint in the file-tree feature, so every
+  // refusal below is deliberate and tested (see routes.test.ts):
+  //   1. Both `from` and `to` go through `safeResolve` independently — a
+  //      malicious `to` escaping the workspace root is just as dangerous as
+  //      a malicious `from`, so neither gets a pass.
+  //   2. Refuse if `from` doesn't exist (404) — nothing to move.
+  //   3. Refuse moving a path into itself or one of its own descendants
+  //      (400) — `rename("a", "a/b")` would otherwise corrupt the
+  //      directory (this check runs on the RESOLVED absolute paths, via the
+  //      same `isInside` helper `safeResolve` itself uses for containment).
+  //   4. Refuse if `to` already exists (409) — never silently overwrite;
+  //      the client can retry with a different destination name.
+  //   5. Only then attempt the actual `fs.renameSync`.
+  app.post("/api/files/move", async (request, reply) => {
+    const body = (request.body ?? {}) as { workspaceId?: unknown; from?: unknown; to?: unknown };
+    const workspace = requireWorkspace(workspaceStore, body.workspaceId, reply);
+    if (!workspace) return;
+
+    const src = safeResolve(workspace.rootPath, body.from);
+    if (!src.ok) {
+      return reply.status(403).send({ error: `Source path: ${src.error}` });
+    }
+    const dest = safeResolve(workspace.rootPath, body.to);
+    if (!dest.ok) {
+      return reply.status(403).send({ error: `Destination path: ${dest.error}` });
+    }
+
+    if (!existsSync(src.path)) {
+      return reply.status(404).send({ error: `"${body.from}" does not exist` });
+    }
+
+    // Checked BEFORE the "already exists" check below: if `to` names the
+    // same path as `from` (or a path inside it), that's always the more
+    // specific and more honest error, even though a same-path move would
+    // technically also fail the "already exists" check (the source IS the
+    // thing that already exists at that path).
+    if (isInside(src.path, dest.path)) {
+      return reply
+        .status(400)
+        .send({ error: "Cannot move a directory into itself or one of its own descendants" });
+    }
+
+    if (existsSync(dest.path)) {
+      return reply.status(409).send({ error: `"${body.to}" already exists` });
+    }
+
+    try {
+      // Note: `renameSync` can fail with EXDEV if `to` somehow lands on a
+      // different filesystem/mount than `from` — not expected within a
+      // single workspace root, and not specially handled (no copy+delete
+      // fallback) here; it surfaces as the generic 500 below.
+      renameSync(src.path, dest.path);
+    } catch {
+      return reply.status(500).send({ error: "Failed to move file" });
     }
 
     return reply.status(204).send();

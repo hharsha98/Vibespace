@@ -30,7 +30,8 @@ const LATEST_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
 /** Every table migration 1 creates, and the columns it should have today —
  * used to assert a fresh database lands at the full current shape. */
 const EXPECTED_SCHEMA: Record<string, string[]> = {
-  workspaces: ["id", "name", "root_path", "layout", "created_at", "updated_at"],
+  // "color" (Phase 9.5c, migration 5) — see that migration's own comment.
+  workspaces: ["id", "name", "root_path", "layout", "color", "created_at", "updated_at"],
   board_cards: [
     "id",
     "workspace_id",
@@ -238,6 +239,12 @@ describe("migrate() via openDatabase()", () => {
       name: "vibedeck",
       root_path: "/tmp/vibedeck",
       layout: null,
+      // The hand-built table above predates migration 5 (no "color" column
+      // at all) — after openDatabase() repairs it, the pre-existing row
+      // must come back with color = NULL, the honest "no colour chosen yet"
+      // default for a workspace that predates the column, never an error or
+      // a dropped row.
+      color: null,
       created_at: "2026-01-01T00:00:00.000Z",
       updated_at: "2026-01-01T00:00:00.000Z",
     });

@@ -189,6 +189,7 @@ export function ListRow({
   title,
   trailing,
   onClick,
+  accentColor,
 }: {
   active?: boolean;
   /** Omit for rows with no status meaning (e.g. a plain menu item). */
@@ -197,6 +198,16 @@ export function ListRow({
   title?: string;
   trailing?: ReactNode;
   onClick?: () => void;
+  /**
+   * Phase 9.5c, PARITY #41: overrides the active row's left-edge colour
+   * (and thickens it from 2px to 3px, so a workspace's own identity colour
+   * reads as visually distinct from the theme's default accent edge) with a
+   * caller-chosen colour instead of `var(--vd-accent)`. Only meaningful
+   * when `active` is also true; ignored otherwise. Every OTHER caller of
+   * `ListRow` (Board, Agents, Prompts, ...) simply never passes this, so
+   * their active-row look is byte-for-byte unchanged.
+   */
+  accentColor?: string;
 }) {
   return (
     <div
@@ -213,7 +224,9 @@ export function ListRow({
         borderRadius: 4,
         cursor: onClick ? "pointer" : "default",
         background: active ? "var(--vd-surface-raised)" : undefined,
-        borderLeft: active ? "2px solid var(--vd-accent)" : "2px solid transparent",
+        borderLeft: active
+          ? `${accentColor ? 3 : 2}px solid ${accentColor ?? "var(--vd-accent)"}`
+          : "2px solid transparent",
       }}
     >
       {statusKind && <StatusDot status={statusKind} />}

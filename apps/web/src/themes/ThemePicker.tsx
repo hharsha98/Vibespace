@@ -85,7 +85,11 @@ export default function ThemePicker({ currentThemeId, onSelect, onClose }: Theme
   );
 }
 
-function ThemeSection({
+/** Exported (not just used by the overlay above) so Settings.tsx (Phase
+ * 9.5c, PARITY #45) can render the exact same swatch grid inline, mirroring
+ * — not duplicating — the nav-bar theme picker's own rendering, per that
+ * phase's "move or mirror it" instruction. */
+export function ThemeSection({
   label,
   themes,
   currentThemeId,

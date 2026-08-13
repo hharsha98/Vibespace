@@ -42,6 +42,7 @@ import type { OpenNoteRequest } from "./memory/MemoryPanel.js";
 import Swarm from "./swarm/Swarm.js";
 import Agents from "./agents/Agents.js";
 import Prompts from "./prompts/Prompts.js";
+import Settings from "./settings/Settings.js";
 
 /** Which full-screen overlay (if any) is currently open. Only one at a
  * time — opening a new one implicitly replaces whichever was open, and
@@ -58,7 +59,16 @@ type OverlayKind = "palette" | "theme" | "help" | "quickOpen" | null;
  * visible — so switching views never disconnects a running terminal's
  * WebSocket, never discards an editor tab's unsaved buffer, and never
  * re-fetches the board's card list on every switch either. */
-type CenterView = "terminals" | "editor" | "preview" | "board" | "graph" | "swarm" | "agents" | "prompts";
+type CenterView =
+  | "terminals"
+  | "editor"
+  | "preview"
+  | "board"
+  | "graph"
+  | "swarm"
+  | "agents"
+  | "prompts"
+  | "settings";
 
 interface HealthResponse {
   status: string;
@@ -130,6 +140,35 @@ const RAIL_COLLAPSED_KEY = "vibedeck.rail.collapsed";
 // that it should be "collapsed/hidden by default" until Phases 7/8/10 give
 // it real content, hence `true` as the fallback (vs. the rail's `false`).
 const DOCK_COLLAPSED_KEY = "vibedeck.dock.collapsed";
+
+// Phase 9.5c (PARITY #45, Settings screen): the default-agent picker existed
+// in the nav bar since Phase 2 but was NEVER actually persisted — it reset
+// to "first available agent" on every reload. Same try/catch-around-
+// localStorage pattern as `loadBoolPref`/`saveBoolPref` above and
+// `themes.ts`'s `loadStoredThemeId`/`saveThemeId`; this is the project's one
+// established persistence mechanism (there is no other settings store), so
+// Settings.tsx's new preferences follow it too rather than inventing a
+// second one.
+const DEFAULT_AGENT_KEY = "vibedeck.defaultAgent";
+
+function loadStoredDefaultAgent(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(DEFAULT_AGENT_KEY);
+  } catch {
+    return null; // Private-browsing Safari throws on access, not just on write.
+  }
+}
+
+function saveDefaultAgent(id: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(DEFAULT_AGENT_KEY, id);
+  } catch {
+    // Storage full or disabled — the choice still applies for this session,
+    // it just won't be remembered next time. Not worth surfacing to the user.
+  }
+}
 
 export default function App() {
   const [health, setHealth] = useState<HealthState>({ kind: "loading" });
@@ -251,6 +290,14 @@ export default function App() {
 
   const setTheme = useCallback((id: string) => setThemeIdState(id), []);
 
+  // Phase 9.5c: the one place `defaultAgent` is ever changed, so persistence
+  // (see `saveDefaultAgent` above) can never be forgotten at a call site —
+  // both the nav-bar `<select>` below and the new Settings page use this.
+  const updateDefaultAgent = useCallback((id: AgentId) => {
+    setDefaultAgent(id);
+    saveDefaultAgent(id);
+  }, []);
+
   // --- Overlays (command palette, theme picker, keyboard cheat sheet) ------
 
   const [activeOverlay, setActiveOverlay] = useState<OverlayKind>(null);
@@ -307,8 +354,15 @@ export default function App() {
       .then((res) => res.json() as Promise<{ agents: AgentOption[] }>)
       .then((body) => {
         setAgents(body.agents);
+        // Phase 9.5c: honour a previously-saved default agent if it's still
+        // installed and available; otherwise fall back to the original
+        // "first available" behaviour (also what happens for a first-ever
+        // run, with nothing saved yet).
+        const stored = loadStoredDefaultAgent();
+        const storedOption = body.agents.find((a) => a.id === stored && a.available);
         const firstAvailable = body.agents.find((a) => a.available);
-        if (firstAvailable) setDefaultAgent(firstAvailable.id);
+        const initial = storedOption ?? firstAvailable;
+        if (initial) setDefaultAgent(initial.id);
       })
       .catch((err: unknown) => {
         console.warn("vibedeck: failed to load agents", err);
@@ -816,6 +870,30 @@ export default function App() {
     }
   }, [renamingId, renameValue]);
 
+  // Phase 9.5c (PARITY #41): sets or clears (via `color: null`) a
+  // workspace's chosen colour. Same PATCH-then-reconcile shape as
+  // `commitRename` above, minus the "editing in progress" local state —
+  // the colour picker's open/closed toggle is purely transient UI state
+  // that lives inside WorkspaceRail.tsx itself (see that file's own
+  // comment), so this callback only ever needs to own the actual mutation.
+  const setWorkspaceColor = useCallback(async (id: string, color: string | null) => {
+    try {
+      const res = await fetch(`/api/workspaces/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ color }),
+      });
+      const body = (await res.json().catch(() => ({}))) as Partial<Workspace> & { error?: string };
+      if (!res.ok) {
+        throw new Error(body.error ?? `Server responded with ${res.status}`);
+      }
+      const updated = body as Workspace;
+      setWorkspaces((prev) => prev.map((w) => (w.id === updated.id ? updated : w)));
+    } catch (err) {
+      console.warn("vibedeck: failed to set workspace colour", err);
+    }
+  }, []);
+
   const requestDeleteWorkspace = useCallback((id: string) => {
     setPendingDeleteWorkspaceId(id);
   }, []);
@@ -874,6 +952,7 @@ export default function App() {
       "view-swarm": () => setCenterView("swarm"),
       "view-agents": () => setCenterView("agents"),
       "view-prompts": () => setCenterView("prompts"),
+      "view-settings": () => setCenterView("settings"),
       "quick-open": () => {
         if (activeWorkspaceId) setActiveOverlay("quickOpen");
       },
@@ -1152,11 +1231,18 @@ export default function App() {
           >
             Prompts
           </ViewTabButton>
+          <ViewTabButton
+            active={centerView === "settings"}
+            onClick={() => setCenterView("settings")}
+            shortcut={formatShortcut(KEYMAP.find((s) => s.id === "view-settings")!, isMac)}
+          >
+            Settings
+          </ViewTabButton>
         </div>
 
         <select
           value={defaultAgent}
-          onChange={(e) => setDefaultAgent(e.target.value as AgentId)}
+          onChange={(e) => updateDefaultAgent(e.target.value as AgentId)}
           title="Default agent for new panes"
           style={{
             background: "var(--vd-surface)",
@@ -1237,6 +1323,7 @@ export default function App() {
             onRequestDelete={requestDeleteWorkspace}
             onConfirmDelete={() => void confirmDeleteWorkspace()}
             onCancelDelete={cancelDeleteWorkspace}
+            onSetWorkspaceColor={(id, color) => void setWorkspaceColor(id, color)}
           />
         )}
 
@@ -1306,6 +1393,7 @@ export default function App() {
                     agents={agents}
                     defaultAgent={defaultAgent}
                     workspaceId={activeWorkspaceId}
+                    workspace={activeWorkspace}
                     theme={theme}
                     focusedPaneId={focusedPaneId}
                     onFocus={handleFocus}
@@ -1352,6 +1440,15 @@ export default function App() {
                 </div>
                 <div style={{ position: "absolute", inset: 0, display: centerView === "prompts" ? "block" : "none" }}>
                   <Prompts workspaceId={activeWorkspaceId} visible={centerView === "prompts"} />
+                </div>
+                <div style={{ position: "absolute", inset: 0, display: centerView === "settings" ? "block" : "none" }}>
+                  <Settings
+                    themeId={themeId}
+                    onThemeChange={setTheme}
+                    defaultAgent={defaultAgent}
+                    onDefaultAgentChange={updateDefaultAgent}
+                    agents={agents}
+                  />
                 </div>
               </div>
             ) : (

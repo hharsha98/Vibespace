@@ -333,6 +333,60 @@ describe("workspace REST endpoints", () => {
     await app.close();
   });
 
+  it("PATCH /api/workspaces/:id accepts a colour from the fixed palette", async () => {
+    const app = buildApp();
+    const projectDir = mkdtempSync(join(tmpdir(), "vibedeck-workspace-color-"));
+    const created = (
+      await app.inject({
+        method: "POST",
+        url: "/api/workspaces",
+        payload: { name: "color-test", rootPath: projectDir },
+      })
+    ).json() as { id: string; color: string | null };
+    expect(created.color).toBeNull(); // no colour chosen at creation time
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: `/api/workspaces/${created.id}`,
+      payload: { color: "#f87171" },
+    });
+    expect(response.statusCode).toBe(200);
+    expect((response.json() as { color: string | null }).color).toBe("#f87171");
+
+    // Explicit null clears it back to "no colour chosen".
+    const cleared = await app.inject({
+      method: "PATCH",
+      url: `/api/workspaces/${created.id}`,
+      payload: { color: null },
+    });
+    expect((cleared.json() as { color: string | null }).color).toBeNull();
+
+    rmSync(projectDir, { recursive: true, force: true });
+    await app.close();
+  });
+
+  it("PATCH /api/workspaces/:id rejects a colour that isn't in the fixed palette with 400", async () => {
+    const app = buildApp();
+    const projectDir = mkdtempSync(join(tmpdir(), "vibedeck-workspace-badcolor-"));
+    const created = (
+      await app.inject({
+        method: "POST",
+        url: "/api/workspaces",
+        payload: { name: "badcolor-test", rootPath: projectDir },
+      })
+    ).json() as { id: string };
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: `/api/workspaces/${created.id}`,
+      payload: { color: "#ffffff" }, // not one of WORKSPACE_COLORS
+    });
+    expect(response.statusCode).toBe(400);
+
+    rmSync(projectDir, { recursive: true, force: true });
+    await app.close();
+  });
+
   it("GET /api/workspaces/:id returns 404 for an unknown id", async () => {
     const app = buildApp();
     const response = await app.inject({ method: "GET", url: "/api/workspaces/does-not-exist" });

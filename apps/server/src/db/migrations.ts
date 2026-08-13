@@ -305,6 +305,23 @@ function up004AgentProfilesAndSavedPrompts(db: Database): void {
 }
 
 /**
+ * Migration 5 (Phase 9.5c, PARITY #41): `workspaces.color`, a nullable
+ * free-text column holding one of `WORKSPACE_COLORS` (see
+ * `packages/shared/src/protocol.ts`) or NULL. NULL is the honest default for
+ * every existing workspace — "no colour chosen yet", which the rail and pane
+ * header both render as the current neutral look, not a randomly-assigned
+ * swatch (see that constant's own doc comment for why). No backfill UPDATE
+ * is needed the way migration 2's `last_heartbeat_at` needed one: NULL here
+ * is already the correct, meaningful value for a workspace that predates
+ * this column, not a placeholder standing in for missing data.
+ */
+function up005WorkspacesColor(db: Database): void {
+  if (!hasColumn(db, "workspaces", "color")) {
+    db.exec(`ALTER TABLE workspaces ADD COLUMN color TEXT`);
+  }
+}
+
+/**
  * Every migration, in ascending version order. Audited against the live
  * `~/.vibedeck/vibedeck.db` on this machine by comparing each `CREATE
  * TABLE` above to `PRAGMA table_info` on every table that db actually had:
@@ -314,13 +331,15 @@ function up004AgentProfilesAndSavedPrompts(db: Database): void {
  * table missing a column (`last_heartbeat_at`), which migration 2 repairs.
  * Migrations 3 and 4 (Phase 9.5b) are new additions, not repairs — no
  * existing database has ever had `task_knowledge`, `agent_profiles`, or
- * `saved_prompts`, so there's nothing to audit them against yet.
+ * `saved_prompts`, so there's nothing to audit them against yet. Migration 5
+ * (Phase 9.5c) is the same kind of new addition for `workspaces.color`.
  */
 export const MIGRATIONS: Migration[] = [
   { version: 1, name: "full schema", up: up001FullSchema },
   { version: 2, name: "add file_claims.last_heartbeat_at", up: up002FileClaimsLastHeartbeatAt },
   { version: 3, name: "add board_cards.task_knowledge", up: up003BoardCardsTaskKnowledge },
   { version: 4, name: "add agent_profiles and saved_prompts", up: up004AgentProfilesAndSavedPrompts },
+  { version: 5, name: "add workspaces.color", up: up005WorkspacesColor },
 ];
 
 /** Copies the database file to `<dbPath>.backup-v<version>`. Flushes WAL

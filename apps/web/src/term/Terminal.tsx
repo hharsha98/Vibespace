@@ -5,10 +5,12 @@ import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
+import { ImageAddon } from "@xterm/addon-image";
 import type { AgentId, ClientMessage, ServerMessage } from "@vibedeck/shared";
 import { AGENT_SPECS } from "@vibedeck/shared";
 import { isMacPlatform, matchShortcut } from "../keys/keymap.js";
 import type { Theme } from "../themes/themes.js";
+import type { Direction } from "../grid/tree.js";
 import { BlockTracker, parseOsc133 } from "./blocks.js";
 import { createPendingCommand, type PendingCommand } from "./pendingCommand.js";
 import {
@@ -55,6 +57,16 @@ interface TerminalProps {
    * session list) — this component doesn't own that state.
    */
   onClose?: () => void;
+  /**
+   * Phase 9.5c, PARITY #9: fired with "row" (side by side) or "column"
+   * (stacked) when the right-click menu's "Split right"/"Split down" entry
+   * is picked. Optional (not every caller of `<Terminal>` needs a split
+   * affordance — there is exactly one today, PaneView.tsx, which passes the
+   * SAME `onSplit` handler its own header icons already call, so this menu
+   * never duplicates the split logic itself, only offers another way to
+   * reach it).
+   */
+  onSplit?: (direction: Direction) => void;
 }
 
 /** Escape spaces in a dropped file's path, the way a shell expects (`a b` -> `a\ b`). */
@@ -172,7 +184,7 @@ function styleGutterBar(el: HTMLElement, color: string): void {
  * (switching sessions, unmounting) only closes the *view* — the pty itself
  * keeps running on the server until explicitly killed (see `onClose`).
  */
-export default function Terminal({ sessionId, agentId, theme, onClose }: TerminalProps) {
+export default function Terminal({ sessionId, agentId, theme, onClose, onSplit }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -198,6 +210,14 @@ export default function Terminal({ sessionId, agentId, theme, onClose }: Termina
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  // Phase 9.5c, PARITY #12: true while the user has scrolled the LIVE view
+  // up away from the bottom. Deliberately its own boolean (not derived from
+  // some other piece of state) — see the main effect's `updateScrollState`
+  // for where it's actually computed, from xterm's own buffer, not a
+  // separate DOM scroll listener (per this phase's instruction to integrate
+  // with Terminal.tsx's existing scroll-handling machinery rather than
+  // adding a competing one).
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
 
   // --- Blocks view (Phase 9.5a, part 2) -----------------------------------
   // "live" (default) is xterm exactly as before; "blocks" swaps in
@@ -538,6 +558,22 @@ export default function Terminal({ sessionId, agentId, theme, onClose }: Termina
       term.focus();
     });
 
+    // --- Scroll-to-bottom indicator (Phase 9.5c, PARITY #12) -------------
+    // `viewportY` is the buffer line currently at the TOP of the visible
+    // viewport; `baseY` is where that would be if the view were pinned to
+    // the live bottom (it advances as new lines get pushed in). The two are
+    // equal exactly when the user is following live output — this reads
+    // straight off xterm's own buffer, the same source of truth
+    // `currentBufferLine()` above already uses, rather than a separate DOM
+    // scroll listener on the container (which would have to independently
+    // reconstruct "am I at the bottom" from raw pixel offsets).
+    const updateScrollIndicator = (): void => {
+      const buffer = term.buffer.active;
+      setShowScrollToBottom(buffer.viewportY < buffer.baseY);
+    };
+    // Covers the user actually dragging the scrollbar / using PageUp etc.
+    const onScroll = term.onScroll(updateScrollIndicator);
+
     // WebGL rendering is much faster, but its driver support is patchy —
     // some machines/browsers throw when creating the context — and, per the
     // module-level comment above, the browser's *total* WebGL context
@@ -575,6 +611,31 @@ export default function Terminal({ sessionId, agentId, theme, onClose }: Termina
       );
     }
 
+    // Phase 9.5c, PARITY #11: inline image preview (sixel / iTerm2 inline
+    // images / Kitty graphics). Independent of the WebGL budget above — it
+    // doesn't hold a scarce shared browser resource the way a WebGL context
+    // does, so every pane gets it, not just the first MAX_WEBGL_TERMINALS.
+    // Still wrapped in try/catch, same defensive posture as the WebGL addon
+    // above: this is a community addon, not core xterm.js, and a failure to
+    // construct/activate it (an unsupported browser API, some other
+    // environment quirk) must degrade to "no inline images in this pane,"
+    // never break the terminal itself.
+    try {
+      term.loadAddon(
+        new ImageAddon({
+          // Default is 128MB per addon instance; with up to 16 panes each
+          // potentially holding an ImageAddon, the worst case at the
+          // default would be 2GB. 32MB/pane keeps that worst case (16 ×
+          // 32MB = 512MB) more reasonable while still comfortably fitting
+          // any single sixel/iTerm2 image a terminal session is likely to
+          // print.
+          storageLimit: 32,
+        })
+      );
+    } catch (err) {
+      console.warn("vibedeck: image addon failed to load, inline images will not render", err);
+    }
+
     term.open(container);
     fitAddon.fit();
 
@@ -591,7 +652,7 @@ export default function Terminal({ sessionId, agentId, theme, onClose }: Termina
       const message = JSON.parse(event.data) as ServerMessage;
 
       if (message.type === "ready") {
-        term.write(message.history);
+        term.write(message.history, updateScrollIndicator);
         term.focus();
         // Now that we know the actual container size (from fit() above),
         // tell the server so the pty's idea of the terminal size matches
@@ -600,7 +661,15 @@ export default function Terminal({ sessionId, agentId, theme, onClose }: Termina
           send({ type: "resize", sessionId, cols: term.cols, rows: term.rows });
         }
       } else if (message.type === "output") {
-        term.write(message.data);
+        // `write`'s optional callback fires once xterm has actually parsed
+        // and applied this chunk — recomputing the indicator THERE (rather
+        // than synchronously right after the call, or relying solely on
+        // `onScroll` above) is what catches the case `onScroll` alone
+        // wouldn't: new output arriving while the user is scrolled up,
+        // where `baseY` moves but `viewportY` (the user's own scroll
+        // position) deliberately doesn't, and xterm doesn't always fire a
+        // scroll event for that on every terminal/renderer combination.
+        term.write(message.data, updateScrollIndicator);
         // Agent TUI panes (never "shell", which gets the exact OSC 133
         // signal above) have no busy/idle markers at all — this heuristic
         // ("output arrived recently" = busy) is the best available signal.
@@ -638,6 +707,7 @@ export default function Terminal({ sessionId, agentId, theme, onClose }: Termina
       resizeObserver.disconnect();
       onData.dispose();
       onResize.dispose();
+      onScroll.dispose();
       // Closing this socket only detaches this view — the SessionManager
       // on the server keeps the pty running so we (or another tab) can
       // reattach later and replay the scrollback.
@@ -766,6 +836,19 @@ export default function Terminal({ sessionId, agentId, theme, onClose }: Termina
       });
   };
 
+  // Phase 9.5c, PARITY #9: "Split right"/"Split down" call the exact same
+  // `onSplit` prop PaneView.tsx's own header icons call — see that prop's
+  // doc comment. Both are no-ops if `onSplit` wasn't supplied (defensive;
+  // in practice PaneView.tsx always supplies it today).
+  const handleSplitRight = () => {
+    setContextMenu(null);
+    onSplit?.("row");
+  };
+  const handleSplitDown = () => {
+    setContextMenu(null);
+    onSplit?.("column");
+  };
+
   // Dropping a file onto the terminal pastes its path as text (space-
   // escaped, since shells otherwise treat spaces as argument separators)
   // instead of letting the browser navigate to/open the file.
@@ -855,6 +938,39 @@ export default function Terminal({ sessionId, agentId, theme, onClose }: Termina
           <ViewModeButton label="Blocks" active={viewMode === "blocks"} onClick={() => setViewMode("blocks")} />
         </div>
 
+        {/* Phase 9.5c, PARITY #12: only in Live view — Blocks view is a
+            separate renderer (docs/COLLAPSIBLE-BLOCKS.md) with its own
+            scrolling, and this indicator's whole job is describing xterm's
+            OWN buffer position, which is meaningless there. */}
+        {showScrollToBottom && viewMode === "live" && (
+          <button
+            type="button"
+            onClick={() => termRef.current?.scrollToBottom()}
+            title="Scroll to bottom"
+            style={{
+              position: "absolute",
+              bottom: 12,
+              left: "50%",
+              transform: "translateX(-50%)",
+              zIndex: 10,
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+              background: "var(--vd-surface-raised)",
+              color: "var(--vd-text)",
+              border: "1px solid var(--vd-border)",
+              borderRadius: 12,
+              padding: "4px 10px",
+              fontSize: 11,
+              cursor: "pointer",
+              boxShadow: "0 4px 12px rgba(0, 0, 0, 0.35)",
+            }}
+          >
+            <DownArrowIcon />
+            Scroll to bottom
+          </button>
+        )}
+
         {showSearch && viewMode === "live" && (
           <div
             style={{
@@ -920,6 +1036,8 @@ export default function Terminal({ sessionId, agentId, theme, onClose }: Termina
             <ContextMenuItem label="Copy" onClick={handleCopy} />
             <ContextMenuItem label="Paste" onClick={handlePaste} />
             <ContextMenuItem label="Clear" onClick={handleClear} />
+            <ContextMenuItem label="Split right" onClick={handleSplitRight} />
+            <ContextMenuItem label="Split down" onClick={handleSplitDown} />
             <ContextMenuItem label="Close" onClick={handleCloseSession} />
           </ul>
         )}
@@ -934,6 +1052,17 @@ export default function Terminal({ sessionId, agentId, theme, onClose }: Termina
         onEscape={() => termRef.current?.focus()}
       />
     </div>
+  );
+}
+
+/** A small down-chevron, inline SVG — the scroll-to-bottom indicator's
+ * glyph, no icon library (same convention as every other icon in this
+ * codebase). */
+function DownArrowIcon() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden>
+      <path d="M2.5 4.5L6 8L9.5 4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 

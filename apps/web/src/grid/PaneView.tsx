@@ -1,9 +1,10 @@
 import { useState } from "react";
-import type { AgentId, SessionInfo } from "@vibedeck/shared";
+import type { AgentId, SessionInfo, Workspace } from "@vibedeck/shared";
 import Terminal from "../term/Terminal.js";
 import type { Theme } from "../themes/themes.js";
 import type { Direction, PaneId } from "./tree.js";
 import { IconButton, StatusDot, sessionStatusKind } from "../shell/ui.js";
+import { useGitBranch } from "./useGitBranch.js";
 
 /** One entry from `GET /api/agents` — mirrors the shape App.tsx already fetches. */
 export interface AgentOption {
@@ -25,6 +26,11 @@ interface PaneViewProps {
    * pty spawns in that workspace's rootPath instead of the server's own
    * cwd. Null only in the (should-be-rare) case no workspace is active. */
   workspaceId: string | null;
+  /** The active workspace itself (not just its id) — Phase 9.5c, PARITY
+   * #13c/#41: this pane's header names the workspace (and, if the
+   * workspace has a chosen colour, tints its chip with it) alongside the
+   * agent. Null in the same rare case `workspaceId` is. */
+  workspace: Workspace | null;
   /** The active theme, threaded down to this pane's `<Terminal>` so its
    * ANSI palette matches what the rest of the app is showing. */
   theme: Theme;
@@ -64,6 +70,7 @@ export default function PaneView({
   agents,
   defaultAgent,
   workspaceId,
+  workspace,
   theme,
   isFocused,
   onFocus,
@@ -75,6 +82,10 @@ export default function PaneView({
 }: PaneViewProps) {
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+  // Phase 9.5c, PARITY #13b — polls independently per pane; see
+  // useGitBranch.ts's top comment for why polling (not a filesystem watch)
+  // and the resulting staleness window.
+  const gitBranch = useGitBranch(workspaceId);
 
   const startSession = async (agent: AgentId) => {
     setStartError(null);
@@ -146,10 +157,63 @@ export default function PaneView({
         }}
       >
         <StatusDot status={statusKind} title={session ? session.status : "empty"} />
-        <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {session ? session.title : "empty pane"}
           {session?.status === "exited" && ` (exited ${session.exitCode})`}
         </span>
+        {/* Phase 9.5c, PARITY #13c: names the workspace alongside the agent
+            — `● agent · workspace`, matching BridgeSpace's header shape.
+            Coloured dot only appears once the workspace has a chosen colour
+            (PARITY #41); no colour means no dot, not a random one. */}
+        {workspace && (
+          <span
+            title={workspace.rootPath}
+            style={{
+              flexShrink: 0,
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+              color: "var(--vd-text-faint)",
+              maxWidth: 140,
+              overflow: "hidden",
+            }}
+          >
+            <span aria-hidden>·</span>
+            {workspace.color && (
+              <span
+                aria-hidden
+                style={{ width: 6, height: 6, borderRadius: "50%", flexShrink: 0, background: workspace.color }}
+              />
+            )}
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {workspace.name}
+            </span>
+          </span>
+        )}
+        {/* Phase 9.5c, PARITY #13b: the git branch chip. Renders nothing
+            while the branch hasn't loaded yet OR the directory isn't a git
+            repo at all — `isRepo: false` is a clean, honest answer (see
+            GitBranchResponse's doc comment), not an error state to show. */}
+        {gitBranch?.isRepo && gitBranch.branch && (
+          <span
+            title={`Branch: ${gitBranch.branch}`}
+            style={{
+              flexShrink: 0,
+              display: "flex",
+              alignItems: "center",
+              gap: 3,
+              color: "var(--vd-text-faint)",
+              fontSize: 11,
+              maxWidth: 120,
+              overflow: "hidden",
+            }}
+          >
+            <BranchIcon />
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {gitBranch.branch}
+            </span>
+          </span>
+        )}
         <div className="vd-pane-icons" style={{ display: "flex", alignItems: "center", gap: 2 }}>
           <IconButton title="Split vertical" onClick={() => onSplit(paneId, "row")}>
             <SplitVerticalIcon />
@@ -182,6 +246,11 @@ export default function PaneView({
             agentId={session?.agent ?? "shell"}
             theme={theme}
             onClose={() => onClosePane(paneId)}
+            // Phase 9.5c, PARITY #9: the right-click menu's "Split right" /
+            // "Split down" entries call this SAME handler the header's split
+            // icons already call (see the IconButtons above) — no separate
+            // split logic lives in Terminal.tsx.
+            onSplit={(direction) => onSplit(paneId, direction)}
           />
         ) : (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>
@@ -269,6 +338,22 @@ function RestoreIcon() {
         strokeLinecap="round"
         strokeLinejoin="round"
       />
+    </svg>
+  );
+}
+
+/** A small git-branch glyph (two nodes joined by a curved line, the
+ * conventional "branch" icon) — inline SVG, matching this file's other
+ * title-bar icons: no icon library, `currentColor` so it inherits the
+ * chip's muted text colour. */
+function BranchIcon() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 14 14" fill="none" aria-hidden style={{ flexShrink: 0 }}>
+      <circle cx="4" cy="3" r="1.8" stroke="currentColor" strokeWidth="1.1" />
+      <circle cx="4" cy="11" r="1.8" stroke="currentColor" strokeWidth="1.1" />
+      <circle cx="10" cy="6" r="1.8" stroke="currentColor" strokeWidth="1.1" />
+      <path d="M4 4.8V9.2" stroke="currentColor" strokeWidth="1.1" />
+      <path d="M4 6.5C4 5 5 4 6.5 4H8.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
     </svg>
   );
 }

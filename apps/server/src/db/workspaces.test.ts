@@ -109,6 +109,35 @@ describe("WorkspaceStore", () => {
     expect(updated?.name).toBe("renamed-only");
   });
 
+  it("creates a workspace with color: null (no colour chosen yet)", () => {
+    const created = store.create({ name: "no-color", rootPath: "/tmp/no-color" });
+    expect(created.color).toBeNull();
+  });
+
+  it("update() sets a workspace's colour", () => {
+    const created = store.create({ name: "colorable", rootPath: "/tmp/colorable" });
+    const updated = store.update(created.id, { color: "#f87171" });
+    expect(updated?.color).toBe("#f87171");
+    expect(store.get(created.id)?.color).toBe("#f87171");
+  });
+
+  it("update() can explicitly clear a colour back to null", () => {
+    const created = store.create({ name: "clearable-color", rootPath: "/tmp/clearable-color" });
+    store.update(created.id, { color: "#60a5fa" });
+
+    const cleared = store.update(created.id, { color: null });
+    expect(cleared?.color).toBeNull();
+  });
+
+  it("update() omitting color entirely leaves the existing colour untouched", () => {
+    const created = store.create({ name: "untouched-color", rootPath: "/tmp/untouched-color" });
+    store.update(created.id, { color: "#4ade80" });
+
+    const updated = store.update(created.id, { name: "renamed-only-2" });
+    expect(updated?.color).toBe("#4ade80");
+    expect(updated?.name).toBe("renamed-only-2");
+  });
+
   it("update() returns undefined for an unknown id", () => {
     expect(store.update("does-not-exist", { name: "nope" })).toBeUndefined();
   });

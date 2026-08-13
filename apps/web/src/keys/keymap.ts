@@ -254,6 +254,19 @@ export const KEYMAP: readonly Shortcut[] = [
     key: "p",
     shift: true,
   },
+  // Phase 9.5c (PARITY #45): the Settings screen joins the same
+  // centre-column switcher. Unlike every other view above, this one does
+  // NOT use a plain mnemonic letter or its Shift fallback — it uses the
+  // near-universal OS convention for "Preferences" (Cmd+, on macOS,
+  // Ctrl+, elsewhere), which nothing above already claims (comma is free)
+  // and which anyone coming from virtually any other desktop app will
+  // already reach for instinctively.
+  {
+    id: "view-settings",
+    label: "View: Settings",
+    description: "Show the settings screen in the centre column.",
+    key: ",",
+  },
 ];
 
 /**

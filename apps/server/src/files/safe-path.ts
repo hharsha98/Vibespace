@@ -33,8 +33,13 @@ export type SafeResolveResult = { ok: true; path: string } | { ok: false; error:
 
 /** True if `candidate` is exactly `root`, or a real descendant of it —
  * i.e. NOT the classic `"/home/alice-evil".startsWith("/home/alice")` bug,
- * which is why this compares against `root + path.sep`, not bare `root`. */
-function isInside(root: string, candidate: string): boolean {
+ * which is why this compares against `root + path.sep`, not bare `root`.
+ * Exported (not just used internally by `safeResolve` below) so
+ * `files/routes.ts`'s move/rename endpoint can reuse the exact same
+ * "is B inside A" check to refuse moving a directory into itself or one of
+ * its own descendants — the same textual-containment logic, just applied to
+ * two already-resolved paths instead of a root+relPath pair. */
+export function isInside(root: string, candidate: string): boolean {
   return candidate === root || candidate.startsWith(root + sep);
 }
 

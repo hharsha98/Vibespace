@@ -1,6 +1,6 @@
 import Fastify from "fastify";
 import fastifyWebsocket from "@fastify/websocket";
-import { AGENT_IDS, AGENT_SPECS, type ClientMessage } from "@vibedeck/shared";
+import { AGENT_IDS, AGENT_SPECS, WORKSPACE_COLORS, isWorkspaceColor, type ClientMessage } from "@vibedeck/shared";
 import { detectAllAgents, INSTALL_HINTS, isAgentId } from "./pty/agents.js";
 import { SessionManager } from "./pty/session-manager.js";
 import { WorkspaceStore } from "./db/workspaces.js";
@@ -18,6 +18,7 @@ import { AgentProfileStore } from "./agents/store.js";
 import { registerAgentRoutes } from "./agents/routes.js";
 import { SavedPromptStore } from "./prompts/store.js";
 import { registerPromptRoutes } from "./prompts/routes.js";
+import { registerGitRoutes } from "./git/routes.js";
 
 const VERSION = "0.0.0";
 const PORT = 4317;
@@ -128,6 +129,10 @@ export function buildApp(options: BuildAppOptions = {}) {
   registerAgentRoutes(app, { workspaceStore, agentProfileStore });
   registerPromptRoutes(app, { workspaceStore, savedPromptStore });
 
+  // Phase 9.5c: the pane header's git-branch chip (PARITY #13b). See
+  // git/routes.ts's top comment.
+  registerGitRoutes(app, { workspaceStore });
+
   app.get("/api/health", async () => ({
     status: "ok" as const,
     version: VERSION,
@@ -185,8 +190,13 @@ export function buildApp(options: BuildAppOptions = {}) {
       return reply.status(404).send({ error: `No workspace with id "${id}"` });
     }
 
-    const body = (request.body ?? {}) as { name?: unknown; rootPath?: unknown; layout?: unknown };
-    const changes: { name?: string; rootPath?: string; layout?: string | null } = {};
+    const body = (request.body ?? {}) as {
+      name?: unknown;
+      rootPath?: unknown;
+      layout?: unknown;
+      color?: unknown;
+    };
+    const changes: { name?: string; rootPath?: string; layout?: string | null; color?: string | null } = {};
 
     if ("name" in body) {
       if (typeof body.name !== "string" || body.name.trim().length === 0) {
@@ -208,6 +218,20 @@ export function buildApp(options: BuildAppOptions = {}) {
         return reply.status(400).send({ error: '"layout" must be a JSON string or null' });
       }
       changes.layout = body.layout;
+    }
+
+    // Phase 9.5c (PARITY #41): null explicitly clears a previously-chosen
+    // colour (falls back to the neutral look); anything else must be one of
+    // the fixed palette — no free-text hex values, so the rail/pane-header
+    // rendering never has to cope with an arbitrary, possibly-illegible
+    // colour a client made up.
+    if ("color" in body) {
+      if (body.color !== null && !isWorkspaceColor(body.color)) {
+        return reply
+          .status(400)
+          .send({ error: `"color" must be null or one of: ${WORKSPACE_COLORS.join(", ")}` });
+      }
+      changes.color = body.color as string | null;
     }
 
     // Existence was already confirmed above and better-sqlite3 is
