@@ -1,6 +1,6 @@
 [package]
 name = "vibedeck-desktop"
-version = "0.0.0"
+version = "0.1.0"
 description = "vibedeck — native desktop wrapper (Phase 11a, PARITY #50)"
 edition = "2021"
 # Not published; this crate only ever builds into the .app bundle.
