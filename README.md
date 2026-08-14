@@ -71,7 +71,9 @@ project moving quickly; expect rough edges.
       a shared mailbox, file ownership so two agents never edit the same file,
       and quality gates.
 - [ ] **Phase 10 — Skills**: reusable prompt packs you drag onto a running
-      pane to change what that agent is doing.
+      pane to change what that agent is doing. Server done (discovery, the
+      open `agentskills.io` format, REST/MCP, and pane injection) — see
+      [docs/SKILLS.md](./docs/SKILLS.md). Drag-and-drop web UI not built yet.
 - [ ] **Phase 11 — Desktop app**: package it as a real installable desktop
       application with automatic updates.
 

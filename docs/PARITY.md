@@ -83,7 +83,7 @@ Legend: ✅ done · 🟡 partial · ⛔ not started · 🚫 not possible as spec
 | 34 | **Swarm: quality gates** | ✅ | Phase 9a |
 | 35 | **Swarm: live mission tree canvas** | ✅ | Phase 9b — `apps/web/src/swarm/MissionCanvas.tsx` |
 | 36 | **Swarm: @-target one agent, or all, from one bar** | ✅ | Phase 9b — `apps/web/src/swarm/CommandBar.tsx` |
-| 37 | **Skills: drag a skill onto a running pane** | ⛔ | Phase 10. Their skills follow the open `agentskills.io` standard — implement that rather than a private format. See `RESEARCH.md` §4. |
+| 37 | **Skills: drag a skill onto a running pane** | 🟡 | Phase 10, server done: discovery across six scopes (user + project × `.agents`/`.vibedeck`/`.claude`), a hand-rolled `agentskills.io`-spec parser, REST (`/api/skills`) and MCP (`list_skills`/`get_skill`), and `POST /api/skills/:name/inject` to actually type a skill into a running pane (agent panes only — a shell pane is refused, same reasoning as board dispatch). See `docs/SKILLS.md`. No web UI (drag-and-drop) yet. |
 
 ## Workspaces
 
@@ -123,9 +123,9 @@ Legend: ✅ done · 🟡 partial · ⛔ not started · 🚫 not possible as spec
 
 Phases 1–9.5 are done. Everything below is what is genuinely left.
 
-**Phase 10 — Skills** (#37). Their skills follow the open `agentskills.io`
-standard, so implement that rather than inventing a private format. See
-`RESEARCH.md` §4.
+**Phase 10 — Skills** (#37). Server done — see `docs/SKILLS.md`. What's
+left is the web UI: browsing the skill catalog and dragging one onto a
+running pane (the REST/MCP surface it would call already exists).
 
 **Phase 11 — Desktop** (#50–52). Tauri 2, signed macOS/Windows/Linux
 builds, auto-updates. Also closes #48, because a desktop window can claim

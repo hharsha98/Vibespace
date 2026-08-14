@@ -19,6 +19,7 @@ import { registerAgentRoutes } from "./agents/routes.js";
 import { SavedPromptStore } from "./prompts/store.js";
 import { registerPromptRoutes } from "./prompts/routes.js";
 import { registerGitRoutes } from "./git/routes.js";
+import { registerSkillRoutes } from "./skills/routes.js";
 
 const VERSION = "0.0.0";
 const PORT = 4317;
@@ -132,6 +133,10 @@ export function buildApp(options: BuildAppOptions = {}) {
   // Phase 9.5c: the pane header's git-branch chip (PARITY #13b). See
   // git/routes.ts's top comment.
   registerGitRoutes(app, { workspaceStore });
+
+  // Phase 10: Skills (PARITY #37) — the agentskills.io standard. See
+  // skills/routes.ts's top comment and docs/SKILLS.md.
+  registerSkillRoutes(app, { workspaceStore, sessionManager });
 
   app.get("/api/health", async () => ({
     status: "ok" as const,

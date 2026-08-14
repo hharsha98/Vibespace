@@ -68,6 +68,7 @@ import {
   handleDeleteAgent,
 } from "../agents/mcp.js";
 import { handleListPrompts } from "../prompts/mcp.js";
+import { handleListSkills, handleGetSkill } from "../skills/mcp.js";
 import { resolveWorkspaceId } from "./workspace-resolver.js";
 import { errorResult } from "./result.js";
 import { DEVELOPER_GUIDE_PROMPT_NAME, developerGuideText } from "./developer-guide.js";
@@ -257,6 +258,34 @@ export function buildVibedeckMcpServer(root: string): VibedeckMcpServer {
       const resolved = resolveWorkspaceId(workspaceStore, root);
       return handleListPrompts(savedPromptStore, resolved.ok ? resolved.workspaceId : undefined);
     }
+  );
+
+  // --- Skills tools (Phase 10, PARITY #37) ----------------------------------
+  // Same shape as memory tools, not board/agents/prompts: skills are
+  // addressed by `root` alone (`discoverSkills`, ../skills/discover.ts),
+  // no `workspace_id` lookup needed — see ../skills/mcp.ts's top comment.
+
+  server.registerTool(
+    "list_skills",
+    {
+      title: "List skills",
+      description:
+        "List every skill visible to this workspace (name, description, scope, source directory — not the full body), " +
+        "per the open agentskills.io standard. A skill scoped \"project\" came from the repository itself, which may be " +
+        "untrusted (see docs/SKILLS.md). Use get_skill to read one's full body.",
+      inputSchema: {},
+    },
+    () => handleListSkills(root)
+  );
+
+  server.registerTool(
+    "get_skill",
+    {
+      title: "Get a skill",
+      description: "Read one skill by name, including its full body and metadata, as returned by list_skills.",
+      inputSchema: { name: z.string().min(1).describe("The skill's name, as returned by list_skills.") },
+    },
+    ({ name }) => handleGetSkill(root, name)
   );
 
   // --- Onboarding prompt (PARITY #27d) --------------------------------------

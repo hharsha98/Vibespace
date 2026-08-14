@@ -106,6 +106,8 @@ describe("buildVibedeckMcpServer end-to-end (InMemoryTransport)", () => {
         "update_agent",
         "delete_agent",
         "list_prompts",
+        "list_skills",
+        "get_skill",
       ].sort()
     );
   });
