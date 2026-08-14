@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Core window/app permissions for vibedeck's main window. Nothing beyond Tauri's own default core set is granted — the served vibedeck app itself talks to its own Node server over plain HTTP/WebSocket, never through Tauri's IPC bridge, so no extra command permissions are needed here.",
+  "description": "Core window/app permissions for vibedeck's main window. The served vibedeck app itself talks to its own Node server over plain HTTP/WebSocket, never through Tauri's IPC bridge, so beyond Tauri's own default core set the only permissions granted are Phase 11b's updater (check/download/install) and process (relaunch after an approved install) — see apps/web/src/shell/UpdateBanner.tsx for what actually calls these.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "updater:default", "process:allow-restart"]
 }

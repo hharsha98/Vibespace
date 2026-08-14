@@ -1,0 +1,163 @@
+name: Release
+
+# Phase 11b (PARITY #52). Builds vibedeck's desktop app on all three
+# platforms and publishes DMG (macOS), NSIS/MSI (Windows), and DEB + RPM +
+# AppImage (Linux) to a GitHub Release — plus the signed updater artifacts
+# PARITY #51's auto-updater checks against (see docs/DESKTOP.md's
+# "Releasing" section for the full story, including what a user launching
+# these installers actually gets).
+#
+# This workflow has never been run (no GitHub Actions runner was available
+# while building this phase — see docs/DESKTOP.md's own note on that).
+# Every step mirrors a command actually run and verified by hand locally
+# (`pnpm --filter @vibedeck/desktop run package`, real signed builds
+# against the real updater keypair) EXCEPT the parts only a real CI runner
+# can exercise: the Windows/Linux runners themselves, and `tauri-action`'s
+# own GitHub Release / `latest.json` plumbing.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: >-
+          Version tag to release (e.g. v0.1.0). Required for a manual run —
+          a pushed "v*" tag fills this in automatically otherwise.
+        required: true
+
+jobs:
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            # Apple Silicon (the default macos-latest arch) — see
+            # docs/DESKTOP.md for why this workflow doesn't also produce an
+            # Intel build (no second macOS runner in scope for this phase).
+            name: macOS (DMG)
+          - platform: ubuntu-22.04
+            # Pinned, not ubuntu-latest: Tauri's own Linux prerequisites
+            # (libwebkit2gtk-4.1-dev, libayatana-appindicator3-dev) are
+            # tied to what 22.04's apt repos carry, and AppImage bundling
+            # specifically wants the OLDEST supported base to avoid glibc
+            # version skew breaking it on users' older distros.
+            name: Linux (DEB/RPM/AppImage)
+          - platform: windows-latest
+            name: Windows (NSIS/MSI)
+    runs-on: ${{ matrix.platform }}
+    name: ${{ matrix.name }}
+    steps:
+      - name: Resolve release tag
+        id: tag
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # A manual workflow_dispatch run is triggered against a BRANCH
+          # (whatever the operator picked in the Actions UI), not the tag
+          # itself — without this, a manually-specified `tag` input could
+          # silently release whatever commit happens to be at the tip of
+          # that branch instead of the actual tagged commit.
+          ref: ${{ steps.tag.outputs.tag }}
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.15.1
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      # Tauri v2's own documented Linux prerequisites for building on
+      # ubuntu-22.04 — see docs/DESKTOP.md's "Releasing" section for where
+      # this list came from and why webkit2gtk-4.1 (not 4.0) matters.
+      - name: Install Linux system dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libssl-dev \
+            libxdo-dev
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # apps/desktop's own packaging chain (`pnpm run package`, which this
+      # mirrors step-by-step) needs apps/web/dist AND the relocatable
+      # server bundle to exist on disk before `tauri build` runs — see
+      # apps/desktop/scripts/build-server-resources.mjs's top comment for
+      # what that script actually does and why (the fix for PARITY #52's
+      # "the installer only works on the machine that built it" problem).
+      - name: Build the web app
+        run: pnpm --filter @vibedeck/web build
+
+      - name: Build the relocatable server bundle
+        run: node apps/desktop/scripts/build-server-resources.mjs
+
+      # tauri-action does the actual `tauri build` plus the GitHub Release
+      # creation/upload — including `latest.json`, merged across all three
+      # platforms' separate runs of this same step targeting the same
+      # release, which is why every matrix leg uses the identical
+      # `tagName`. Building the DMG/NSIS/MSI/DEB/RPM/AppImage bundles
+      # themselves was verified by hand (macOS only, the only platform
+      # available while building this phase); this Action wrapping that
+      # `tauri build` call, and the Windows/Linux legs entirely, were not.
+      - name: Build and publish
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The updater signing keypair (see docs/DESKTOP.md's "Releasing"
+          # section for where the private half lives and what losing it
+          # means). No password was set on this key — see this repo's own
+          # setup notes — so this is deliberately an empty string, not an
+          # unset/missing secret, per Tauri's own signing CLI expecting the
+          # env var to exist even when there's no password to give it.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+          # Works around the exact macOS DMG "Running AppleScript to make
+          # Finder stuff pretty" hang docs/DESKTOP.md documents — Tauri's
+          # DMG bundler (bundle_dmg.sh) detects CI and skips the
+          # osascript/Finder-styling step entirely when it's set. Harmless
+          # on Windows/Linux, which don't build a DMG at all.
+          CI: true
+        with:
+          projectPath: apps/desktop
+          tagName: ${{ steps.tag.outputs.tag }}
+          releaseName: "vibedeck ${{ steps.tag.outputs.tag }}"
+          # A draft, not an immediate publish — see docs/DESKTOP.md's
+          # "Releasing" section: a human reviews the generated release
+          # (checking all three platforms' assets actually attached, the
+          # notes read sensibly) and clicks Publish, rather than every
+          # matrix leg finishing instantly making a public release live
+          # with no one having looked at it.
+          releaseDraft: true
+          prerelease: false

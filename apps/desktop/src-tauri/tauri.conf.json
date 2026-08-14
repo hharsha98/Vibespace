@@ -20,13 +20,26 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg"],
+    "targets": "all",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "resources": {
+      "resources/server-bundle": "resources/server-bundle",
+      "resources/web": "resources/web"
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDY1RDIzNEJFMjBGQUI3NkUKUldSdXQvb2d2alRTWlJvNXV3bEFhQ0VGSVZ5bngvV3ptVm9lakpUZE5wOXZnRUF0SjRKSy9GSzIK",
+      "endpoints": [
+        "https://github.com/hharsha98/vibedeck/releases/latest/download/latest.json"
+      ]
+    }
   }
 }

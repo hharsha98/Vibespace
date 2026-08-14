@@ -5,9 +5,13 @@
   "type": "module",
   "scripts": {
     "build": "pnpm --filter @vibedeck/web build",
+    "build:server-resources": "node scripts/build-server-resources.mjs",
     "tauri": "tauri",
     "tauri:dev": "pnpm run build && tauri dev",
-    "package:mac": "pnpm run build && tauri build"
+    "package": "pnpm run build && pnpm run build:server-resources && tauri build",
+    "package:mac": "pnpm run package",
+    "package:win": "pnpm run package",
+    "package:linux": "pnpm run package"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4"

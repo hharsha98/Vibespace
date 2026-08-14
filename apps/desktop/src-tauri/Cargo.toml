@@ -17,6 +17,15 @@ serde_json = "1"
 # weren't 100% certain existed at every 2.x version) — used to build the
 # URL `WebviewWindow::navigate` is handed once the sidecar server is ready.
 url = "2"
+# Phase 11b (PARITY #51): the updater's own signing/verification and
+# check/download/install machinery — the JS side (apps/web's
+# UpdateBanner.tsx) only gets access to it because `main.rs` registers this
+# plugin. See tauri.conf.json's `plugins.updater` for the pubkey/endpoint
+# config this crate reads at runtime.
+tauri-plugin-updater = "2"
+# `relaunch()`, called from JS after a user approves an update install —
+# Tauri splits "restart the process" into its own plugin rather than core.
+tauri-plugin-process = "2"
 
 # SIGTERM (a graceful shutdown request, as opposed to SIGKILL) has no
 # equivalent on Windows — `libc::kill` is only meaningful on unix, and this

@@ -31,12 +31,15 @@ browse and edit files, and dispatch work to an agent from a task board.
 Closing the browser tab does not kill your agents — sessions live on the
 server, so you can come back and pick up where you left off.
 
-What is **not** here yet: multi-agent orchestration, drag-and-drop skills,
-and a fully cross-platform, signed, auto-updating desktop installer (a
-native macOS desktop window — the wrapper itself — does exist now, unsigned;
-see [docs/DESKTOP.md](./docs/DESKTOP.md)). Those are the remaining slices of
-Phases 9–11 below. This is a young project moving quickly; expect rough
-edges.
+What is **not** here yet: multi-agent orchestration and drag-and-drop
+skills. The desktop app now has a relocatable installer and an
+auto-updater (macOS verified end-to-end; the Windows/Linux release
+workflow is written but hasn't run against a real CI runner yet — see
+[docs/DESKTOP.md](./docs/DESKTOP.md)). Still not in scope: real platform
+code-signing (Apple notarization, a Windows certificate) — Gatekeeper/
+SmartScreen warn on first launch, a deliberate trade-off, not a bug. Those
+are the remaining slices of Phase 9–10 below. This is a young project
+moving quickly; expect rough edges.
 
 ## Roadmap
 
@@ -79,11 +82,19 @@ edges.
       [docs/SKILLS.md](./docs/SKILLS.md). Drag-and-drop web UI not built yet.
 - [x] **Phase 11a — Desktop app shell**: a real native macOS window (Tauri
       2) wrapping the same web app, spawning the Node server as a sidecar —
-      see [docs/DESKTOP.md](./docs/DESKTOP.md). Unsigned, macOS-only, and
-      requires the repo checkout + system Node (documented limitations, not
-      hidden ones).
-- [ ] **Phase 11b — Real packaging**: signed builds, auto-updates, and
-      cross-platform installers (Windows/Linux).
+      see [docs/DESKTOP.md](./docs/DESKTOP.md).
+- [x] **Phase 11b — Relocatable installers and auto-updates**: a packaged
+      build no longer requires the repo checkout it was built from
+      (verified by hand, launched from a fully relocated copy of the
+      built `.app`); an auto-updater that checks silently in the
+      background and only ever restarts after an explicit click, never
+      losing a running session without asking; and a release workflow for
+      macOS/Windows/Linux (macOS verified end-to-end, the workflow itself
+      not yet run against a real CI runner). Still requires system Node,
+      and still unsigned in the platform code-signing sense (Gatekeeper/
+      SmartScreen warn on first launch) — see
+      [docs/DESKTOP.md](./docs/DESKTOP.md) for exactly what's fixed and
+      what isn't.
 
 ## Prerequisites
 
@@ -111,6 +122,18 @@ Whichever agents you want to run need to be installed and on your `PATH`
 already — vibedeck launches `claude`, `cursor-agent` and `codex`, it does not
 bundle them. Anything missing is shown as "not installed" rather than
 failing when you click it.
+
+## Releasing
+
+Desktop installers (DMG / NSIS+MSI / DEB+RPM+AppImage) are built and
+published by `.github/workflows/release.yml`, triggered by pushing a tag
+matching `v*` (or manually via the Actions tab's "Run workflow"). See
+[docs/DESKTOP.md](./docs/DESKTOP.md#releasing) for the full process,
+including where the auto-updater's signing key lives and why losing it
+would be permanent. Short version: bump the version in
+`apps/desktop/src-tauri/tauri.conf.json`, tag, push — three platform
+builds run in parallel and land in one draft GitHub Release for a human to
+review and publish.
 
 ## Project layout
 

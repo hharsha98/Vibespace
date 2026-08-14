@@ -4,3 +4,26 @@
 src-tauri/target/
 # Tauri's generated schema/binding files, regenerated on every build.
 src-tauri/gen/
+# Phase 11b (PARITY #52): the relocatable server bundle
+# build-server-resources.mjs generates before packaging — large (~100MB+,
+# mostly node-pty's per-platform prebuilds), machine/OS-specific, and
+# entirely reproducible from the real source it's built from. The two
+# `.gitkeep` files ARE tracked (see the negated patterns below) — Tauri's
+# build script checks that `bundle.resources`' declared paths exist even
+# for a plain `cargo check`/`cargo tauri dev`, not only `tauri build`, so a
+# fresh checkout needs these directories to be present before anyone has
+# run the bundling script.
+#
+# Note the shape of these rules. Un-ignoring a DIRECTORY re-admits
+# everything inside it — `!.../server-bundle/` on its own would have
+# committed all 98 generated files, duplicating the real server source into
+# the repo. So each directory is un-ignored, its contents are ignored
+# again, and only then is the `.gitkeep` un-ignored. Removing any one of
+# those three lines per directory silently starts committing the bundle.
+src-tauri/resources/*
+!src-tauri/resources/server-bundle/
+src-tauri/resources/server-bundle/*
+!src-tauri/resources/server-bundle/.gitkeep
+!src-tauri/resources/web/
+src-tauri/resources/web/*
+!src-tauri/resources/web/.gitkeep

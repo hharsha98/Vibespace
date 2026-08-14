@@ -113,9 +113,9 @@ Legend: ✅ done · 🟡 partial · ⛔ not started · 🚫 not possible as spec
 
 | # | Capability | Status | Notes |
 |---|---|---|---|
-| 50 | Native desktop app (macOS / Windows / Linux) | 🟡 | Phase 11a. A Tauri 2 shell that spawns the Node server as a sidecar and loads it — Node is required because `node-pty` and `better-sqlite3` are native addons that cannot become Rust. macOS only so far. **Two real limits:** it needs system Node 22+ (not bundled), and it is tied to the repo checkout it was built from rather than being relocatable. Verified on the packaged `.app`: launches, renders the full UI (workspace rail with its colour accent, view switcher, pane header carrying workspace name and git branch), serves the API, and quitting leaves zero orphaned processes. See `docs/DESKTOP.md`. |
-| 51 | Auto-updates | ⛔ | Phase 11b. Tauri's updater uses its own free signing keypair, unrelated to Apple — the private key must live in CI secrets, never the repo. |
-| 52 | Installers: DMG / Windows / DEB, RPM, AppImage | 🟡 | Phase 11a builds an **unsigned** macOS DMG (2.7 MB; the `.app` is 9.5 MB). Unsigned is a deliberate choice — Gatekeeper warns on first launch and you right-click → Open once. Windows and Linux installers need per-OS CI runners: Phase 11b. |
+| 50 | Native desktop app (macOS / Windows / Linux) | 🟡 | Phase 11a, relocatability fixed by Phase 11b. A Tauri 2 shell that spawns the Node server as a sidecar and loads it — Node is required because `node-pty` and `better-sqlite3` are native addons that cannot become Rust. Still needs system Node 22+ (not bundled — a real, honest, unfixed limit). **Fixed by Phase 11b:** a packaged build is no longer tied to the repo checkout it was built from — verified by hand, launching a copy of the built `.app` relocated entirely outside the repo, which served the real API and web app. macOS build verified end-to-end; Windows/Linux builds are wired into `.github/workflows/release.yml` but that workflow has never actually run (no CI runner available while building this phase). See `docs/DESKTOP.md`. |
+| 51 | Auto-updates | ✅ | Phase 11b. `tauri-plugin-updater` + `@tauri-apps/plugin-updater`, endpoint pointing at this repo's GitHub Releases `latest.json`. **UX, deliberately not silent:** checks in the background on startup and every 4 hours, shows a dismissible banner only once an update is actually found, and only downloads/installs/restarts after an explicit "Update & Restart" click — this app hosts long-lived terminal sessions with real running work, so an unasked-for restart would destroy it. Pure decision logic (`shouldShowUpdateBanner`, the download-progress reducer) is unit-tested in `apps/web/src/shell/updater.test.ts`. The signing keypair lives outside the repo (`~/.vibedeck/updater.key`, mode 600, no password) and as a GitHub Actions secret; the public key is committed (safe — verify-only). Local build-and-sign verified by hand against the real keypair, producing a real `.sig` file Tauri accepted. See `docs/DESKTOP.md`'s "Auto-updates" and "Releasing" sections. |
+| 52 | Installers: DMG / Windows / DEB, RPM, AppImage | 🟡 | Phase 11a built an unsigned macOS DMG only. Phase 11b adds `.github/workflows/release.yml` (macOS/Windows/Linux runners, triggered on a `v*` tag or manually, publishing DMG + NSIS/MSI + DEB/RPM/AppImage to one GitHub Release) and fixes the bigger problem: Phase 11a's installer only worked on the machine that built it. That relocatability fix is verified end-to-end on macOS (see #50); the release workflow itself is unexecuted — no GitHub Actions runner was available while building this phase, so the Windows/Linux legs and the workflow's own GitHub Release / `latest.json` plumbing are reviewed carefully but not proven. Sizes grew accordingly: a signed macOS `.app` is now ~135MB (DMG ~30MB), up from 9.5MB/2.7MB unsigned — mostly `node-pty`'s per-platform prebuilt binaries, the honest cost of genuine relocatability. Still unsigned in the platform code-signing sense (no Apple/Microsoft certificate, no notarization) — Gatekeeper/SmartScreen warn on first launch, a deliberate, documented choice, not an oversight. |
 
 ---
 
@@ -127,9 +127,17 @@ Phases 1–9.5 are done. Everything below is what is genuinely left.
 left is the web UI: browsing the skill catalog and dragging one onto a
 running pane (the REST/MCP surface it would call already exists).
 
-**Phase 11 — Desktop** (#50–52). Tauri 2, signed macOS/Windows/Linux
-builds, auto-updates. Also closes #48, because a desktop window can claim
-⌘T/⌘W/⌘N that a browser tab never sees.
+**Phase 11 — Desktop** (#50–52). Tauri 2 (11a), relocatable installers and
+auto-updates (11b) — see `docs/DESKTOP.md`. Also closes #48, because a
+desktop window can claim ⌘T/⌘W/⌘N that a browser tab never sees.
+**What's genuinely left**: the release workflow itself has never run
+against a real GitHub Actions runner (no runner was available while
+building 11b) — the Windows and Linux legs, and the workflow's own
+GitHub Release / `latest.json` publishing, are reviewed carefully but
+unproven until a real tagged release actually goes through it. Also still
+open: real platform code-signing (Apple notarization, a Windows
+Authenticode certificate) was never in scope — Gatekeeper/SmartScreen
+warnings on first launch are a standing, deliberate trade-off, not a bug.
 
 Two open judgement calls, neither a missing feature:
 

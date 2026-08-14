@@ -25,6 +25,8 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@lezer/highlight": "^1.2.1",
+    "@tauri-apps/plugin-process": "^2.3.1",
+    "@tauri-apps/plugin-updater": "^2.10.1",
     "@vibedeck/shared": "workspace:*",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-image": "0.9.0",

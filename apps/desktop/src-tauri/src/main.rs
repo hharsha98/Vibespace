@@ -17,37 +17,54 @@
 //!
 //! # What this build actually requires on the machine running it
 //!
-//! This is NOT a self-contained, relocatable app. Two real requirements,
-//! stated plainly (see docs/DESKTOP.md for the full explanation):
+//! **Updated by Phase 11b (PARITY #52).** A *packaged* build (`tauri
+//! build` — the DMG/NSIS/DEB/RPM/AppImage a user actually installs) is now
+//! relocatable: `resolve_server_source` below prefers a self-contained
+//! server bundle shipped inside the app's own resources (built by
+//! `apps/desktop/scripts/build-server-resources.mjs`, see that file's top
+//! comment for how it sidesteps the `packages/shared` resolution bug
+//! described below WITHOUT touching that package's real `package.json` —
+//! the live monorepo's dev/test resolution is completely untouched). Only
+//! `cargo tauri dev` (this crate compiled straight from a checkout, no
+//! bundling step) still falls back to the ORIGINAL Phase 11a mechanism:
+//! running `tsx` against `apps/server/src` inside `repo_root()`, tied to
+//! that one checkout. One real requirement remains in BOTH modes, stated
+//! plainly (see docs/DESKTOP.md for the full explanation):
 //!
-//!  1. **System Node 22+ on PATH or in one of `resolve_node_dir`'s fallback
-//!     locations.** No Node runtime is bundled into the .app. This is the
-//!     exact same requirement the browser build already has for `pnpm dev`
-//!     — Phase 11a doesn't add a new dependency, it just needs to *find*
-//!     the same Node a terminal-launched shell would.
-//!  2. **The vibedeck repo checkout this app was built from must still
-//!     exist at the same path on disk.** `repo_root()` bakes in an
-//!     absolute path at COMPILE time (`env!("CARGO_MANIFEST_DIR")`) and
-//!     runs the server from THERE via `tsx` against its TypeScript source
-//!     — not from a bundled, compiled copy inside the .app. Why: the
-//!     server's own `apps/server/package.json` "start" script
-//!     (`node dist/index.js`) turns out to already be broken standalone —
-//!     `packages/shared`'s `package.json` `main` field points at its
-//!     TypeScript SOURCE (`./src/index.ts`), which only resolves correctly
-//!     when something in the chain transpiles on the fly (`tsx`, Vite,
-//!     Vitest all do; plain `node` does not). That's a pre-existing
-//!     monorepo convention this phase didn't introduce and — given the
-//!     blast radius of changing how every package in the workspace
-//!     resolves `@vibedeck/shared` — deliberately didn't try to fix here.
-//!     Running via `tsx` against source sidesteps it entirely, at the cost
-//!     of tying this build to one machine's checkout. Real, portable
-//!     packaging (a relocatable bundle, or a proper fix to the shared
-//!     package's resolution) is Phase 11b's job, not this one's.
+//!  - **System Node 22+ on PATH or in one of `resolve_node_dir`'s fallback
+//!    locations.** No Node runtime is bundled into the .app — that's a
+//!    genuinely bigger undertaking (embedding a ~100MB+ per-platform Node
+//!    binary) this phase didn't take on. This is the exact same
+//!    requirement the browser build already has for `pnpm dev`.
+//!
+//! # The `packages/shared` resolution bug, and how the bundle avoids it
+//!
+//! `apps/server/package.json`'s "start" script (`node dist/index.js`) is
+//! broken standalone: `packages/shared`'s `package.json` `main` field
+//! points at its TypeScript SOURCE (`./src/index.ts`), which only resolves
+//! correctly when something in the require/import chain transpiles on the
+//! fly (`tsx`, Vite, Vitest all do; plain `node` does not) — confirmed by
+//! hand while building Phase 11a, and the reason that phase ran the server
+//! via `tsx` against source instead. Phase 11b's `build-server-resources.mjs`
+//! fixes this for the PACKAGED artifact only: it runs `pnpm deploy` to get
+//! a real, dereferenced copy of `apps/server` + its production
+//! dependencies (not a symlink into the live monorepo — verified by hand:
+//! `pnpm deploy --legacy`'s target is a fully independent directory tree),
+//! then patches ONLY that deployed copy's `@vibedeck/shared/package.json`
+//! to point `main`/`types` at its own already-built `dist/`. The live
+//! `packages/shared/package.json` in the actual monorepo is never touched
+//! — every other consumer (`pnpm dev`, Vite, Vitest, `tsx`) keeps resolving
+//! it exactly as before. See that script's own comments for the one sharp
+//! edge this fix had to work around: pnpm's content-addressable store can
+//! hardlink even local workspace-package files into a deploy target, so
+//! the patch step explicitly unlinks before writing — a plain in-place
+//! write risked silently mutating the real source file through the shared
+//! inode (caught by hand while building this phase).
 
 use std::collections::VecDeque;
 use std::env;
 use std::io::{BufRead, BufReader};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Child, ChildStderr, ChildStdout, Command, Stdio};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
@@ -164,47 +181,130 @@ fn resolve_node_dir() -> Option<PathBuf> {
     fallback_candidates.into_iter().find(|dir| dir.join("node").is_file())
 }
 
-/// Spawns the real vibedeck server as a child process, running its
-/// TypeScript source directly via the `tsx` binary already sitting in
-/// apps/server's own `node_modules/.bin` (the exact same mechanism `pnpm
-/// dev`'s `tsx watch src/index.ts` uses — proven to work by hand while
-/// building this phase, including with `VIBEDECK_STATIC_DIR` set). See this
-/// file's top doc comment for why source-via-tsx instead of the compiled
-/// `dist/index.js`.
-fn spawn_server(repo_root: &Path) -> std::io::Result<Child> {
-    let server_dir = repo_root.join("apps/server");
-    let tsx_bin = server_dir.join("node_modules/.bin/tsx");
-    let static_dir = repo_root.join("apps/web/dist");
+/// Where `spawn_server` should run the vibedeck server FROM — resolved once
+/// per app launch by `resolve_server_source`, below. Two variants, checked
+/// in that order:
+///
+///  - `Bundled`: a packaged build (`tauri build`) shipping a self-contained
+///    server (see `apps/desktop/scripts/build-server-resources.mjs`) inside
+///    the app's own resources. Relocatable — nothing here points back at
+///    the machine/checkout that built it.
+///  - `Dev`: no bundled resources found (i.e. `cargo tauri dev`, run
+///    straight from a checkout with no packaging step) — falls back to
+///    Phase 11a's original mechanism, `tsx` against `apps/server/src`
+///    inside `repo_root()`. This is the ONLY mode still tied to one
+///    checkout's path; see this file's top doc comment.
+enum ServerSource {
+    Bundled { server_dir: PathBuf, static_dir: PathBuf },
+    Dev { repo_root: PathBuf },
+}
 
-    let mut command = Command::new(&tsx_bin);
-    command
-        .arg("src/index.ts")
-        .current_dir(&server_dir)
-        .env("VIBEDECK_PORT", DESKTOP_PORT.to_string())
-        .env("VIBEDECK_STATIC_DIR", &static_dir)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .stdin(Stdio::null());
-
-    // apps/server/node_modules/.bin/tsx is itself a `#!/bin/sh` shim that
-    // falls back to `command -v node` on PATH if it can't find a `node`
-    // binary sitting right next to it (read by hand while building this
-    // phase — it's a standard pnpm-generated bin shim). So what actually
-    // determines whether Node gets found on a Finder-launched .app is
-    // whether the PATH override below succeeds — NOT whether `node` itself
-    // is directly reachable some other way.
-    if let Some(node_dir) = resolve_node_dir() {
-        let existing_path = env::var("PATH").unwrap_or_default();
-        command.env("PATH", format!("{}:{existing_path}", node_dir.display()));
+/// Decides which `ServerSource` this launch should use. `app.path()` (via
+/// the `Manager` trait, already imported) resolves to the OS-appropriate
+/// resources location for a packaged build (e.g. `VibeDeck.app/Contents/
+/// Resources` on macOS) — but ALSO resolves to *something* during `cargo
+/// tauri dev` (typically a debug target directory), where our bundle was
+/// never copied. Rather than trying to distinguish "packaged" from "dev" by
+/// asking Tauri, this just checks whether the one file `spawn_server` would
+/// actually need (`server-bundle/dist/index.js`) exists at that location —
+/// an honest, self-verifying check that can't drift out of sync with
+/// reality the way an `#[cfg(...)]`-based guess could.
+fn resolve_server_source(app: &tauri::App) -> ServerSource {
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        let bundle_dir = resource_dir.join("resources").join("server-bundle");
+        let entry = bundle_dir.join("dist").join("index.js");
+        let static_dir = resource_dir.join("resources").join("web");
+        if entry.is_file() {
+            return ServerSource::Bundled { server_dir: bundle_dir, static_dir };
+        }
     }
-    // else: leave PATH untouched. The spawn below will very likely still
-    // succeed (spawning the shell script itself doesn't require Node), but
-    // the script's own internal `node` lookup will then fail and it will
-    // exit immediately with a real error on stderr — which flows back
-    // through `watch_server`'s `ServerStartup::Exited` path and is shown to
-    // the user, not swallowed.
+    ServerSource::Dev { repo_root: repo_root() }
+}
 
-    command.spawn()
+/// Spawns the real vibedeck server as a child process. Two paths, matching
+/// `ServerSource`'s two variants:
+///
+///  - `Bundled`: runs `node dist/index.js` directly against the
+///    self-contained, relocatable copy `build-server-resources.mjs`
+///    produced (real files, not symlinks into the machine that built it —
+///    see this file's top doc comment). `current_dir` is set to the bundle
+///    root specifically so Node's own module resolution walks UP from
+///    there and finds the bundle's own `node_modules` (holding
+///    `better-sqlite3`/`node-pty` with correctly-built native binaries for
+///    this platform) rather than any other `node_modules` that happens to
+///    be an ancestor of wherever the app binary itself lives.
+///  - `Dev`: unchanged from Phase 11a — `tsx` against `apps/server/src`,
+///    proven to work by hand (see `ServerSource::Dev`'s doc comment).
+///
+/// Both paths need to actually find a `node` binary the same way (a
+/// Finder-launched .app's minimal PATH doesn't include wherever Homebrew or
+/// a version manager put it) — `resolve_node_dir` below is shared between
+/// them.
+fn spawn_server(source: &ServerSource) -> std::io::Result<Child> {
+    match source {
+        ServerSource::Bundled { server_dir, static_dir } => {
+            // Unlike the Dev path's `tsx` shim (which does its OWN internal
+            // `command -v node` PATH lookup once spawned), here WE are the
+            // ones invoking `node` directly — so the executable path itself
+            // has to be resolved before spawning, not handed off via a PATH
+            // env var and hoped for. Using the full resolved path (rather
+            // than relying on `Command::new("node")` + an env PATH override)
+            // sidesteps any ambiguity about whether Rust's `Command` PATH
+            // search honours an explicitly-set child env var at spawn time
+            // versus the parent process's own inherited PATH — this way
+            // there's nothing to be ambiguous about.
+            let node_bin = resolve_node_dir()
+                .map(|dir| dir.join("node"))
+                .unwrap_or_else(|| PathBuf::from("node"));
+
+            Command::new(node_bin)
+                .arg(server_dir.join("dist").join("index.js"))
+                .current_dir(server_dir)
+                .env("VIBEDECK_PORT", DESKTOP_PORT.to_string())
+                .env("VIBEDECK_STATIC_DIR", static_dir)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .stdin(Stdio::null())
+                .spawn()
+        }
+        ServerSource::Dev { repo_root } => {
+            let server_dir = repo_root.join("apps/server");
+            let tsx_bin = server_dir.join("node_modules/.bin/tsx");
+            let static_dir = repo_root.join("apps/web/dist");
+
+            let mut command = Command::new(&tsx_bin);
+            command
+                .arg("src/index.ts")
+                .current_dir(&server_dir)
+                .env("VIBEDECK_PORT", DESKTOP_PORT.to_string())
+                .env("VIBEDECK_STATIC_DIR", &static_dir)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .stdin(Stdio::null());
+
+            // apps/server/node_modules/.bin/tsx is itself a `#!/bin/sh` shim
+            // that falls back to `command -v node` on PATH if it can't find
+            // a `node` binary sitting right next to it (read by hand while
+            // building this phase — it's a standard pnpm-generated bin
+            // shim). So what actually determines whether Node gets found on
+            // a Finder-launched .app is whether the PATH override below
+            // succeeds — NOT whether `node` itself is directly reachable
+            // some other way.
+            if let Some(node_dir) = resolve_node_dir() {
+                let existing_path = env::var("PATH").unwrap_or_default();
+                command.env("PATH", format!("{}:{existing_path}", node_dir.display()));
+            }
+            // else: leave PATH untouched. The spawn below will very likely
+            // still succeed (spawning the shell script itself doesn't
+            // require Node), but the script's own internal `node` lookup
+            // will then fail and it will exit immediately with a real error
+            // on stderr — which flows back through `watch_server`'s
+            // `ServerStartup::Exited` path and is shown to the user, not
+            // swallowed.
+
+            command.spawn()
+        }
+    }
 }
 
 /// The inverse of `formatReadyLine` in apps/server/src/runtime-config.ts —
@@ -371,14 +471,30 @@ fn main() {
         // deliberately leaves ⌘N/⌘W/⌘T unbound as real accelerators — see
         // that menu's own comment for the full reasoning.
         .enable_macos_default_menu(false)
+        // Phase 11b (PARITY #51): the updater plugin only CHECKS/downloads/
+        // installs when the web app (running desktop-detected via
+        // `?vibedeckDesktop=1`, same marker as everywhere else) explicitly
+        // asks it to — see apps/web/src/shell/UpdateBanner.tsx for the
+        // actual check-on-startup-then-ask-before-restarting UX and why a
+        // silent auto-restart would be actively harmful here (this app
+        // hosts long-lived terminal sessions with real, unsaved agent work
+        // running in them). Registering the plugin here only makes the
+        // JS-side `check()`/`downloadAndInstall()`/relaunch APIs available
+        // — it does not, by itself, check or install anything.
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        // The updater's JS side calls `@tauri-apps/plugin-process`'s
+        // `relaunch()` after a user-approved install — Tauri splits
+        // "restart the app" into its own small plugin rather than folding
+        // it into core, so it has to be registered explicitly too.
+        .plugin(tauri_plugin_process::init())
         .manage(server_state)
         .setup(|app| {
             let window = app
                 .get_webview_window("main")
                 .expect("the \"main\" window is declared in tauri.conf.json");
-            let repo_root = repo_root();
+            let server_source = resolve_server_source(app);
 
-            match spawn_server(&repo_root) {
+            match spawn_server(&server_source) {
                 Ok(mut child) => {
                     let stdout = child.stdout.take().expect("stdout was configured as piped");
                     let stderr = child.stderr.take().expect("stderr was configured as piped");

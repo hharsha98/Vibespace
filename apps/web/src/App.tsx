@@ -33,6 +33,7 @@ import WorkspaceRail from "./shell/WorkspaceRail.js";
 import RightDock from "./shell/RightDock.js";
 import Logo from "./shell/Logo.js";
 import { GlobalShellStyles, IconButton, StatusDot } from "./shell/ui.js";
+import UpdateBanner from "./shell/UpdateBanner.js";
 import Editor, { type OpenFileRequest } from "./files/Editor.js";
 import Preview from "./files/Preview.js";
 import QuickOpen from "./files/QuickOpen.js";
@@ -1124,6 +1125,11 @@ export default function App() {
       }}
     >
       <GlobalShellStyles />
+
+      {/* Phase 11b (PARITY #51): no-op in the browser build (UpdateBanner
+          itself checks isTauriApp()) — only ever visible in the desktop
+          build, and only once a real update has actually been found. */}
+      <UpdateBanner />
 
       {/* Top bar — 36px, per docs/DESIGN.md §1: mark, breadcrumb, and
           exactly the three right-aligned icon buttons the spec calls for
