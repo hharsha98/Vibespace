@@ -29,6 +29,15 @@ on:
 
 jobs:
   release:
+    # Required to create the GitHub Release and upload installers to it.
+    # This repository's default workflow token is read-only, so without
+    # this the build succeeds on all three platforms and then dies at the
+    # very last step with "Resource not accessible by integration" — which
+    # is exactly how the second release attempt failed. Scoped to the job
+    # and to `contents` only, rather than loosening the repository-wide
+    # default for every workflow.
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
