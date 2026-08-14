@@ -83,7 +83,7 @@ Legend: ✅ done · 🟡 partial · ⛔ not started · 🚫 not possible as spec
 | 34 | **Swarm: quality gates** | ✅ | Phase 9a |
 | 35 | **Swarm: live mission tree canvas** | ✅ | Phase 9b — `apps/web/src/swarm/MissionCanvas.tsx` |
 | 36 | **Swarm: @-target one agent, or all, from one bar** | ✅ | Phase 9b — `apps/web/src/swarm/CommandBar.tsx` |
-| 37 | **Skills: drag a skill onto a running pane** | 🟡 | Phase 10, server done: discovery across six scopes (user + project × `.agents`/`.vibedeck`/`.claude`), a hand-rolled `agentskills.io`-spec parser, REST (`/api/skills`) and MCP (`list_skills`/`get_skill`), and `POST /api/skills/:name/inject` to actually type a skill into a running pane (agent panes only — a shell pane is refused, same reasoning as board dispatch). See `docs/SKILLS.md`. No web UI (drag-and-drop) yet. |
+| 37 | **Skills: drag a skill onto a running pane** | 🟡 | Phase 10. Full implementation of the open `agentskills.io` standard rather than a private format: discovery across six scopes (user + project × `.agents`/`.vibedeck`/`.claude`), a hand-rolled spec parser, REST + MCP (`list_skills`/`get_skill`), a Skills view, and sending a skill into a running pane. Verified against this machine's 68 skills authored for another tool — all parse cleanly. **🟡 for two honest reasons, not missing work:** it is not a *drag* (centre views are `display: none`, so panes have no drop target while you browse skills — each skill lists the panes it can be sent to instead), and "sent" can only ever mean *typed into the pane*, never *the agent accepted it*. See `docs/SKILLS.md`. |
 
 ## Workspaces
 
