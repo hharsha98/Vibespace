@@ -42,6 +42,8 @@ import type { OpenNoteRequest } from "./memory/MemoryPanel.js";
 import Swarm from "./swarm/Swarm.js";
 import Agents from "./agents/Agents.js";
 import Prompts from "./prompts/Prompts.js";
+import Skills from "./skills/Skills.js";
+import type { PaneRef } from "./skills/logic.js";
 import Settings from "./settings/Settings.js";
 
 /** Which full-screen overlay (if any) is currently open. Only one at a
@@ -68,6 +70,7 @@ type CenterView =
   | "swarm"
   | "agents"
   | "prompts"
+  | "skills"
   | "settings";
 
 interface HealthResponse {
@@ -952,6 +955,7 @@ export default function App() {
       "view-swarm": () => setCenterView("swarm"),
       "view-agents": () => setCenterView("agents"),
       "view-prompts": () => setCenterView("prompts"),
+      "view-skills": () => setCenterView("skills"),
       "view-settings": () => setCenterView("settings"),
       "quick-open": () => {
         if (activeWorkspaceId) setActiveOverlay("quickOpen");
@@ -997,6 +1001,28 @@ export default function App() {
     const pane = findPane(root, focusedPaneId);
     return pane?.kind === "leaf" && !pane.sessionId ? pane : null;
   }, [root, focusedPaneId]);
+
+  // Phase 10 (PARITY #37): every pane in the ACTIVE workspace's own grid
+  // that currently has a live, running session attached — the Skills
+  // view's "Send to pane…" target list (see skills/Skills.tsx's top
+  // comment for why that's a list of buttons rather than a real drop
+  // zone). Deliberately built from `root`/`listPanes`, NOT the raw
+  // `sessions` array directly — `sessions` can include sessions from
+  // OTHER workspaces (it's fetched once from `GET /api/sessions`, which
+  // is global), and a pane in some other workspace's grid is not a
+  // sensible injection target for a skill browsed against this one.
+  const skillsPanes = useMemo<PaneRef[]>(() => {
+    if (!root) return [];
+    const sessionsById = new Map(sessions.map((s) => [s.id, s]));
+    const targets: PaneRef[] = [];
+    listPanes(root).forEach((pane, index) => {
+      if (!pane.sessionId) return;
+      const session = sessionsById.get(pane.sessionId);
+      if (!session || session.status !== "running") return;
+      targets.push({ paneId: pane.id, index, session });
+    });
+    return targets;
+  }, [root, sessions]);
 
   const paletteCommands = useMemo<PaletteCommand[]>(() => {
     const commands: PaletteCommand[] = [];
@@ -1232,6 +1258,13 @@ export default function App() {
             Prompts
           </ViewTabButton>
           <ViewTabButton
+            active={centerView === "skills"}
+            onClick={() => setCenterView("skills")}
+            shortcut={formatShortcut(KEYMAP.find((s) => s.id === "view-skills")!, isMac)}
+          >
+            Skills
+          </ViewTabButton>
+          <ViewTabButton
             active={centerView === "settings"}
             onClick={() => setCenterView("settings")}
             shortcut={formatShortcut(KEYMAP.find((s) => s.id === "view-settings")!, isMac)}
@@ -1440,6 +1473,14 @@ export default function App() {
                 </div>
                 <div style={{ position: "absolute", inset: 0, display: centerView === "prompts" ? "block" : "none" }}>
                   <Prompts workspaceId={activeWorkspaceId} visible={centerView === "prompts"} />
+                </div>
+                <div style={{ position: "absolute", inset: 0, display: centerView === "skills" ? "block" : "none" }}>
+                  <Skills
+                    workspaceId={activeWorkspaceId}
+                    visible={centerView === "skills"}
+                    panes={skillsPanes}
+                    onFocusSession={focusSessionInGrid}
+                  />
                 </div>
                 <div style={{ position: "absolute", inset: 0, display: centerView === "settings" ? "block" : "none" }}>
                   <Settings

@@ -254,6 +254,23 @@ export const KEYMAP: readonly Shortcut[] = [
     key: "p",
     shift: true,
   },
+  // Phase 10 (PARITY #37): the Skills browser joins the same centre-column
+  // switcher. Its natural mnemonic "s" is already Swarm (see that
+  // shortcut above), so — same "already spoken for -> use Shift" move
+  // Board/Graph/Prompts each already made — this falls back to Cmd+Shift+S.
+  // Not independently hand-verified in a live Chrome window the way the
+  // Cmd+J/Cmd+Shift+G notes above were (no browser available while writing
+  // this), but it follows the exact same reserved-combo table those checks
+  // were built from: Chrome does not claim Cmd+Shift+S for anything on the
+  // page-content shortcuts list, only Cmd+S/Cmd+N/Cmd+T/Cmd+W/Cmd+Q (see
+  // this file's own top comment) are actually unreachable.
+  {
+    id: "view-skills",
+    label: "View: Skills",
+    description: "Show the skills browser in the centre column.",
+    key: "s",
+    shift: true,
+  },
   // Phase 9.5c (PARITY #45): the Settings screen joins the same
   // centre-column switcher. Unlike every other view above, this one does
   // NOT use a plain mnemonic letter or its Shift fallback — it uses the

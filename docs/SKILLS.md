@@ -199,6 +199,15 @@ than re-deriving it:
   never reads at all). A body over the cap is **truncated** with a
   trailing marker, not refused — a partial skill is still useful context.
   The response's `truncated` field tells the caller which happened.
+- **"Injected" means typed, not accepted.** Writing to a pty is exactly the
+  user typing at the keyboard, so a `200` here says the keystrokes reached
+  the pane — it does not say the agent took them in. An agent that is still
+  booting, busy mid-task, or showing a modal of its own will discard them,
+  and a pty offers no signal back that would let us notice. This is not
+  hypothetical: it was found by injecting into a freshly spawned
+  `cursor-agent`, which was sitting on its own "Workspace Trust Required"
+  prompt and silently swallowed the text. The UI therefore says "Typed into
+  the pane — check it acted on it" rather than a confident "Sent."
 
 ## An example skill
 

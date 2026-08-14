@@ -100,6 +100,22 @@ export function registerSkillRoutes(app: FastifyInstance, deps: SkillRoutesDeps)
       return reply.status(400).send({ error: prepared.error });
     }
 
+    // Written immediately, NOT through `board/dispatch.ts`'s
+    // `writePromptWhenReady`. That helper exists because dispatch spawns a
+    // brand-new session and must wait for it to start reading stdin; here
+    // the user picked an already-running pane out of a list, so the common
+    // case needs no wait — and routing every injection through that
+    // helper's 3s no-output fallback would add that delay to every skill
+    // sent to a quiet, idle agent.
+    //
+    // The honest limitation: writing to a pty is exactly the user typing,
+    // so `injected: true` means "the keystrokes were delivered to the
+    // pane", NOT "the agent accepted the skill". An agent still booting,
+    // mid-task, or sitting on a modal of its own (cursor-agent shows a
+    // "Workspace Trust Required" prompt on an untrusted folder) discards
+    // them, and a pty gives no signal back that would let us detect it.
+    // Skills.tsx therefore reports this as "Typed into the pane — check it
+    // acted on it" rather than a confident "Sent."
     sessionManager.write(body.sessionId, prepared.text);
     return reply.status(200).send({ injected: true, truncated: prepared.truncated });
   });
