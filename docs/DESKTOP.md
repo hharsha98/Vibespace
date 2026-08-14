@@ -50,7 +50,7 @@ implementation; the summary:
 
 ## What a user actually needs installed
 
-**Updated by Phase 11b.** A packaged build (the DMG/NSIS/MSI/DEB/RPM/
+**Updated by Phase 11b.** A packaged build (the DMG/NSIS/DEB/RPM/
 AppImage a user actually installs) is now relocatable — it no longer
 requires the repo checkout it was built from to still exist. One real
 requirement remains:
@@ -102,7 +102,7 @@ deliberately left untouched.
 
 ## Relocatable installers (Phase 11b, PARITY #52)
 
-**A packaged build (DMG/NSIS/MSI/DEB/RPM/AppImage) now works when moved to
+**A packaged build (DMG/NSIS/DEB/RPM/AppImage) now works when moved to
 a different location, or a different machine entirely** — verified by
 hand: building the DMG, copying the extracted `.app` to a directory
 completely outside the repo, and launching the binary directly. It served
@@ -355,7 +355,7 @@ pnpm --filter @vibedeck/desktop run package:mac    # or package:win / package:li
 Builds `apps/web/dist`, then `apps/desktop/scripts/build-server-resources.mjs`
 (the relocatable server bundle — see "Relocatable installers" above), then
 `tauri build` — an optimized release compile plus platform packaging
-(DMG on macOS, NSIS+MSI on Windows, DEB+RPM+AppImage on Linux, chosen
+(DMG on macOS, NSIS on Windows, DEB+RPM+AppImage on Linux, chosen
 automatically for the host OS since `tauri.conf.json`'s `bundle.targets`
 is `"all"`). The built artifacts land under
 `apps/desktop/src-tauri/target/release/bundle/`. Actually built and run on
@@ -453,6 +453,14 @@ relocated copy** — not by checking that the app opens.
   bug to fix here. The AUTO-UPDATER'S OWN signing (a separate, unrelated
   keypair — see "Auto-updates" above) is real and required for every
   build.
+- **No Windows MSI, only NSIS.** WiX's `light.exe` fails on this app: it
+  gets through `candle` and then dies after ~30s with no diagnostic beyond
+  "failed to run light.exe". The likely cause is the bundled server's deep
+  `node_modules` tree crossing Windows' 260-character `MAX_PATH`, which WiX
+  handles badly and NSIS doesn't care about. NSIS is what Tauri recommends
+  for Windows and what Windows users expect, so the release builds that
+  and skips MSI. Anyone wanting an MSI should expect to solve the path
+  lengths first.
 - **Only the runner's native architecture per platform.** The release
   workflow's macOS runner is Apple Silicon (`macos-latest`'s default) —
   no separate Intel (`x86_64-apple-darwin`) build. Windows/Linux are
@@ -504,7 +512,7 @@ at least once successfully (it hasn't yet — see "Known limitations" above):
    find and merge into the same release rather than creating three).
 4. **The release is created as a DRAFT**, not published immediately —
    check that all three jobs actually attached their artifacts (a DMG, an
-   NSIS + MSI, a DEB + RPM + AppImage, plus each platform's signed
+   NSIS, a DEB + RPM + AppImage, plus each platform's signed
    `.tar.gz`/`.zip` updater artifact and a merged `latest.json`) before
    clicking Publish on GitHub.
 5. **Existing installs pick up the new version** within `CHECK_INTERVAL_MS`

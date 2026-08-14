@@ -125,7 +125,7 @@ failing when you click it.
 
 ## Releasing
 
-Desktop installers (DMG / NSIS+MSI / DEB+RPM+AppImage) are built and
+Desktop installers (DMG / NSIS / DEB+RPM+AppImage) are built and
 published by `.github/workflows/release.yml`, triggered by pushing a tag
 matching `v*` (or manually via the Actions tab's "Run workflow"). See
 [docs/DESKTOP.md](./docs/DESKTOP.md#releasing) for the full process,

@@ -54,8 +54,19 @@ jobs:
             # specifically wants the OLDEST supported base to avoid glibc
             # version skew breaking it on users' older distros.
             name: Linux (DEB/RPM/AppImage)
+          # NSIS only, no MSI. WiX's `light.exe` fails on this app — it got
+          # through `candle` and then died with no diagnostic at all. The
+          # likely reason is that the bundled server drags a deep
+          # `node_modules` tree past Windows' 260-character MAX_PATH, which
+          # WiX handles badly. NSIS has no such limit, is what Tauri
+          # recommends for Windows, and is the format Windows users
+          # actually expect — so this drops MSI rather than spending the
+          # effort to flatten paths for a second installer nobody asked
+          # for. If someone needs an MSI later, that path-length problem is
+          # the thing to solve first.
           - platform: windows-latest
-            name: Windows (NSIS/MSI)
+            name: Windows (NSIS)
+            args: --bundles nsis
     runs-on: ${{ matrix.platform }}
     name: ${{ matrix.name }}
     steps:
@@ -180,3 +191,8 @@ jobs:
           # with no one having looked at it.
           releaseDraft: true
           prerelease: false
+          # Per-platform bundle selection. Empty for macOS and Linux, which
+          # build their full default set; Windows passes `--bundles nsis`
+          # to skip the MSI that WiX cannot produce for this app (see the
+          # matrix entry above for why).
+          args: ${{ matrix.args }}
