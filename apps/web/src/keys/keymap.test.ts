@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { KEYMAP, formatShortcut, matchShortcut, type KeyEventLike } from "./keymap.js";
+import {
+  KEYMAP,
+  formatShortcut,
+  hasDesktopMarker,
+  isTauriApp,
+  matchShortcut,
+  type KeyEventLike,
+} from "./keymap.js";
 
 /** Builds a full `KeyEventLike` from just the fields a test cares about. */
 function key(overrides: Partial<KeyEventLike> & { key: string }): KeyEventLike {
@@ -103,6 +110,51 @@ describe("matchShortcut", () => {
 
   it("matches Cmd+P to quick-open", () => {
     expect(matchShortcut(key({ key: "p", metaKey: true }), true)).toBe("quick-open");
+  });
+
+  describe("isDesktop (Phase 11a: the plain forms Chrome reserves)", () => {
+    it("matches plain Cmd+N/Cmd+W/Cmd+T when isDesktop is true, on top of the Shift form still matching", () => {
+      expect(matchShortcut(key({ key: "n", metaKey: true }), true, true)).toBe("new-pane");
+      expect(matchShortcut(key({ key: "n", metaKey: true, shiftKey: true }), true, true)).toBe("new-pane");
+
+      expect(matchShortcut(key({ key: "w", metaKey: true }), true, true)).toBe("close-pane");
+      expect(matchShortcut(key({ key: "w", metaKey: true, shiftKey: true }), true, true)).toBe("close-pane");
+
+      expect(matchShortcut(key({ key: "t", metaKey: true }), true, true)).toBe("theme-picker");
+      expect(matchShortcut(key({ key: "t", metaKey: true, shiftKey: true }), true, true)).toBe("theme-picker");
+    });
+
+    it("still rejects plain Cmd+N/Cmd+W/Cmd+T when isDesktop is false (the default) — the browser build is unaffected", () => {
+      expect(matchShortcut(key({ key: "n", metaKey: true }), true)).toBeNull();
+      expect(matchShortcut(key({ key: "w", metaKey: true }), true)).toBeNull();
+      expect(matchShortcut(key({ key: "t", metaKey: true }), true, false)).toBeNull();
+    });
+
+    it("does NOT extend the plain-form exception to shortcuts outside the reserved set, e.g. split-column stays Shift-only", () => {
+      expect(matchShortcut(key({ key: "d", metaKey: true, shiftKey: true }), true, true)).toBe("split-column");
+      // Plain Cmd+D is (and stays) split-row, never split-column, even on desktop.
+      expect(matchShortcut(key({ key: "d", metaKey: true }), true, true)).toBe("split-row");
+    });
+  });
+});
+
+describe("hasDesktopMarker", () => {
+  it("is true only for the exact ?vibedeckDesktop=1 marker the desktop wrapper appends", () => {
+    expect(hasDesktopMarker("?vibedeckDesktop=1")).toBe(true);
+    expect(hasDesktopMarker("?foo=bar&vibedeckDesktop=1")).toBe(true);
+  });
+
+  it("is false for a plain browser URL, an unrelated query string, or a wrong/empty value", () => {
+    expect(hasDesktopMarker("")).toBe(false);
+    expect(hasDesktopMarker("?foo=bar")).toBe(false);
+    expect(hasDesktopMarker("?vibedeckDesktop=0")).toBe(false);
+    expect(hasDesktopMarker("?vibedeckDesktop=true")).toBe(false);
+  });
+});
+
+describe("isTauriApp", () => {
+  it("returns false in a non-browser environment (no window global, as in this Vitest/Node run)", () => {
+    expect(isTauriApp()).toBe(false);
   });
 });
 

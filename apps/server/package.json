@@ -16,6 +16,7 @@
     "memory-mcp": "tsx src/memory/mcp-server.ts"
   },
   "dependencies": {
+    "@fastify/static": "^10.1.3",
     "@fastify/websocket": "^11.3.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@vibedeck/shared": "workspace:*",

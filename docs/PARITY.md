@@ -68,10 +68,10 @@ Legend: ✅ done · 🟡 partial · ⛔ not started · 🚫 not possible as spec
 | 23 | Dispatch a task to an agent from the board | ✅ | Phase 7 |
 | 24 | Wait for the shell prompt before sending | ✅ | Phase 7, settle delay after first output |
 | 25 | Agents read and move their own cards | ✅ | Phase 7, `docs/AGENT-API.md` |
-| 26 | **Agents page — per-agent custom system prompts** | 🟡 | Server done (Phase 9.5b): `{name, systemPrompt}` scoped to a workspace, full CRUD over REST (`/api/agent-profiles`) and MCP (`list_agents`/`get_agent`/`create_agent`/`update_agent`/`delete_agent`). No web UI page yet. |
-| 27 | **Prompts library — save and reuse prompts** | 🟡 | Server done (Phase 9.5b): global or workspace-scoped, full CRUD over REST (`/api/prompts`), read-only `list_prompts` over MCP. No web UI page yet. |
-| 27a | **`cancelled` task state** | ✅ | Phase 9.5b — a fifth `ColumnId`, modelled as a real column (see `packages/shared/src/protocol.ts`'s `ColumnId` doc comment for why). Renders automatically wherever the board iterates `COLUMNS`, though its icon/styling haven't been hand-tuned in the web UI yet. |
-| 27b | **`taskKnowledge` — long context separate from instructions** | ✅ | Phase 9.5b — up to 50,000 chars (`description` capped at 5,000, matching their `instructions`), threaded through the store, REST, dispatch prompt (agent panes only, clearly delimited — never shell panes), and MCP. No web UI form field yet. |
+| 26 | **Agents page — per-agent custom system prompts** | ✅ | Phase 9.5b. `{name, systemPrompt}` scoped to a workspace, full CRUD over REST (`/api/agent-profiles` — that path, not `/api/agents`, which already lists installed CLIs) and MCP. Agents page with a live 100,000-char counter; a duplicate name surfaces the server's 409 as a readable sentence. |
+| 27 | **Prompts library — save and reuse prompts** | ✅ | Phase 9.5b. Global or workspace-scoped, full CRUD over REST, read-only `list_prompts` over MCP, and a library page that separates global from workspace prompts with copy-to-clipboard. |
+| 27a | **`cancelled` task state** | ✅ | Phase 9.5b — a fifth `ColumnId`, modelled as a real column (see `packages/shared/src/protocol.ts`'s `ColumnId` doc comment for why). Data and drag-and-drop worked automatically since the board iterates `COLUMNS`; Phase 9.5c added the missing icon case, which had been rendering blank. |
+| 27b | **`taskKnowledge` — long context separate from instructions** | ✅ | Phase 9.5b — up to 50,000 chars (`description` capped at 5,000, matching their `instructions`), threaded through the store, REST, dispatch prompt (agent panes only, clearly delimited — never shell panes), and MCP. The card editor has the field with live counters, and a card carrying task knowledge shows a glyph on the board. |
 | 27c | **Board exposed over MCP, not only HTTP** | ✅ | Phase 9.5b — `list_tasks`/`get_task`/`create_task`/`update_task` plus the agent/prompt tools above, all on the same MCP server memory already used. See `apps/server/src/mcp/build-server.ts` for the architecture decision (opens the shared SQLite database directly rather than calling the HTTP API). |
 | 27d | **An MCP prompt that onboards an agent** | ✅ | Phase 9.5b — `vibedeck_developer_guide`, `apps/server/src/mcp/developer-guide.ts`. |
 | 28 | Shared agent memory | ✅ | Phase 8 |
@@ -106,16 +106,16 @@ Legend: ✅ done · 🟡 partial · ⛔ not started · 🚫 not possible as spec
 | 45 | **Settings screen** | ✅ | Phase 9.5c — themes, default agent (now actually persisted; the picker never remembered anything before), and a shortcut table derived from `KEYMAP` so it cannot drift |
 | 46 | Keyboard-first operation | ✅ | Phase 4 |
 | 47 | ⌘P quick open · ⌘F search · ⌘D split | ✅ | Exact parity |
-| 48 | ⌘T new tab · ⌘W close tab · ⌘1–9 switch tab | 🟡 | Chrome reserves ⌘T/⌘W/⌘N — we use ⌘⇧ variants, and ⌘1–9 focuses panes. Full parity arrives with the desktop build (#50). |
+| 48 | ⌘T new tab · ⌘W close tab · ⌘1–9 switch tab | ✅ | Browser build: Chrome reserves ⌘T/⌘W/⌘N, so we use ⌘⇧ variants there, and ⌘1–9 focuses panes. **Desktop build (Phase 11a): plain ⌘N/⌘W/⌘T now work too** — `matchShortcut`'s `isDesktop` flag accepts both forms, so muscle memory from either build keeps working. See `apps/web/src/keys/keymap.ts`. |
 | 49 | Command palette | ✅ | Better than parity — BridgeSpace has no palette |
 
 ## Packaging
 
 | # | Capability | Status | Notes |
 |---|---|---|---|
-| 50 | Native desktop app (macOS / Windows / Linux) | ⛔ | Phase 11 |
-| 51 | Auto-updates | ⛔ | Phase 11 |
-| 52 | Installers: DMG / Windows / DEB, RPM, AppImage | ⛔ | Phase 11 |
+| 50 | Native desktop app (macOS / Windows / Linux) | 🟡 | Phase 11a. A Tauri 2 shell that spawns the Node server as a sidecar and loads it — Node is required because `node-pty` and `better-sqlite3` are native addons that cannot become Rust. macOS only so far. **Two real limits:** it needs system Node 22+ (not bundled), and it is tied to the repo checkout it was built from rather than being relocatable. Verified on the packaged `.app`: launches, serves the UI and full API, and quitting leaves zero orphaned processes. The window itself could not be confirmed visually in this environment — see `docs/DESKTOP.md`. |
+| 51 | Auto-updates | ⛔ | Phase 11b. Tauri's updater uses its own free signing keypair, unrelated to Apple — the private key must live in CI secrets, never the repo. |
+| 52 | Installers: DMG / Windows / DEB, RPM, AppImage | 🟡 | Phase 11a builds an **unsigned** macOS DMG (2.7 MB; the `.app` is 9.5 MB). Unsigned is a deliberate choice — Gatekeeper warns on first launch and you right-click → Open once. Windows and Linux installers need per-OS CI runners: Phase 11b. |
 
 ---
 

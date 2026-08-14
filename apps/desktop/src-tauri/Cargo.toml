@@ -1,0 +1,42 @@
+[package]
+name = "vibedeck-desktop"
+version = "0.0.0"
+description = "vibedeck — native desktop wrapper (Phase 11a, PARITY #50)"
+edition = "2021"
+# Not published; this crate only ever builds into the .app bundle.
+publish = false
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Explicit dependency (rather than relying on a `tauri::Url` re-export we
+# weren't 100% certain existed at every 2.x version) — used to build the
+# URL `WebviewWindow::navigate` is handed once the sidecar server is ready.
+url = "2"
+
+# SIGTERM (a graceful shutdown request, as opposed to SIGKILL) has no
+# equivalent on Windows — `libc::kill` is only meaningful on unix, and this
+# phase only targets/tests macOS, so the dependency itself is scoped out of
+# non-unix builds rather than pulled in and left unused there.
+#
+# signal-hook: a normal GUI quit (window close, Cmd+Q, Dock > Quit) goes
+# through Tauri's own event loop (`on_window_event`/`.run`'s RunEvent, both
+# already handled in main.rs) and never touches this. But hand-testing this
+# phase found a real gap those two alone don't cover: `kill <pid>` (a bare
+# SIGTERM, e.g. from `pkill vibedeck` or a process manager) bypasses
+# Cocoa's termination lifecycle entirely — no Rust code runs at all, and
+# the sidecar Node process is orphaned holding its port. `signal-hook` runs
+# the handler on an ordinary background thread (not inside actual signal
+# context, where taking a mutex lock would be unsound) so `kill_server` can
+# be called safely from it.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+signal-hook = "0.3"
+
+[[bin]]
+name = "vibedeck-desktop"
+path = "src/main.rs"

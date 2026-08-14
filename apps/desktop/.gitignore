@@ -1,0 +1,6 @@
+# Rust build output — large, machine-specific, and (per this phase's own
+# design, see main.rs's top doc comment) already tied to one checkout path,
+# so there's nothing worth committing here anyway.
+src-tauri/target/
+# Tauri's generated schema/binding files, regenerated on every build.
+src-tauri/gen/

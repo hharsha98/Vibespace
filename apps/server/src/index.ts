@@ -1,6 +1,10 @@
 import Fastify from "fastify";
 import fastifyWebsocket from "@fastify/websocket";
+import fastifyStatic from "@fastify/static";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { AGENT_IDS, AGENT_SPECS, WORKSPACE_COLORS, isWorkspaceColor, type ClientMessage } from "@vibedeck/shared";
+import { resolveServerPort, resolveStaticDir, formatReadyLine } from "./runtime-config.js";
 import { detectAllAgents, INSTALL_HINTS, isAgentId } from "./pty/agents.js";
 import { SessionManager } from "./pty/session-manager.js";
 import { WorkspaceStore } from "./db/workspaces.js";
@@ -22,7 +26,11 @@ import { registerGitRoutes } from "./git/routes.js";
 import { registerSkillRoutes } from "./skills/routes.js";
 
 const VERSION = "0.0.0";
-const PORT = 4317;
+// Phase 11a (PARITY #50): resolveServerPort defaults to 4317 — identical to
+// the old hardcoded literal — unless VIBEDECK_PORT is set, which only the
+// desktop app's sidecar wrapper does (see runtime-config.ts's doc comment
+// for why 4317 itself is unsafe for the desktop app to reuse).
+const PORT = resolveServerPort(process.env);
 
 export interface BuildAppOptions {
   /** Inject a SessionManager (mainly for tests). Defaults to a fresh one. */
@@ -43,6 +51,20 @@ export interface BuildAppOptions {
   agentProfileStore?: AgentProfileStore;
   /** Inject a SavedPromptStore (mainly for tests). Defaults to a fresh one. */
   savedPromptStore?: SavedPromptStore;
+  /**
+   * Phase 11a (PARITY #50): absolute path to a built `apps/web/dist` to
+   * serve as static files, turning this server into the single origin for
+   * the whole app (no Vite, no /api proxy) — what the packaged desktop app
+   * and a plain `node dist/index.js` deployment both need. `undefined`/`null`
+   * (the default, and what every existing test passes) means "don't serve
+   * static files at all" — the exact pre-Phase-11a behaviour. Deliberately
+   * an explicit opt-in field on `buildApp` rather than something this
+   * function auto-detects itself: the auto-detection (env var or on-disk
+   * `apps/web/dist`) lives in the startup block at the bottom of this file,
+   * so `buildApp()` in tests never has to think about whatever might
+   * happen to exist on the machine running them.
+   */
+  staticDir?: string | null;
 }
 
 /**
@@ -387,6 +409,25 @@ export function buildApp(options: BuildAppOptions = {}) {
     });
   });
 
+  // Phase 11a (PARITY #50): serve the built web app as static files when a
+  // directory was given, turning this server + the browser bundle into one
+  // origin (what the desktop app's webview loads — no Vite, no /api proxy).
+  // Registered LAST, after every API route above: @fastify/static's
+  // `wildcard: true` adds a catch-all GET route, but Fastify's router
+  // matches the most specific registered path first regardless of
+  // registration order, so this can never shadow `/api/*` — verified by
+  // the "existing API routes still work" static-serving test in
+  // index.test.ts, not just assumed from how the router is documented to
+  // work. `index: true` (the plugin default) serves `index.html` at `/`;
+  // there is no client-side router in the web app (see main.tsx), so no
+  // further SPA-style fallback is needed for deep links.
+  if (options.staticDir) {
+    app.register(fastifyStatic, {
+      root: options.staticDir,
+      wildcard: true,
+    });
+  }
+
   return app;
 }
 
@@ -407,11 +448,26 @@ declare module "fastify" {
 // Only start listening when this file is run directly (e.g. via `tsx
 // watch src/index.ts`), not when it's imported by a test.
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const app = buildApp();
+  // Phase 11a (PARITY #50): resolve whether to serve a built web app here,
+  // at the real entrypoint — not inside buildApp() itself — so tests never
+  // have to reason about VIBEDECK_STATIC_DIR or a possibly-stale on-disk
+  // apps/web/dist. See resolveStaticDir's doc comment in runtime-config.ts.
+  const moduleDir = dirname(fileURLToPath(import.meta.url));
+  const staticDir = resolveStaticDir({ env: process.env, moduleDir });
+
+  const app = buildApp({ staticDir });
   app
     .listen({ port: PORT, host: "0.0.0.0" })
     .then(() => {
       console.log(`vibedeck server listening on http://localhost:${PORT}`);
+      if (staticDir) {
+        console.log(`serving built web app from ${staticDir}`);
+      }
+      // Desktop sidecar readiness signal (see runtime-config.ts's doc
+      // comment on formatReadyLine) — a no-op line when nothing is reading
+      // this process's stdout for it, which is every case except the
+      // Tauri wrapper in apps/desktop.
+      console.log(formatReadyLine(PORT));
     })
     .catch((err) => {
       console.error(err);

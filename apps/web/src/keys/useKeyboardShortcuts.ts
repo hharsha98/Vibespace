@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { isMacPlatform, matchShortcut } from "./keymap.js";
+import { isMacPlatform, isTauriApp, matchShortcut } from "./keymap.js";
 
 /** One handler per action id from `KEYMAP` (see `keymap.ts`). Not every id
  * needs an entry — an unhandled shortcut is simply ignored (and NOT
@@ -55,11 +55,17 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers, enabled = true)
 
   useEffect(() => {
     const isMac = isMacPlatform();
+    // Phase 11a (PARITY #48/#50): read once per mount, same as isMac above —
+    // whether the app is running inside the Tauri desktop webview never
+    // changes for the lifetime of a page, so there's no reason to recompute
+    // it on every keystroke. See keymap.ts's top comment for why this
+    // unblocks the plain ⌘N/⌘W/⌘T forms without touching the browser build.
+    const isDesktop = isTauriApp();
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (!enabledRef.current) return;
 
-      const actionId = matchShortcut(event, isMac);
+      const actionId = matchShortcut(event, isMac, isDesktop);
       if (!actionId) return; // Not one of ours — let it through untouched.
 
       const target = event.target as HTMLElement | null;

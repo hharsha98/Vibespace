@@ -32,8 +32,11 @@ Closing the browser tab does not kill your agents — sessions live on the
 server, so you can come back and pick up where you left off.
 
 What is **not** here yet: multi-agent orchestration, drag-and-drop skills,
-and a packaged desktop app. Those are Phases 9–11 below. This is a young
-project moving quickly; expect rough edges.
+and a fully cross-platform, signed, auto-updating desktop installer (a
+native macOS desktop window — the wrapper itself — does exist now, unsigned;
+see [docs/DESKTOP.md](./docs/DESKTOP.md)). Those are the remaining slices of
+Phases 9–11 below. This is a young project moving quickly; expect rough
+edges.
 
 ## Roadmap
 
@@ -74,8 +77,13 @@ project moving quickly; expect rough edges.
       pane to change what that agent is doing. Server done (discovery, the
       open `agentskills.io` format, REST/MCP, and pane injection) — see
       [docs/SKILLS.md](./docs/SKILLS.md). Drag-and-drop web UI not built yet.
-- [ ] **Phase 11 — Desktop app**: package it as a real installable desktop
-      application with automatic updates.
+- [x] **Phase 11a — Desktop app shell**: a real native macOS window (Tauri
+      2) wrapping the same web app, spawning the Node server as a sidecar —
+      see [docs/DESKTOP.md](./docs/DESKTOP.md). Unsigned, macOS-only, and
+      requires the repo checkout + system Node (documented limitations, not
+      hidden ones).
+- [ ] **Phase 11b — Real packaging**: signed builds, auto-updates, and
+      cross-platform installers (Windows/Linux).
 
 ## Prerequisites
 

@@ -20,10 +20,30 @@
  * shortcut below that would collide with a reserved combo uses Shift as an
  * escape hatch instead (Cmd+Shift+N for "new pane", Cmd+Shift+W for "close
  * pane", Cmd+Shift+T for the theme picker) — Chrome does not reserve any of
- * the Shift variants. A future desktop build (Tauri, planned for Phase 11)
- * runs outside the browser chrome and can claim the natural ⌘T/⌘N/⌘W/⌘Q set
- * at that point; this file only needs to change in one place (`KEYMAP`
- * below) when that happens.
+ * the Shift variants.
+ *
+ * --- Phase 11a: the desktop build changes this, for real ---
+ *
+ * The Tauri desktop wrapper (apps/desktop/) runs the exact same webview
+ * code as the browser build, but OUTSIDE browser chrome — nothing reserves
+ * Cmd+N/Cmd+W/Cmd+T there, so those plain (unshifted) combos reach the
+ * page's own keydown listener just like any other shortcut. `matchShortcut`
+ * below takes an `isDesktop` flag for exactly this: when true, the three
+ * ids above ALSO match their plain form, on top of (not instead of) the
+ * Shift form, which keeps matching everywhere. Two combos landing on the
+ * same action is deliberate — a user who's built ⌘⇧N muscle memory in the
+ * browser build shouldn't have it stop working the day they switch to the
+ * desktop app. `KEYMAP` itself never changes shape for this — the Shift
+ * entries below are still what's shown in the cheat sheet/palette on every
+ * platform; only the matching in `matchShortcut` is conditional.
+ *
+ * `apps/desktop/src-tauri`'s native macOS menu deliberately does NOT bind
+ * ⌘N/⌘W/⌘T as menu accelerators (see its own comment on that): a native
+ * menu accelerator is intercepted by the OS before the webview ever sees a
+ * keydown for it, which would make this file's own handling unreachable.
+ * The menu exists for discoverability only; the actual key handling still
+ * happens exactly here, simply unblocked by not being inside browser
+ * chrome anymore.
  */
 
 /**
@@ -97,14 +117,17 @@ export const KEYMAP: readonly Shortcut[] = [
   {
     id: "new-pane",
     label: "New pane",
-    description: "Add a new empty pane to the grid.",
+    // ⌘N also works in the desktop build (see this file's top comment) —
+    // ⌘⇧N is the one that works everywhere, so it's what's shown/documented.
+    description: "Add a new empty pane to the grid. Desktop build: plain ⌘N also works.",
     key: "n",
     shift: true,
   },
   {
     id: "close-pane",
     label: "Close pane",
-    description: "Close the focused pane (and its session, if it has one).",
+    description:
+      "Close the focused pane (and its session, if it has one). Desktop build: plain ⌘W also works.",
     key: "w",
     shift: true,
   },
@@ -130,7 +153,7 @@ export const KEYMAP: readonly Shortcut[] = [
   {
     id: "theme-picker",
     label: "Theme picker",
-    description: "Open the theme picker.",
+    description: "Open the theme picker. Desktop build: plain ⌘T also works.",
     key: "t",
     shift: true,
   },
@@ -287,6 +310,16 @@ export const KEYMAP: readonly Shortcut[] = [
 ];
 
 /**
+ * The three shortcut ids whose Shift form exists ONLY because a browser tab
+ * reserves the plain combo (see this file's top comment). In the desktop
+ * build, `matchShortcut`'s `isDesktop` flag additionally accepts the plain
+ * form for exactly these ids — nowhere else, so e.g. `split-column`
+ * (Cmd+Shift+D) is unaffected: its Shift never existed to work around a
+ * browser reservation in the first place.
+ */
+const DESKTOP_PLAIN_FORM_IDS = new Set(["new-pane", "close-pane", "theme-picker"]);
+
+/**
  * Is `event` — under platform `isMac` — one of the shortcuts in `KEYMAP`?
  * Returns the matching shortcut's `id`, or `null` if it's not a shortcut
  * vibedeck recognises.
@@ -298,8 +331,15 @@ export const KEYMAP: readonly Shortcut[] = [
  * matches (it's a different, real terminal shortcut, e.g. Ctrl+D/EOF), and
  * on non-Mac, holding Cmd (e.g. the Windows key some keyboards map there)
  * never matches either.
+ *
+ * @param isDesktop Whether this is running inside the Tauri desktop build
+ *   (pass `isTauriApp()`, or omit for the browser build's behaviour — the
+ *   default, `false`, matches every call site from before this parameter
+ *   existed). When true, `DESKTOP_PLAIN_FORM_IDS` also match with Shift up,
+ *   in addition to the Shift-down form that already matched — see this
+ *   file's top comment for why.
  */
-export function matchShortcut(event: KeyEventLike, isMac: boolean): string | null {
+export function matchShortcut(event: KeyEventLike, isMac: boolean, isDesktop = false): string | null {
   if (event.altKey) return null; // none of our shortcuts use Alt — see the Shortcut doc comment
 
   const primaryHeld = isMac ? event.metaKey : event.ctrlKey;
@@ -309,7 +349,12 @@ export function matchShortcut(event: KeyEventLike, isMac: boolean): string | nul
   const key = event.key.toLowerCase();
   for (const shortcut of KEYMAP) {
     if (shortcut.key.toLowerCase() !== key) continue;
-    if (Boolean(shortcut.shift) !== event.shiftKey) continue;
+
+    const matchesAsDocumented = Boolean(shortcut.shift) === event.shiftKey;
+    const matchesAsDesktopPlainForm =
+      isDesktop && shortcut.shift === true && !event.shiftKey && DESKTOP_PLAIN_FORM_IDS.has(shortcut.id);
+    if (!matchesAsDocumented && !matchesAsDesktopPlainForm) continue;
+
     return shortcut.id;
   }
   return null;
@@ -347,4 +392,41 @@ export function isMacPlatform(): boolean {
   // browsers that have started blanking `platform`.
   const platform = navigator.platform || navigator.userAgent || "";
   return /Mac|iPhone|iPad|iPod/i.test(platform);
+}
+
+/**
+ * Pure parser behind `isTauriApp` — does `search` (a URL query string, e.g.
+ * `"?vibedeckDesktop=1"`) carry the marker the desktop wrapper's Rust side
+ * appends when it navigates the webview to the running server (see
+ * apps/desktop/src-tauri/src/main.rs)? Split out from `isTauriApp` so it's
+ * testable with a plain string — no `window`/`URLSearchParams` global
+ * needed, matching this file's existing "keep the DOM out of the pure
+ * logic" discipline (see the file's very top comment).
+ *
+ * Deliberately NOT using `"__TAURI_INTERNALS__" in window` (the usual way
+ * to detect a Tauri webview): Tauri 2 gates a navigated-to page's IPC
+ * access by origin (`Origin::Remote` in its authority model), and the app
+ * we navigate to is a plain `http://127.0.0.1:<port>` origin, not the
+ * `tauri://` asset origin — whether the internals object still gets
+ * injected on that kind of remote-origin navigation isn't something this
+ * phase could pin down with confidence without risking a fragile, silently
+ * broken shortcut set in exactly the build it's supposed to fix (#48). A
+ * URL query flag that WE set and WE read needs no assumption about Tauri's
+ * internals at all.
+ */
+export function hasDesktopMarker(search: string): boolean {
+  return new URLSearchParams(search).get("vibedeckDesktop") === "1";
+}
+
+/**
+ * True when this code is running inside the Tauri desktop build
+ * (apps/desktop), false in the ordinary browser build. Reads
+ * `window.location.search` lazily — same reason as `isMacPlatform` above:
+ * importing this file must stay safe in Node/vitest, where `window`
+ * doesn't exist. See `hasDesktopMarker`'s doc comment for why this checks a
+ * URL marker instead of a Tauri-injected global.
+ */
+export function isTauriApp(): boolean {
+  if (typeof window === "undefined") return false;
+  return hasDesktopMarker(window.location.search);
 }
