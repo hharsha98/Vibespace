@@ -271,19 +271,18 @@ signing/notarization config was added).
   expected consequence, not a bug to fix here.
 - **macOS only, this phase.** Windows/Linux builds, auto-updates, and
   proper multi-platform installers are Phase 11b.
-- **The window has not been confirmed visually.** This is the one claim in
-  this document that rests on indirect evidence. Everything else here was
-  checked against the packaged `.app` and holds: the process starts, the
-  sidecar serves the real UI and the full API (workspaces, 68 skills), and
-  quitting releases the port with zero orphans. But the machine this was
-  built on is driven remotely, and a screen capture during a live run
-  showed only the desktop wallpaper — which could equally mean the window
-  is on another Space, on a display the capture doesn't reach, or genuinely
-  never rendered. Those are not the same thing and the evidence available
-  here cannot separate them. **If you run this on a machine you are sitting
-  at, that ambiguity resolves in about five seconds** — and if the window
-  really is blank or absent, say so and it gets fixed, because right now
-  nobody has actually watched it draw.
+- **Screen-capture tooling cannot see this window.** Not a limitation of
+  the app — a limitation of capturing it. `screencapture` returns only the
+  wallpaper for the region the window occupies, and `screencapture -l
+  <windowid>` fails outright with "could not create image from window",
+  even while CoreGraphics reports that same window as onscreen, `alpha=1.0`,
+  `layer=0`, with correct bounds, and macOS shows the app's native menu bar.
+  Worth writing down because those signals look exactly like a window that
+  renders nothing, and they are not: the app was confirmed drawing its full
+  UI correctly from a screenshot taken by hand at the machine. If you are
+  automating against this app, do not treat an empty capture as evidence
+  that it is broken — verify through the server (`curl
+  http://127.0.0.1:45317/api/workspaces`) or by looking at the screen.
 
 ## Architecture reference
 
