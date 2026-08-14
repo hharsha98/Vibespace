@@ -123,6 +123,16 @@ jobs:
       - name: Build the relocatable server bundle
         run: node apps/desktop/scripts/build-server-resources.mjs
 
+      # The bundling step above runs `pnpm deploy --prod`, which strips
+      # devDependencies from the WORKSPACE as a side effect — including
+      # @tauri-apps/cli. Without this reinstall the next step dies with
+      # "tauri: command not found", which is exactly how the macOS and
+      # Linux legs of the first release attempt failed. `CI=true` is
+      # already set on the runner, so pnpm won't stop to ask before
+      # repopulating node_modules.
+      - name: Restore devDependencies the bundling step pruned
+        run: pnpm install --frozen-lockfile
+
       # tauri-action does the actual `tauri build` plus the GitHub Release
       # creation/upload — including `latest.json`, merged across all three
       # platforms' separate runs of this same step targeting the same
