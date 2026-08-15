@@ -13,7 +13,8 @@ import { useDroppable } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import type { AgentId, BoardCard, CardPriority, ColumnId, SessionInfo } from "@vibedeck/shared";
 import type { AgentOption } from "../grid/PaneView.js";
-import { Pill, statusColorVar, type StatusKind } from "../shell/ui.js";
+import { Button, EmptyState, Pill, statusColorVar, type StatusKind } from "../shell/ui.js";
+import { columnEmptyKind } from "./emptyState.js";
 import Card from "./Card.js";
 
 export interface ColumnProps {
@@ -21,6 +22,12 @@ export interface ColumnProps {
   label: string;
   meaning: StatusKind;
   cards: BoardCard[];
+  /** Whether the WHOLE board (every column, not just this one) currently
+   * has zero cards — see `emptyState.ts`'s `columnEmptyKind` for why this
+   * has to be board-wide, not derived from `cards.length` alone: it's what
+   * tells an empty To Do column apart from an empty Complete column sitting
+   * next to a full To Do. */
+  boardEmpty: boolean;
   agents: AgentOption[];
   defaultAgent: AgentId | "";
   dispatchingId: string | null;
@@ -43,6 +50,7 @@ export default function Column({
   label,
   meaning,
   cards,
+  boardEmpty,
   agents,
   defaultAgent,
   dispatchingId,
@@ -56,8 +64,11 @@ export default function Column({
   // A droppable id distinct from any card id (`column:<id>`), so dropping
   // onto empty space below the last card — or into a wholly empty column,
   // which has no card to drop ONTO — still resolves to a valid drop target.
-  // `data.columnId` is what Board.tsx's onDragEnd actually reads.
-  const { setNodeRef } = useDroppable({ id: `column:${id}`, data: { type: "column", columnId: id } });
+  // `data.columnId` is what Board.tsx's onDragEnd actually reads. `isOver`
+  // (round 2, "clearer... drop affordances"): dnd-kit already tracks this
+  // per-droppable; the column just wasn't reading it before, so dragging a
+  // card over a column gave zero visual feedback about where it would land.
+  const { setNodeRef, isOver } = useDroppable({ id: `column:${id}`, data: { type: "column", columnId: id } });
 
   const [adding, setAdding] = useState(false);
   const [title, setTitle] = useState("");
@@ -70,10 +81,22 @@ export default function Column({
   };
 
   const tint = statusColorVar(meaning);
+  const emptyKind = columnEmptyKind(id, cards.length, boardEmpty);
+  // The first-run hero (below) already carries its own "+ Add task" CTA —
+  // showing the plain text trigger underneath it too would just be the same
+  // action offered twice in one column. Every other state (has cards,
+  // resting-empty, or already mid-add) keeps the trigger exactly as before.
+  const hideAddTrigger = emptyKind === "invite" && !adding;
 
   return (
-    <div style={columnStyle}>
-      <div style={headerStyle}>
+    <div
+      style={{
+        ...columnStyle,
+        borderColor: isOver ? "var(--vd-accent)" : "var(--vd-border)",
+        background: isOver ? "color-mix(in srgb, var(--vd-accent) 4%, var(--vd-surface))" : "var(--vd-surface)",
+      }}
+    >
+      <div style={{ ...headerStyle, borderBottomColor: `color-mix(in srgb, ${tint} 45%, var(--vd-border))` }}>
         <ColumnIcon id={id} color={tint} />
         <span style={{ ...labelStyle, color: tint }}>{label}</span>
         <div style={{ flex: 1 }} />
@@ -82,7 +105,29 @@ export default function Column({
 
       <div ref={setNodeRef} style={listStyle}>
         <SortableContext items={cards.map((c) => c.id)} strategy={verticalListSortingStrategy}>
-          {cards.length === 0 && <p style={emptyStyle}>No cards here yet.</p>}
+          {emptyKind === "invite" && (
+            <div style={inviteEmptyWrapStyle}>
+              <EmptyState
+                icon={
+                  <span style={iconBadgeStyle(tint)}>
+                    <ColumnIcon id={id} color={tint} size={18} />
+                  </span>
+                }
+                title="Add your first task"
+                description="Cards start here. Drag one into In progress to dispatch it to an agent — work moves left to right as it happens."
+                action={
+                  <Button variant="primary" onClick={() => setAdding(true)}>
+                    + Add task
+                  </Button>
+                }
+              />
+            </div>
+          )}
+          {emptyKind === "resting" && (
+            <div style={restingEmptyStyle} aria-hidden>
+              <ColumnIcon id={id} color="var(--vd-text-faint)" size={18} />
+            </div>
+          )}
           {cards.map((card) => (
             <Card
               key={card.id}
@@ -118,7 +163,7 @@ export default function Column({
             placeholder="Task title"
             style={inputStyle}
           />
-        ) : (
+        ) : hideAddTrigger ? null : (
           <button type="button" onClick={() => setAdding(true)} style={addButtonStyle}>
             + Add task
           </button>
@@ -131,8 +176,8 @@ export default function Column({
 /** A small, per-column glyph — deliberately plain inline SVG (no icon
  * library), 12px, `stroke="currentColor"` so it inherits the header's tint
  * from its wrapping element's `color`. */
-function ColumnIcon({ id, color }: { id: ColumnId; color: string }) {
-  const common = { width: 12, height: 12, viewBox: "0 0 12 12", fill: "none", "aria-hidden": true, style: { color } };
+function ColumnIcon({ id, color, size = 12 }: { id: ColumnId; color: string; size?: number }) {
+  const common = { width: size, height: size, viewBox: "0 0 12 12", fill: "none", "aria-hidden": true, style: { color } };
   switch (id) {
     case "todo":
       return (
@@ -190,6 +235,11 @@ const columnStyle: CSSProperties = {
   border: "1px solid var(--vd-border)",
   borderRadius: 6,
   overflow: "hidden",
+  // `borderColor`/`background` above are overridden inline per-render (see
+  // the JSX spread) once a drag is over this column — kept here as the
+  // resting-state values so TypeScript sees a complete CSSProperties object
+  // even before that spread runs.
+  transition: "border-color 120ms ease, background-color 120ms ease",
 };
 
 const headerStyle: CSSProperties = {
@@ -199,7 +249,10 @@ const headerStyle: CSSProperties = {
   height: 30,
   padding: "0 8px",
   flexShrink: 0,
-  borderBottom: "1px solid var(--vd-border)",
+  // 2px, not 1px: round 2's "clearer headers" — a column's meaning tint now
+  // shows up as a genuine coloured underline (mixed with `--vd-border` so
+  // it stays a tint, not a saturated stripe), not just the small icon.
+  borderBottom: "2px solid var(--vd-border)",
 };
 
 const labelStyle: CSSProperties = {
@@ -219,13 +272,40 @@ const listStyle: CSSProperties = {
   gap: 6,
 };
 
-const emptyStyle: CSSProperties = {
-  margin: 0,
-  fontSize: 11,
-  color: "var(--vd-text-faint)",
-  textAlign: "center",
-  padding: "8px 4px",
+/** The first-run "invite" empty state's wrapper — enough top padding that
+ * the hero doesn't sit flush under the column header, matching the general
+ * "content gets room to breathe" instinct behind SPACE.xl elsewhere. */
+const inviteEmptyWrapStyle: CSSProperties = {
+  padding: "20px 8px 8px",
 };
+
+/** The quiet "resting" empty state (round 2): a single faint glyph, no
+ * repeated "No cards here yet." text — see emptyState.ts's own comment for
+ * why this is deliberately the SAME muted, textless treatment whether the
+ * whole board is new or this one column just emptied out. */
+const restingEmptyStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "24px 4px",
+  opacity: 0.5,
+};
+
+/** The tinted circle badge behind the invite empty state's icon — same
+ * `color-mix(in srgb, <tint> 16%, transparent)` pattern PaneView.tsx's
+ * agent cards already use, reused here (not reinvented) so the two
+ * "here's an icon that means something" moments in the app look related. */
+function iconBadgeStyle(tint: string): CSSProperties {
+  return {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 36,
+    height: 36,
+    borderRadius: "50%",
+    background: `color-mix(in srgb, ${tint} 16%, transparent)`,
+  };
+}
 
 const addFormWrapStyle: CSSProperties = {
   flexShrink: 0,

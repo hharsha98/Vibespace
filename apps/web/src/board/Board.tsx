@@ -45,6 +45,8 @@ import {
   type SessionInfo,
 } from "@vibedeck/shared";
 import type { AgentOption } from "../grid/PaneView.js";
+import { FONT, SPACE } from "../shell/tokens.js";
+import { StatusDot } from "../shell/ui.js";
 import Column from "./Column.js";
 
 export interface BoardProps {
@@ -326,9 +328,17 @@ export default function Board({
     return <div style={emptyStateStyle}>{loadError ?? "Failed to load the board."}</div>;
   }
 
+  // Round 2's board-level empty state: true only when EVERY column has zero
+  // cards, not just the one a caller happens to be looking at — this is
+  // what tells the whole-board "first run" feeling (below, and in each
+  // Column's own `boardEmpty` prop, see emptyState.ts) apart from "one
+  // column is just quiet right now because everything moved past it".
+  const boardEmpty = cards.length === 0;
+
   return (
     <div style={boardStyle}>
       {actionError && <div style={errorBarStyle}>{actionError}</div>}
+      {boardEmpty && loadState === "loaded" && <BoardIntroBanner />}
       <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={handleDragEnd}>
         <div style={columnsRowStyle}>
           {COLUMNS.map((column) => (
@@ -338,6 +348,7 @@ export default function Board({
               label={column.label}
               meaning={column.meaning}
               cards={cardsByColumn.get(column.id) ?? []}
+              boardEmpty={boardEmpty}
               agents={agents}
               defaultAgent={defaultAgent}
               dispatchingId={dispatchingId}
@@ -351,6 +362,34 @@ export default function Board({
           ))}
         </div>
       </DndContext>
+    </div>
+  );
+}
+
+/**
+ * The board-level "how this works" strip shown above the columns only while
+ * `cards.length === 0` everywhere (round 2: "an explanation of what the
+ * columns mean and how dispatch works, rather than five identical 'nothing
+ * here' labels"). It's self-clearing rather than dismissible: the moment a
+ * card exists anywhere, `boardEmpty` flips false and this simply stops
+ * rendering — no separate "don't show this again" state to track. The
+ * per-column legend reuses `StatusDot` + each column's own label/meaning
+ * from `COLUMNS` (the same source of truth Column.tsx's header reads), so
+ * it can never drift out of sync with the columns actually shown below it.
+ */
+function BoardIntroBanner() {
+  return (
+    <div style={introBannerStyle}>
+      <p style={introTitleStyle}>Add a task, then drag it into In progress to hand it to an agent</p>
+      <p style={introBodyStyle}>Cards move left to right as work happens:</p>
+      <div style={introLegendStyle}>
+        {COLUMNS.map((column) => (
+          <span key={column.id} style={introLegendItemStyle}>
+            <StatusDot status={column.meaning} />
+            {column.label}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
@@ -380,6 +419,40 @@ const emptyStateStyle: React.CSSProperties = {
   color: "var(--vd-text-muted)",
   fontSize: 12,
   background: "var(--vd-bg)",
+};
+
+const introBannerStyle: React.CSSProperties = {
+  flexShrink: 0,
+  padding: `${SPACE.md}px ${SPACE.lg}px`,
+  background: "var(--vd-surface)",
+  borderBottom: "1px solid var(--vd-border)",
+};
+
+const introTitleStyle: React.CSSProperties = {
+  margin: 0,
+  fontSize: FONT.title,
+  fontWeight: 600,
+  color: "var(--vd-text)",
+};
+
+const introBodyStyle: React.CSSProperties = {
+  margin: `${SPACE.xs}px 0 ${SPACE.sm}px`,
+  fontSize: FONT.body,
+  color: "var(--vd-text-muted)",
+};
+
+const introLegendStyle: React.CSSProperties = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: SPACE.lg,
+};
+
+const introLegendItemStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: SPACE.xs,
+  fontSize: FONT.meta,
+  color: "var(--vd-text-faint)",
 };
 
 const errorBarStyle: React.CSSProperties = {

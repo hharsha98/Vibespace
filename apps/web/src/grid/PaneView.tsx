@@ -1,12 +1,31 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { AgentId, SessionInfo, Workspace } from "@vibedeck/shared";
 import Terminal from "../term/Terminal.js";
 import type { Theme } from "../themes/themes.js";
 import type { Direction, PaneId } from "./tree.js";
-import { IconButton, Pill, StatusDot, sessionStatusKind } from "../shell/ui.js";
+import { EMPTY_SURFACE_BACKGROUND, IconButton, KeyHint, Pill, StatusDot, sessionStatusKind } from "../shell/ui.js";
 import { FONT, RADIUS, SHADOW, SPACE } from "../shell/tokens.js";
 import { AgentGlyph, agentAccentVar } from "./agentVisuals.js";
 import { useGitBranch } from "./useGitBranch.js";
+import { KEYMAP, formatShortcut, isMacPlatform } from "../keys/keymap.js";
+
+/**
+ * The empty-pane picker's footer hint row (premium-pass round 2): three
+ * pane-related shortcuts that are genuinely USABLE right from an empty
+ * pane, shown with their real key combo (via `formatShortcut`, so this
+ * never drifts out of sync with `keys/keymap.ts`'s own table) under a
+ * short, hint-row-sized label — `KEYMAP`'s own `label` text
+ * ("Split pane (side by side)") is written for the command palette, not a
+ * 3-up footer row. Picking these three (not e.g. "close pane", which does
+ * nothing useful on a pane that's already empty) is the actual judgement
+ * call here: they're the shortcuts someone staring at an empty pane is
+ * most likely to reach for next.
+ */
+const PANE_HINT_SHORTCUTS: readonly { id: string; label: string }[] = [
+  { id: "split-row", label: "Split" },
+  { id: "split-column", label: "Stack" },
+  { id: "new-pane", label: "New pane" },
+];
 
 /** One entry from `GET /api/agents` — mirrors the shape App.tsx already fetches. */
 export interface AgentOption {
@@ -100,6 +119,10 @@ export default function PaneView({
   // useGitBranch.ts's top comment for why polling (not a filesystem watch)
   // and the resulting staleness window.
   const gitBranch = useGitBranch(workspaceId);
+  // Same "read navigator lazily, memoize once" pattern App.tsx's own isMac
+  // already uses — the empty-pane footer's KeyHints need this to render
+  // ⌘ vs Ctrl+.
+  const isMac = useMemo(() => isMacPlatform(), []);
 
   const startSession = async (agent: AgentId) => {
     setStartError(null);
@@ -298,12 +321,18 @@ export default function PaneView({
             onSplit={(direction) => onSplit(paneId, direction)}
           />
         ) : (
-          // Premium-pass (problem #1): the empty-pane state used to be four
-          // identical grey rectangles under one line of tiny muted text —
-          // ~70% black void with no visual identity. Now every agent gets
-          // its own glyph/colour (agentVisuals.tsx) on a real card, and an
-          // unavailable agent reads as clearly (not brokenly) disabled, with
-          // an install hint when the server has one.
+          // Premium-pass round 1 (problem #1) gave every agent its own
+          // glyph/colour on a real card instead of four identical grey
+          // rectangles. Round 2 fixes the complaint that survived that pass:
+          // the picker was still a small floating island in a ~85% blank
+          // pane, which reads as "nothing designed this" rather than "no
+          // agent yet". Two changes here: a dotted-texture background (the
+          // same 24px/1px pattern the memory Graph/swarm canvas already use
+          // for "real content lives here" surfaces — EMPTY_SURFACE_BACKGROUND
+          // in shell/ui.tsx) so the negative space around the card grid
+          // reads as intentional, and a footer hint row of the pane
+          // shortcuts someone looking at an empty pane can actually use
+          // right now — real vertical content, not padding for its own sake.
           <div
             style={{
               display: "flex",
@@ -312,6 +341,8 @@ export default function PaneView({
               height: "100%",
               padding: SPACE.lg,
               boxSizing: "border-box",
+              background: "var(--vd-bg)",
+              ...EMPTY_SURFACE_BACKGROUND,
             }}
           >
             <div style={{ width: "100%", maxWidth: 440 }}>
@@ -447,6 +478,44 @@ export default function PaneView({
                   {startError}
                 </p>
               )}
+
+              {/* Footer hint row (round 2): real, usable shortcuts, not
+                  decoration — see PANE_HINT_SHORTCUTS' own comment. The
+                  hairline above it is the same idiom a pane's own title bar
+                  border already uses to separate a header from its body,
+                  applied here to separate "pick an agent" from "or, do this
+                  instead". */}
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "center",
+                  flexWrap: "wrap",
+                  gap: SPACE.md,
+                  marginTop: SPACE.lg,
+                  paddingTop: SPACE.md,
+                  borderTop: "1px solid var(--vd-border)",
+                }}
+              >
+                {PANE_HINT_SHORTCUTS.map(({ id, label }) => {
+                  const shortcut = KEYMAP.find((s) => s.id === id);
+                  if (!shortcut) return null;
+                  return (
+                    <span
+                      key={id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: SPACE.xs,
+                        fontSize: FONT.meta,
+                        color: "var(--vd-text-faint)",
+                      }}
+                    >
+                      <KeyHint>{formatShortcut(shortcut, isMac)}</KeyHint>
+                      {label}
+                    </span>
+                  );
+                })}
+              </div>
             </div>
           </div>
         )}

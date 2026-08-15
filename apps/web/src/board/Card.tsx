@@ -224,6 +224,7 @@ const titleStyle: CSSProperties = {
   minWidth: 0,
   margin: 0,
   fontSize: 12,
+  fontWeight: 500,
   color: "var(--vd-text)",
   lineHeight: 1.35,
   display: "-webkit-box",
