@@ -30,7 +30,7 @@
  * `view.dispatch({ effects: themeCompartment.reconfigure(...) })` — same
  * idea, CodeMirror's version of the mechanism.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { EditorState, Compartment, Prec } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { basicSetup } from "codemirror";
@@ -43,6 +43,8 @@ import { python } from "@codemirror/lang-python";
 import type { FileContentResponse, FileWatchEvent } from "@vibedeck/shared";
 import type { Theme } from "../themes/themes.js";
 import { buildCodeMirrorTheme } from "./cmTheme.js";
+import { EMPTY_SURFACE_BACKGROUND, EmptyState, KeyHint } from "../shell/ui.js";
+import { KEYMAP, formatShortcut, isMacPlatform } from "../keys/keymap.js";
 
 /** An open tab's bookkeeping. The LIVE text of a tab lives in `contentRef`
  * (a plain Map, not React state) — only `dirty`/`loading`/error/`conflict`
@@ -120,6 +122,9 @@ function buildWatchUrl(workspaceId: string): string {
 export default function Editor({ workspaceId, theme, openRequest }: EditorProps) {
   const [tabs, setTabs] = useState<TabState[]>([]);
   const [activePath, setActivePath] = useState<string | null>(null);
+  // Same lazy-read-once pattern PaneView.tsx's own empty-pane footer uses
+  // for its KeyHints — the platform doesn't change mid-session.
+  const isMac = useMemo(() => isMacPlatform(), []);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -539,20 +544,49 @@ export default function Editor({ workspaceId, theme, openRequest }: EditorProps)
       <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
         <div ref={containerRef} style={{ position: "absolute", inset: 0, overflow: "auto" }} />
         {tabs.length === 0 && (
-          <div style={emptyStateStyle}>
-            <p style={{ margin: 0 }}>No file open.</p>
-            <p style={{ margin: "4px 0 0", color: "var(--vd-text-faint)" }}>
-              Click a file in the tree, or press Cmd+P to quick-open one.
-            </p>
+          <div style={noFileOpenStyle}>
+            <EmptyState
+              icon={<NoFileGlyph />}
+              title="No file open"
+              description="Click a file in the tree on the left, or quick-open one by name."
+              hint={
+                (() => {
+                  const shortcut = KEYMAP.find((s) => s.id === "quick-open");
+                  return shortcut ? (
+                    <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--vd-text-faint)" }}>
+                      <KeyHint>{formatShortcut(shortcut, isMac)}</KeyHint> Quick open
+                    </span>
+                  ) : null;
+                })()
+              }
+            />
           </div>
         )}
         {activeTab?.loading && (
           <div style={emptyStateStyle}>
-            <p style={{ margin: 0 }}>Loading…</p>
+            <EmptyState title="Loading…" />
           </div>
         )}
       </div>
     </div>
+  );
+}
+
+/** A small "empty document" glyph — a page outline with a dashed centre
+ * line, standing in for "nothing loaded into the editor yet". Inline SVG,
+ * no icon library, matching every other glyph in the app. */
+function NoFileGlyph() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden style={{ color: "var(--vd-accent)" }}>
+      <path
+        d="M5.5 2.5h6l3 3v11a1 1 0 0 1-1 1h-8a1 1 0 0 1-1-1v-13a1 1 0 0 1 1-1Z"
+        stroke="currentColor"
+        strokeWidth="1.3"
+      />
+      <path d="M11.5 2.5v3h3" stroke="currentColor" strokeWidth="1.3" />
+      <path d="M6.5 11h7" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeDasharray="1.5 2" opacity="0.7" />
+      <path d="M6.5 13.5h7" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeDasharray="1.5 2" opacity="0.5" />
+    </svg>
   );
 }
 
@@ -608,4 +642,15 @@ const emptyStateStyle: React.CSSProperties = {
   textAlign: "center",
   background: "var(--vd-bg)",
   pointerEvents: "none",
+};
+
+/** The "no file open" state specifically (not the transient "Loading…"
+ * overlay, which reuses the plain `emptyStateStyle` above) gets the same
+ * dotted-texture "real content lives here" background PaneView.tsx's own
+ * empty-pane picker uses, so a workspace with nothing open yet in the
+ * Editor reads the same designed way an empty pane does, not a flatter
+ * "something's missing" void. */
+const noFileOpenStyle: React.CSSProperties = {
+  ...emptyStateStyle,
+  ...EMPTY_SURFACE_BACKGROUND,
 };

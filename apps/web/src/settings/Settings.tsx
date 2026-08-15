@@ -33,6 +33,7 @@ import { KEYMAP, formatShortcut, isMacPlatform } from "../keys/keymap.js";
 import { THEMES } from "../themes/themes.js";
 import { ThemeSection } from "../themes/ThemePicker.js";
 import type { AgentOption } from "../grid/PaneView.js";
+import { FONT, RADIUS, SPACE } from "../shell/tokens.js";
 
 export interface SettingsProps {
   themeId: string;
@@ -134,6 +135,15 @@ export default function Settings({ themeId, onThemeChange, defaultAgent, onDefau
   );
 }
 
+/**
+ * Stage B: each settings group is now a real card — `--vd-surface`
+ * background, 1px border, radius — instead of a bare `<h3>` plus bottom
+ * margin. Before this, "Appearance" / "Agents" / "Keyboard shortcuts" read
+ * as one long unbroken scroll with faint uppercase labels as the only
+ * separator; a card boundary gives each group its own visual weight, the
+ * same layering (`--vd-bg` canvas, `--vd-surface` content) every other
+ * grouped surface in the app already uses (board columns, panes).
+ */
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section style={sectionStyle}>
@@ -152,32 +162,40 @@ const pageStyle: CSSProperties = {
 const innerStyle: CSSProperties = {
   maxWidth: 640,
   margin: "0 auto",
-  padding: "24px 20px 48px",
+  padding: `${SPACE.xl}px 20px 48px`,
 };
 
+// One step above FONT.heading (15px, "the one real headline" per
+// docs/DESIGN.md §3) — a page title sits a level above even an empty
+// state's own headline in this page's hierarchy, so it keeps its
+// pre-existing 16px rather than reusing that same size for a different job.
 const pageTitleStyle: CSSProperties = {
-  margin: "0 0 20px",
+  margin: `0 0 ${SPACE.lg}px`,
   fontSize: 16,
   fontWeight: 600,
   color: "var(--vd-text)",
 };
 
 const sectionStyle: CSSProperties = {
-  marginBottom: 28,
+  marginBottom: SPACE.lg,
+  padding: SPACE.lg,
+  background: "var(--vd-surface)",
+  border: "1px solid var(--vd-border)",
+  borderRadius: RADIUS.md,
 };
 
 const sectionTitleStyle: CSSProperties = {
-  margin: "0 0 8px",
-  fontSize: 11,
+  margin: `0 0 ${SPACE.sm}px`,
+  fontSize: FONT.meta,
   letterSpacing: "0.08em",
   textTransform: "uppercase",
   color: "var(--vd-text-faint)",
 };
 
 const sectionHintStyle: CSSProperties = {
-  fontSize: 11,
+  fontSize: FONT.meta,
   color: "var(--vd-text-muted)",
-  margin: "0 0 10px",
+  margin: `0 0 ${SPACE.md}px`,
   lineHeight: 1.5,
 };
 
@@ -185,24 +203,24 @@ const labelStyle: CSSProperties = {
   display: "flex",
   flexDirection: "column",
   gap: 4,
-  fontSize: 12,
+  fontSize: FONT.body,
   color: "var(--vd-text-muted)",
-  marginBottom: 6,
+  marginBottom: SPACE.sm,
 };
 
 const labelTextStyle: CSSProperties = {
-  fontSize: 11,
+  fontSize: FONT.meta,
   letterSpacing: "0.04em",
   color: "var(--vd-text-muted)",
 };
 
 const selectStyle: CSSProperties = {
-  background: "var(--vd-surface)",
+  background: "var(--vd-bg)",
   color: "var(--vd-text)",
   border: "1px solid var(--vd-border)",
-  borderRadius: 4,
+  borderRadius: RADIUS.sm,
   padding: "6px 8px",
-  fontSize: 12,
+  fontSize: FONT.body,
   maxWidth: 280,
 };
 
@@ -217,13 +235,13 @@ const rowStyle: CSSProperties = {
 
 const cellLabelStyle: CSSProperties = {
   padding: "6px 4px",
-  fontSize: 12,
+  fontSize: FONT.body,
   color: "var(--vd-text)",
 };
 
 const cellKeyStyle: CSSProperties = {
   padding: "6px 4px",
-  fontSize: 12,
+  fontSize: FONT.body,
   fontFamily: "monospace",
   color: "var(--vd-text-muted)",
   textAlign: "right",

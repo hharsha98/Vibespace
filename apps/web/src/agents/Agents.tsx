@@ -25,7 +25,8 @@ import {
   type AgentProfile,
 } from "@vibedeck/shared";
 import { charCountColor, charCountStatus } from "../shell/textLimits.js";
-import { ListRow, Pill } from "../shell/ui.js";
+import { Button, EmptyState, ListRow, Pill } from "../shell/ui.js";
+import { FONT, RADIUS, SPACE } from "../shell/tokens.js";
 
 export interface AgentsProps {
   workspaceId: string | null;
@@ -198,13 +199,28 @@ export default function Agents({ workspaceId, visible }: AgentsProps) {
   }, []);
 
   if (!workspaceId) {
-    return <div style={emptyStateStyle}>No workspace open.</div>;
+    return (
+      <div style={emptyStateStyle}>
+        <EmptyState title="No workspace open" description="Open a workspace to manage its agent profiles." />
+      </div>
+    );
   }
   if (loadState === "loading" && profiles.length === 0) {
-    return <div style={emptyStateStyle}>Loading agents…</div>;
+    return (
+      <div style={emptyStateStyle}>
+        <EmptyState title="Loading agents…" />
+      </div>
+    );
   }
   if (loadState === "error") {
-    return <div style={emptyStateStyle}>{loadError ?? "Failed to load agent profiles."}</div>;
+    return (
+      <div style={emptyStateStyle}>
+        <EmptyState
+          title="Couldn't load agents"
+          description={loadError ?? "Failed to load agent profiles."}
+        />
+      </div>
+    );
   }
 
   const promptLength = form.systemPrompt.length;
@@ -216,12 +232,32 @@ export default function Agents({ workspaceId, visible }: AgentsProps) {
       <div style={listPaneStyle}>
         <div style={listHeaderStyle}>
           <span style={listTitleStyle}>Agents</span>
-          <button type="button" onClick={startCreate} style={addButtonStyle}>
-            + New agent
-          </button>
+          {/* Hidden while the list is empty — EmptyState's own primary
+              action below already offers the identical "+ New agent" call
+              to action, so showing both would just be the same action
+              twice, same "don't offer a CTA the empty state already owns"
+              idiom board/Column.tsx's hideAddTrigger follows. */}
+          {profiles.length > 0 && (
+            <button type="button" onClick={startCreate} style={addButtonStyle}>
+              + New agent
+            </button>
+          )}
         </div>
         <div style={{ flex: 1, overflowY: "auto", padding: 4 }}>
-          {profiles.length === 0 && <p style={emptyListStyle}>No agent profiles yet.</p>}
+          {profiles.length === 0 && (
+            <div style={emptyListWrapStyle}>
+              <EmptyState
+                icon={<AgentGlyphBadge />}
+                title="No agent profiles yet"
+                description="Save a name, base CLI, and system prompt as a reusable persona you can dispatch board cards to."
+                action={
+                  <Button variant="primary" onClick={startCreate}>
+                    + New agent
+                  </Button>
+                }
+              />
+            </div>
+          )}
           {profiles.map((profile) => (
             <ListRow
               key={profile.id}
@@ -236,7 +272,20 @@ export default function Agents({ workspaceId, visible }: AgentsProps) {
       </div>
 
       <div style={detailPaneStyle}>
-        {!showForm && <div style={emptyDetailStyle}>Select an agent to edit, or create a new one.</div>}
+        {!showForm && (
+          <div style={emptyDetailStyle}>
+            <EmptyState
+              icon={<AgentGlyphBadge />}
+              title="Select an agent"
+              description="Pick one from the list to edit it, or create a new one."
+              action={
+                <Button variant="secondary" onClick={startCreate}>
+                  + New agent
+                </Button>
+              }
+            />
+          </div>
+        )}
 
         {showForm && (
           <div style={formStyle}>
@@ -252,13 +301,18 @@ export default function Agents({ workspaceId, visible }: AgentsProps) {
             {selected && pendingDeleteId === selected.id && (
               <div style={confirmBannerStyle}>
                 <span>Delete "{selected.name}"? This can't be undone.</span>
-                <div style={{ display: "flex", gap: 6 }}>
-                  <button type="button" onClick={() => confirmDelete(selected.id)} style={dangerButtonStyle}>
+                <div style={{ display: "flex", gap: SPACE.sm }}>
+                  <button
+                    type="button"
+                    onClick={() => confirmDelete(selected.id)}
+                    className="vd-btn-danger"
+                    style={dangerButtonStyle}
+                  >
                     Delete
                   </button>
-                  <button type="button" onClick={() => setPendingDeleteId(null)} style={secondaryButtonStyle}>
+                  <Button variant="secondary" onClick={() => setPendingDeleteId(null)}>
                     Cancel
-                  </button>
+                  </Button>
                 </div>
               </div>
             )}
@@ -307,18 +361,46 @@ export default function Agents({ workspaceId, visible }: AgentsProps) {
 
             {formError && <p style={errorStyle}>{formError}</p>}
 
-            <div style={{ display: "flex", gap: 6 }}>
-              <button type="button" onClick={submit} disabled={saving} style={primaryButtonStyle}>
+            <div style={{ display: "flex", gap: SPACE.sm }}>
+              <Button type="submit" variant="primary" onClick={submit} disabled={saving}>
                 {saving ? "Saving…" : "Save"}
-              </button>
-              <button type="button" onClick={cancelForm} style={secondaryButtonStyle}>
+              </Button>
+              <Button variant="secondary" onClick={cancelForm}>
                 Cancel
-              </button>
+              </Button>
             </div>
           </div>
         )}
       </div>
     </div>
+  );
+}
+
+/** The Agents page's own tinted-circle icon badge — a small dashed-outline
+ * "persona" glyph (two overlapping rounded shapes, standing in for "an agent
+ * plus its own system prompt"), reused between the list-empty and detail-
+ * empty states so this page reads as one designed screen, not two different
+ * placeholder treatments. Same `color-mix` badge pattern board/Column.tsx's
+ * `iconBadgeStyle` and skills/Skills.tsx's detail badge already use. */
+function AgentGlyphBadge() {
+  return (
+    <span
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: 36,
+        height: 36,
+        borderRadius: "50%",
+        background: "color-mix(in srgb, var(--vd-accent) 16%, transparent)",
+      }}
+    >
+      <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden style={{ color: "var(--vd-accent)" }}>
+        <circle cx="8" cy="7" r="3.2" stroke="currentColor" strokeWidth="1.3" />
+        <path d="M2.5 17c0-3.3 2.5-5.5 5.5-5.5s5.5 2.2 5.5 5.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+        <circle cx="15" cy="6" r="2.2" stroke="currentColor" strokeWidth="1.2" strokeDasharray="1.5 1.5" opacity="0.7" />
+      </svg>
+    </span>
   );
 }
 
@@ -349,7 +431,7 @@ const listHeaderStyle: CSSProperties = {
 };
 
 const listTitleStyle: CSSProperties = {
-  fontSize: 11,
+  fontSize: FONT.meta,
   letterSpacing: "0.08em",
   textTransform: "uppercase",
   color: "var(--vd-text-faint)",
@@ -359,23 +441,23 @@ const addButtonStyle: CSSProperties = {
   background: "transparent",
   border: "none",
   color: "var(--vd-accent)",
-  fontSize: 11,
+  fontSize: FONT.meta,
   cursor: "pointer",
   padding: 0,
 };
 
-const emptyListStyle: CSSProperties = {
-  fontSize: 11,
-  color: "var(--vd-text-faint)",
-  padding: "8px 8px",
-  margin: 0,
+/** Wraps the list column's empty EmptyState with the same top-heavy padding
+ * board/Column.tsx's own invite-empty wrapper uses, so it doesn't sit flush
+ * under the header. */
+const emptyListWrapStyle: CSSProperties = {
+  padding: `${SPACE.xl}px ${SPACE.sm}px ${SPACE.sm}px`,
 };
 
 const detailPaneStyle: CSSProperties = {
   flex: 1,
   minWidth: 0,
   overflowY: "auto",
-  padding: 16,
+  padding: SPACE.lg,
 };
 
 const emptyDetailStyle: CSSProperties = {
@@ -384,19 +466,19 @@ const emptyDetailStyle: CSSProperties = {
   justifyContent: "center",
   height: "100%",
   color: "var(--vd-text-muted)",
-  fontSize: 12,
+  fontSize: FONT.body,
 };
 
 const formStyle: CSSProperties = {
   display: "flex",
   flexDirection: "column",
-  gap: 12,
+  gap: SPACE.md,
   maxWidth: 640,
 };
 
 const formTitleStyle: CSSProperties = {
   margin: 0,
-  fontSize: 13,
+  fontSize: FONT.title,
   fontWeight: 600,
   color: "var(--vd-text)",
 };
@@ -405,12 +487,12 @@ const labelStyle: CSSProperties = {
   display: "flex",
   flexDirection: "column",
   gap: 4,
-  fontSize: 12,
+  fontSize: FONT.body,
   color: "var(--vd-text-muted)",
 };
 
 const labelTextStyle: CSSProperties = {
-  fontSize: 11,
+  fontSize: FONT.meta,
   letterSpacing: "0.04em",
   color: "var(--vd-text-muted)",
 };
@@ -421,52 +503,32 @@ const inputStyle: CSSProperties = {
   background: "var(--vd-bg)",
   color: "var(--vd-text)",
   border: "1px solid var(--vd-border)",
-  borderRadius: 4,
+  borderRadius: RADIUS.sm,
   padding: "6px 8px",
-  fontSize: 12,
+  fontSize: FONT.body,
 };
 
 const textareaStyle: CSSProperties = {
   ...inputStyle,
   fontFamily: "monospace",
-  fontSize: 11,
+  fontSize: FONT.meta,
   lineHeight: 1.5,
   resize: "vertical",
 };
 
 const errorStyle: CSSProperties = {
-  fontSize: 11,
+  fontSize: FONT.meta,
   color: "var(--vd-danger)",
   margin: 0,
-};
-
-const primaryButtonStyle: CSSProperties = {
-  background: "var(--vd-accent)",
-  color: "var(--vd-accent-text)",
-  border: "none",
-  borderRadius: 4,
-  padding: "5px 14px",
-  fontSize: 12,
-  cursor: "pointer",
-};
-
-const secondaryButtonStyle: CSSProperties = {
-  background: "transparent",
-  color: "var(--vd-text-muted)",
-  border: "1px solid var(--vd-border)",
-  borderRadius: 4,
-  padding: "5px 14px",
-  fontSize: 12,
-  cursor: "pointer",
 };
 
 const dangerButtonStyle: CSSProperties = {
   background: "var(--vd-danger)",
   color: "var(--vd-bg)",
   border: "none",
-  borderRadius: 4,
+  borderRadius: RADIUS.sm,
   padding: "5px 14px",
-  fontSize: 12,
+  fontSize: FONT.body,
   cursor: "pointer",
 };
 

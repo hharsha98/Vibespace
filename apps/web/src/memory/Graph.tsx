@@ -27,7 +27,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation, type Simulation } from "d3-force";
 import type { MemoryGraphEdge, MemoryGraphNode } from "@vibedeck/shared";
-import { IconButton } from "../shell/ui.js";
+import { EmptyState, IconButton } from "../shell/ui.js";
+import { RADIUS, SHADOW, SPACE } from "../shell/tokens.js";
 
 export interface GraphProps {
   workspaceId: string | null;
@@ -367,9 +368,18 @@ export default function Graph({ workspaceId, onOpenNote, visible }: GraphProps) 
         const dx = e.clientX - panRef.current.startX;
         const dy = e.clientY - panRef.current.startY;
         transformRef.current = { ...transformRef.current, x: panRef.current.origX + dx, y: panRef.current.origY + dy };
+      } else {
+        // Stage B: same hover-cursor feedback the mission canvas gained —
+        // a real (non-dangling) node under the pointer switches to
+        // "pointer" (clicking opens it) instead of leaving every pixel of
+        // the canvas looking identically "grab"-able.
+        const { x, y } = toGraphSpace(e.clientX, e.clientY);
+        const hit = nodeAt(x, y);
+        const canvas = canvasRef.current;
+        if (canvas) canvas.style.cursor = hit && !hit.dangling ? "pointer" : "grab";
       }
     },
-    [toGraphSpace]
+    [toGraphSpace, nodeAt]
   );
 
   const onPointerUp = useCallback(
@@ -426,13 +436,33 @@ export default function Graph({ workspaceId, onOpenNote, visible }: GraphProps) 
   const noteCount = useMemo(() => nodesRef.current.filter((n) => !n.dangling).length, [loadState]);
 
   if (!workspaceId) {
-    return <div style={emptyStateStyle}>No workspace open.</div>;
+    return (
+      <div style={emptyStateStyle}>
+        <EmptyState icon={<GraphGlyph />} title="No workspace open" description="Open a workspace to see its memory graph." />
+      </div>
+    );
   }
   if (loadState === "error") {
-    return <div style={emptyStateStyle}>{loadError ?? "Failed to load the memory graph."}</div>;
+    return (
+      <div style={emptyStateStyle}>
+        <EmptyState
+          icon={<GraphGlyph tint="var(--vd-danger)" />}
+          title="Couldn't load the graph"
+          description={loadError ?? "Failed to load the memory graph."}
+        />
+      </div>
+    );
   }
   if (loadState === "loaded" && nodesRef.current.length === 0) {
-    return <div style={emptyStateStyle}>No memory notes yet. Add one from the Memory tab to see it here.</div>;
+    return (
+      <div style={emptyStateStyle}>
+        <EmptyState
+          icon={<GraphGlyph />}
+          title="No memory notes yet"
+          description="Notes you write show up here as connected nodes — add one from the Memory tab and [[link]] it to another to see an edge."
+        />
+      </div>
+    );
   }
 
   return (
@@ -482,6 +512,21 @@ function roundedRectPath(
   ctx.closePath();
 }
 
+/** A small graph glyph — three linked nodes — for the graph's own empty
+ * states, matching the "small plain SVG, no icon library" convention every
+ * other glyph in the app follows (see board/Column.tsx's `ColumnIcon`).
+ * `tint` defaults to the accent. */
+function GraphGlyph({ tint = "var(--vd-accent)" }: { tint?: string }) {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden style={{ color: tint }}>
+      <path d="M6 6.5L14 4.5M6 6.5L10 14.5M14 4.5L10 14.5" stroke="currentColor" strokeWidth="1.2" opacity="0.6" />
+      <circle cx="6" cy="6.5" r="2.2" stroke="currentColor" strokeWidth="1.3" />
+      <circle cx="14" cy="4.5" r="2.2" stroke="currentColor" strokeWidth="1.3" />
+      <circle cx="10" cy="14.5" r="2.2" fill="currentColor" />
+    </svg>
+  );
+}
+
 const containerStyle: React.CSSProperties = {
   position: "relative",
   height: "100%",
@@ -492,27 +537,29 @@ const containerStyle: React.CSSProperties = {
 
 const zoomClusterStyle: React.CSSProperties = {
   position: "absolute",
-  left: 8,
-  bottom: 8,
+  left: SPACE.sm,
+  bottom: SPACE.sm,
   display: "flex",
   gap: 2,
   padding: 2,
   background: "var(--vd-surface)",
   border: "1px solid var(--vd-border)",
-  borderRadius: 4,
+  borderRadius: RADIUS.sm,
+  boxShadow: SHADOW.sm,
 };
 
 const legendStyle: React.CSSProperties = {
   position: "absolute",
-  right: 8,
-  bottom: 8,
+  right: SPACE.sm,
+  bottom: SPACE.sm,
   fontSize: 10,
   color: "var(--vd-text-faint)",
   background: "var(--vd-surface)",
   border: "1px solid var(--vd-border)",
-  borderRadius: 4,
+  borderRadius: RADIUS.sm,
   padding: "3px 8px",
   pointerEvents: "none",
+  boxShadow: SHADOW.sm,
 };
 
 const loadingOverlayStyle: React.CSSProperties = {

@@ -15,7 +15,8 @@
  */
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import type { MemoryGraphEdge, MemoryNote, MemoryNoteWithBacklinks } from "@vibedeck/shared";
-import { Pill, StatusDot } from "../shell/ui.js";
+import { EmptyState, Pill, StatusDot } from "../shell/ui.js";
+import { SPACE } from "../shell/tokens.js";
 import { tokenizeBody } from "./wikitext.js";
 
 export interface OpenNoteRequest {
@@ -275,7 +276,11 @@ export default function MemoryPanel({ workspaceId, openNoteRequest }: MemoryPane
   }, [notes, search]);
 
   if (!workspaceId) {
-    return <EmptyNote>No active workspace.</EmptyNote>;
+    return (
+      <div style={panelEmptyStyle}>
+        <EmptyState title="No active workspace" description="Open a workspace to browse its notes." />
+      </div>
+    );
   }
 
   // --- Note detail view (reader or inline edit) ----------------------------
@@ -353,7 +358,13 @@ export default function MemoryPanel({ workspaceId, openNoteRequest }: MemoryPane
                   {selectedNote.backlinks.map((slug) => {
                     const note = notesBySlug.get(slug);
                     return (
-                      <button key={slug} type="button" onClick={() => openNote(slug)} style={backlinkRowStyle}>
+                      <button
+                        key={slug}
+                        type="button"
+                        onClick={() => openNote(slug)}
+                        className="vd-row-hover"
+                        style={backlinkRowStyle}
+                      >
                         <StatusDot status="info" />
                         <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           {note?.title ?? slug}
@@ -431,10 +442,27 @@ export default function MemoryPanel({ workspaceId, openNoteRequest }: MemoryPane
 
       {listLoadState === "loaded" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-          {filteredNotes.length === 0 && notes.length > 0 && <EmptyNote>No notes match "{search}".</EmptyNote>}
-          {notes.length === 0 && <EmptyNote>No notes yet. Create one below.</EmptyNote>}
+          {filteredNotes.length === 0 && notes.length > 0 && (
+            <div style={listEmptyStyle}>
+              <EmptyState title="No matches" description={`Nothing matches "${search}".`} />
+            </div>
+          )}
+          {notes.length === 0 && (
+            <div style={listEmptyStyle}>
+              <EmptyState
+                title="No notes yet"
+                description="Write one below — use [[wikilinks]] to connect it to other notes in the graph."
+              />
+            </div>
+          )}
           {filteredNotes.map((note) => (
-            <button key={note.slug} type="button" onClick={() => openNote(note.slug)} style={noteRowStyle}>
+            <button
+              key={note.slug}
+              type="button"
+              onClick={() => openNote(note.slug)}
+              className="vd-row-hover"
+              style={noteRowStyle}
+            >
               <span
                 style={{
                   flex: 1,
@@ -543,6 +571,21 @@ function NoteBody({
 function EmptyNote({ children }: { children: React.ReactNode }) {
   return <p style={{ fontSize: 12, color: "var(--vd-text-faint)", margin: 0, lineHeight: 1.5 }}>{children}</p>;
 }
+
+/** Wraps the panel-level EmptyState (no workspace) — this dock tab has no
+ * fixed height of its own to centre within (RightDock.tsx just stacks
+ * content), so this only adds breathing room above/below rather than
+ * vertically centring like a full-height view's empty state would. */
+const panelEmptyStyle: CSSProperties = {
+  padding: `${SPACE.lg}px ${SPACE.xs}px`,
+};
+
+/** Wraps the note list's own "nothing to show" EmptyStates (no notes yet /
+ * no search matches) — same idea, scaled to this 320px dock column rather
+ * than a full centre view. */
+const listEmptyStyle: CSSProperties = {
+  padding: `${SPACE.md}px ${SPACE.xs}px`,
+};
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { IconButton } from "../shell/ui.js";
+import { RADIUS, SPACE } from "../shell/tokens.js";
 
 const DEFAULT_URL = "http://localhost:3000";
 
@@ -48,8 +49,8 @@ export default function Preview() {
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 6,
-          padding: "6px 8px",
+          gap: SPACE.sm,
+          padding: `${SPACE.sm}px ${SPACE.sm}px`,
           borderBottom: "1px solid var(--vd-border)",
           background: "var(--vd-surface)",
           flexShrink: 0,
@@ -75,7 +76,7 @@ export default function Preview() {
               background: "var(--vd-bg)",
               color: "var(--vd-text)",
               border: "1px solid var(--vd-border)",
-              borderRadius: 4,
+              borderRadius: RADIUS.sm,
               padding: "4px 8px",
               fontSize: 12,
               fontFamily: "monospace",
@@ -87,19 +88,19 @@ export default function Preview() {
         </IconButton>
       </div>
 
-      <p
-        style={{
-          margin: 0,
-          padding: "4px 8px",
-          fontSize: 11,
-          color: "var(--vd-text-faint)",
-          borderBottom: "1px solid var(--vd-border)",
-          flexShrink: 0,
-        }}
-      >
-        Some sites refuse to be framed (X-Frame-Options / CSP) and will show blank below — use "Open in
-        new tab" if so.
-      </p>
+      {/* Stage B: was a bare muted <p> — the one honest thing this view can
+          always say (see this file's top comment on why a blank iframe
+          can't be detected from JS) now reads as a designed notice, same
+          tinted-banner idiom Editor.tsx's conflict/error bars already use,
+          just in --vd-info since this isn't a warning about anything that
+          went wrong. */}
+      <div style={hintBarStyle}>
+        <InfoGlyph />
+        <span>
+          Some sites refuse to be framed (X-Frame-Options / CSP) and will show blank below — use "Open in new
+          tab" if so.
+        </span>
+      </div>
 
       {/*
         The one deliberate hard-coded colour in the app. DESIGN.md says
@@ -151,3 +152,37 @@ function OpenInNewIcon() {
     </svg>
   );
 }
+
+/** A plain "info" glyph (circled i) for the always-visible framing-limits
+ * notice — `--vd-info`, the same semantic colour every other informational
+ * (non-warning, non-error) affordance in the app uses. */
+function InfoGlyph() {
+  return (
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 14 14"
+      fill="none"
+      aria-hidden
+      style={{ flexShrink: 0, marginTop: 1, color: "var(--vd-info)" }}
+    >
+      <circle cx="7" cy="7" r="5.5" stroke="currentColor" strokeWidth="1.1" />
+      <circle cx="7" cy="4.6" r="0.8" fill="currentColor" />
+      <path d="M7 6.6V10" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+const hintBarStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "flex-start",
+  gap: SPACE.xs + 2,
+  margin: 0,
+  padding: `${SPACE.xs}px ${SPACE.sm}px`,
+  fontSize: 11,
+  lineHeight: 1.5,
+  color: "var(--vd-text)",
+  background: "color-mix(in srgb, var(--vd-info) 10%, var(--vd-bg))",
+  borderBottom: "1px solid var(--vd-border)",
+  flexShrink: 0,
+};

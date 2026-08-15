@@ -20,7 +20,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MissionAgent } from "@vibedeck/shared";
-import { IconButton } from "../shell/ui.js";
+import { EmptyState, IconButton } from "../shell/ui.js";
+import { RADIUS, SHADOW, SPACE } from "../shell/tokens.js";
 import { agentStatusKind, fitTransform, layoutMissionNodes, roleColorVar, roleGlyph, type ViewTransform } from "./logic.js";
 
 export interface MissionCanvasProps {
@@ -154,7 +155,6 @@ export default function MissionCanvas({ agents, selectedAgentId, onSelectAgent }
     const bg = resolveVar(container, "var(--vd-bg)");
     const border = resolveVar(container, "var(--vd-border)");
     const text = resolveVar(container, "var(--vd-text)");
-    const textFaint = resolveVar(container, "var(--vd-text-faint)");
     const surfaceRaised = resolveVar(container, "var(--vd-surface-raised)");
     const accent = resolveVar(container, "var(--vd-accent)");
 
@@ -252,13 +252,6 @@ export default function MissionCanvas({ agents, selectedAgentId, onSelectAgent }
 
     ctx.restore();
     ctx.restore();
-
-    if (nodes.length === 0) {
-      ctx.fillStyle = textFaint;
-      ctx.font = "12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText("No agents in this mission yet.", w / 2, h / 2);
-    }
   }, [nodes, coordinatorId, selectedAgentId]);
 
   useEffect(() => {
@@ -321,9 +314,21 @@ export default function MissionCanvas({ agents, selectedAgentId, onSelectAgent }
         const dy = e.clientY - panRef.current.startY;
         transformRef.current = { ...transformRef.current, x: panRef.current.origX + dx, y: panRef.current.origY + dy };
         draw();
+        return;
+      }
+      // Stage B: hover feedback for a canvas that previously gave zero
+      // response to a pointer sitting over a node — the cursor itself is
+      // the only affordance canvas content can offer without a DOM overlay
+      // per node, so it switches from "grab" (pan) to "pointer" (this is
+      // clickable) the moment the pointer is over a node's hit box. Skipped
+      // entirely while actually panning/dragging above.
+      if (!pendingClickRef.current) {
+        const { x, y } = toLayoutSpace(e.clientX, e.clientY);
+        const canvas = canvasRef.current;
+        if (canvas) canvas.style.cursor = nodeAt(x, y) ? "pointer" : "grab";
       }
     },
-    [draw]
+    [draw, toLayoutSpace, nodeAt]
   );
 
   const onPointerUp = useCallback(
@@ -412,6 +417,23 @@ export default function MissionCanvas({ agents, selectedAgentId, onSelectAgent }
         style={{ display: "block", width: "100%", height: "100%", cursor: "grab" }}
       />
 
+      {/* Stage B: agents "still spawning" (a fresh mission, before the
+          coordinator's first agents come up) previously rendered as plain
+          grey text drawn INSIDE the canvas — invisible to anything but a
+          human eye, no real hierarchy. A DOM EmptyState reads as a designed
+          state instead of an empty void, matching every other empty
+          surface in the app. Real agents fully replace this the moment
+          `agents` is non-empty; it never overlaps the node graph. */}
+      {nodes.length === 0 && (
+        <div style={canvasEmptyStyle}>
+          <EmptyState
+            icon={<SwarmingGlyph />}
+            title="Agents are spawning…"
+            description="The coordinator and its team will appear here as their sessions come up."
+          />
+        </div>
+      )}
+
       <div style={zoomClusterStyle}>
         <IconButton title="Zoom out" onClick={() => zoomBy(0.8)}>
           <span style={{ fontSize: 13 }}>−</span>
@@ -428,6 +450,21 @@ export default function MissionCanvas({ agents, selectedAgentId, onSelectAgent }
   );
 }
 
+/** A small "in progress" glyph — three faint dots orbiting a centre one,
+ * distinct from CreateMissionForm's solid `MissionGlyph` so "the swarm is
+ * still assembling" reads differently at a glance from "here's your fully
+ * formed mission". Inline SVG, no icon library. */
+function SwarmingGlyph() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden style={{ color: "var(--vd-text-faint)" }}>
+      <circle cx="10" cy="10" r="2.2" fill="currentColor" />
+      <circle cx="10" cy="3.5" r="1.4" fill="currentColor" opacity="0.6" />
+      <circle cx="15.8" cy="13.2" r="1.4" fill="currentColor" opacity="0.4" />
+      <circle cx="4.2" cy="13.2" r="1.4" fill="currentColor" opacity="0.2" />
+    </svg>
+  );
+}
+
 const containerStyle: React.CSSProperties = {
   position: "relative",
   height: "100%",
@@ -436,17 +473,31 @@ const containerStyle: React.CSSProperties = {
   background: "var(--vd-bg)",
 };
 
+/** Centres the zero-agents EmptyState over the canvas without blocking
+ * pointer events meant for panning/zooming underneath it — this overlay is
+ * purely informational, there is nothing to click while agents are still
+ * spawning. */
+const canvasEmptyStyle: React.CSSProperties = {
+  position: "absolute",
+  inset: 0,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  pointerEvents: "none",
+};
+
 const zoomClusterStyle: React.CSSProperties = {
   position: "absolute",
-  left: 8,
-  bottom: 8,
+  left: SPACE.sm,
+  bottom: SPACE.sm,
   display: "flex",
   alignItems: "center",
   gap: 2,
   padding: 2,
   background: "var(--vd-surface)",
   border: "1px solid var(--vd-border)",
-  borderRadius: 4,
+  borderRadius: RADIUS.sm,
+  boxShadow: SHADOW.sm,
 };
 
 const zoomPercentStyle: React.CSSProperties = {

@@ -311,6 +311,15 @@ export function Button({
       title={title}
       onClick={onClick}
       disabled={disabled}
+      // Stage B: every Button (not just Board's) now gets a real hover/focus
+      // response via `.vd-btn-primary`/`.vd-btn-secondary` in
+      // GlobalShellStyles below — before this, disabled state aside, a
+      // resting Button and a hovered one looked identical everywhere except
+      // Board, which is exactly the "does this control respond" gap stage
+      // B's brief calls out. Purely additive CSS; the inline styles below
+      // are unchanged, so every existing caller (Board, PaneView) keeps its
+      // resting look byte-for-byte and just gains feedback on interaction.
+      className={primary ? "vd-btn-primary" : "vd-btn-secondary"}
       style={{
         display: "inline-flex",
         alignItems: "center",
@@ -324,6 +333,7 @@ export function Button({
         fontWeight: primary ? 500 : 400,
         cursor: disabled ? "default" : "pointer",
         opacity: disabled ? 0.6 : 1,
+        transition: "background-color 120ms ease, border-color 120ms ease, color 120ms ease, filter 120ms ease",
       }}
     >
       {children}
@@ -499,6 +509,33 @@ export function GlobalShellStyles() {
    via .vd-agent-card.is-disabled so they never look interactive. */
 .vd-agent-card:hover:not(.is-disabled) { border-color: var(--vd-accent); transform: translateY(-1px); box-shadow: 0 6px 16px rgba(0, 0, 0, 0.32); }
 .vd-agent-card:focus-visible:not(.is-disabled) { outline: 2px solid var(--vd-accent); outline-offset: 1px; }
+
+/* Stage B: Button's own hover/focus response (see Button's doc comment) —
+   primary buttons brighten slightly (a solid accent fill has nowhere to go
+   but lighter/darker, since it's already the strongest surface in the UI);
+   secondary buttons pick up the same raised-surface treatment every other
+   hoverable chrome element in the app already uses. :disabled is excluded
+   so a disabled button (e.g. "Saving…") doesn't look interactive. */
+.vd-btn-primary:hover:not(:disabled) { filter: brightness(1.1); }
+.vd-btn-primary:focus-visible { outline: 2px solid var(--vd-accent); outline-offset: 1px; }
+.vd-btn-secondary:hover:not(:disabled) { background: var(--vd-surface-raised); color: var(--vd-text); border-color: var(--vd-text-faint); }
+.vd-btn-secondary:focus-visible { outline: 2px solid var(--vd-accent); outline-offset: 1px; }
+
+/* Stage B: a generic "plain chrome row" hover, for list-shaped rows that
+   aren't built from ListRow itself (Prompts.tsx's PromptRow, MemoryPanel's
+   note rows) — same raised-background feedback ListRow's own :hover already
+   gives every OTHER list in the app, so these don't sit as the one dead spot
+   that doesn't respond to a pointer over it. */
+.vd-row-hover:hover { background: var(--vd-surface-raised); }
+
+/* Stage B: a hover rule for the app's various hand-rolled "destructive
+   action" buttons (Agents/Prompts' confirm-delete, MissionBar's Stop) —
+   these predate Button's variant system and carry their own solid
+   --vd-danger fill, so they get the same brightness treatment
+   .vd-btn-primary uses rather than a background swap that would require
+   restyling them into Button. */
+.vd-btn-danger:hover:not(:disabled) { filter: brightness(1.1); }
+.vd-btn-danger:focus-visible { outline: 2px solid var(--vd-danger); outline-offset: 1px; }
 `}</style>
   );
 }

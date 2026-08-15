@@ -19,6 +19,7 @@
  */
 import { useMemo, useRef, useState } from "react";
 import type { MissionAgent } from "@vibedeck/shared";
+import { RADIUS, SHADOW, SPACE } from "../shell/tokens.js";
 import { mentionQueryAt, parseMention, roleColorVar, roleGlyph } from "./logic.js";
 
 export interface CommandBarProps {
@@ -95,7 +96,13 @@ export default function CommandBar({ agents, disabled, onSend }: CommandBarProps
       {suggestions.length > 0 && mentionQuery !== null && (
         <div style={suggestionListStyle}>
           {suggestions.map((agent) => (
-            <button key={agent.id} type="button" onClick={() => pickSuggestion(agent)} style={suggestionRowStyle}>
+            <button
+              key={agent.id}
+              type="button"
+              onClick={() => pickSuggestion(agent)}
+              className="vd-row-hover"
+              style={suggestionRowStyle}
+            >
               <span style={{ color: roleColorVar(agent.role) }}>{roleGlyph(agent.role)}</span>
               <span>{agent.label}</span>
               <span style={{ color: "var(--vd-text-faint)", fontSize: 10 }}>{agent.role}</span>
@@ -136,7 +143,13 @@ export default function CommandBar({ agents, disabled, onSend }: CommandBarProps
           style={inputStyle}
         />
 
-        <button type="button" onClick={submit} disabled={disabled || !text.trim()} style={sendButtonStyle}>
+        <button
+          type="button"
+          onClick={submit}
+          disabled={disabled || !text.trim()}
+          className="vd-btn-primary"
+          style={sendButtonStyle}
+        >
           {targetAgent ? `Send to ${targetAgent.label}` : "Broadcast"}
         </button>
       </div>
@@ -158,12 +171,12 @@ const wrapperStyle: React.CSSProperties = {
 const barStyle: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
-  gap: 6,
-  padding: 6,
+  gap: SPACE.sm,
+  padding: SPACE.xs + 2,
   background: "var(--vd-surface)",
   border: "1px solid var(--vd-border)",
-  borderRadius: 8,
-  boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
+  borderRadius: RADIUS.lg,
+  boxShadow: SHADOW.md,
 };
 
 const targetSelectStyle: React.CSSProperties = {
@@ -205,9 +218,9 @@ const suggestionListStyle: React.CSSProperties = {
   flexDirection: "column",
   background: "var(--vd-surface-raised)",
   border: "1px solid var(--vd-border)",
-  borderRadius: 6,
+  borderRadius: RADIUS.md,
   overflow: "hidden",
-  boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
+  boxShadow: SHADOW.md,
 };
 
 const suggestionRowStyle: React.CSSProperties = {

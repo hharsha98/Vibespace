@@ -13,7 +13,8 @@
  * mission holds (see docs/SWARM.md's `PATCH .../missions/:id` section).
  */
 import type { Mission } from "@vibedeck/shared";
-import { Pill, StatusDot } from "../shell/ui.js";
+import { Button, Pill, StatusDot } from "../shell/ui.js";
+import { FONT, SPACE } from "../shell/tokens.js";
 import { formatElapsed, missionStatusKind, type MissionProgress } from "./logic.js";
 
 export interface MissionBarProps {
@@ -79,12 +80,12 @@ export default function MissionBar({
         <div style={{ flex: 1 }} />
 
         {canPauseOrResume && (
-          <button type="button" onClick={onTogglePause} style={secondaryActionStyle}>
+          <Button variant="secondary" onClick={onTogglePause}>
             {mission.status === "running" ? "Pause" : "Resume"}
-          </button>
+          </Button>
         )}
         {canStop && !pendingStop && (
-          <button type="button" onClick={onRequestStop} style={dangerActionStyle}>
+          <button type="button" onClick={onRequestStop} className="vd-btn-danger" style={dangerActionStyle}>
             Stop
           </button>
         )}
@@ -96,12 +97,12 @@ export default function MissionBar({
             Stopping kills every agent's terminal session in this mission and releases every file claim it holds.
             This can't be undone. Continue?
           </span>
-          <button type="button" onClick={onConfirmStop} style={dangerActionStyle}>
+          <button type="button" onClick={onConfirmStop} className="vd-btn-danger" style={dangerActionStyle}>
             Stop mission
           </button>
-          <button type="button" onClick={onCancelStop} style={secondaryActionStyle}>
+          <Button variant="secondary" onClick={onCancelStop}>
             Cancel
-          </button>
+          </Button>
         </div>
       )}
     </div>
@@ -119,13 +120,13 @@ const wrapperStyle: React.CSSProperties = {
 const topRowStyle: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
-  gap: 12,
-  padding: "8px 12px",
+  gap: SPACE.md,
+  padding: `${SPACE.sm}px ${SPACE.md}px`,
   minHeight: 36,
 };
 
 const promptStyle: React.CSSProperties = {
-  fontSize: 12,
+  fontSize: FONT.body,
   color: "var(--vd-text)",
   maxWidth: 320,
   overflow: "hidden",
@@ -137,7 +138,7 @@ const promptStyle: React.CSSProperties = {
 const progressWrapStyle: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
-  gap: 6,
+  gap: SPACE.xs + 2,
 };
 
 const progressTrackStyle: React.CSSProperties = {
@@ -158,20 +159,10 @@ const metaTextStyle: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
   gap: 4,
-  fontSize: 11,
+  fontSize: FONT.meta,
   color: "var(--vd-text-muted)",
   flexShrink: 0,
   whiteSpace: "nowrap",
-};
-
-const secondaryActionStyle: React.CSSProperties = {
-  background: "transparent",
-  color: "var(--vd-text-muted)",
-  border: "1px solid var(--vd-border)",
-  borderRadius: 4,
-  padding: "4px 10px",
-  fontSize: 11,
-  cursor: "pointer",
 };
 
 const dangerActionStyle: React.CSSProperties = {
@@ -180,7 +171,7 @@ const dangerActionStyle: React.CSSProperties = {
   border: "none",
   borderRadius: 4,
   padding: "4px 10px",
-  fontSize: 11,
+  fontSize: FONT.meta,
   cursor: "pointer",
   fontWeight: 600,
 };
@@ -188,11 +179,11 @@ const dangerActionStyle: React.CSSProperties = {
 const warningBannerStyle: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
-  gap: 10,
-  padding: "6px 12px",
+  gap: SPACE.sm + 2,
+  padding: `${SPACE.sm}px ${SPACE.md}px`,
   background: "color-mix(in srgb, var(--vd-danger) 15%, var(--vd-bg))",
   borderTop: "1px solid var(--vd-danger)",
-  fontSize: 12,
+  fontSize: FONT.body,
   color: "var(--vd-text)",
   flexWrap: "wrap",
 };

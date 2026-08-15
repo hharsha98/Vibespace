@@ -9,6 +9,8 @@
 import { useState } from "react";
 import { MISSION_ROLES, type AgentId, type MissionRole } from "@vibedeck/shared";
 import type { AgentOption } from "../grid/PaneView.js";
+import { Button, EMPTY_SURFACE_BACKGROUND, EmptyState } from "../shell/ui.js";
+import { FONT, RADIUS, SPACE } from "../shell/tokens.js";
 
 export interface AgentSpecRow {
   role: MissionRole;
@@ -71,113 +73,158 @@ export default function CreateMissionForm({ agents, submitting, error, onSubmit 
   }
 
   return (
-    <form onSubmit={handleSubmit} style={formStyle}>
-      <div style={{ maxWidth: 520 }}>
-        <p style={introStyle}>
-          No mission running in this workspace yet. Describe what the swarm should do, pick a role/agent/count for
-          each dispatched session, then launch — see docs/SWARM-MECHANISM.md for how the coordinator splits this
-          into tasks and waves.
-        </p>
+    <div style={wrapStyle}>
+      <div style={{ width: "100%", maxWidth: 560 }}>
+        <EmptyState
+          icon={
+            <span style={iconBadgeStyle}>
+              <MissionGlyph />
+            </span>
+          }
+          title="Launch your first mission"
+          description="Describe what the swarm should do, pick a role/agent/count for each dispatched session, then launch — the coordinator splits this into tasks and waves."
+          maxWidth={480}
+        >
+          <form onSubmit={handleSubmit} style={formBodyStyle}>
+            <label style={labelStyle}>Mission prompt</label>
+            <textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder="e.g. Build the login flow: form, validation, and a session cookie"
+              rows={3}
+              style={textareaStyle}
+            />
 
-        <label style={labelStyle}>Mission prompt</label>
-        <textarea
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          placeholder="e.g. Build the login flow: form, validation, and a session cookie"
-          rows={3}
-          style={textareaStyle}
-        />
-
-        <label style={{ ...labelStyle, marginTop: 12 }}>Agents</label>
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {rows.map((row, i) => (
-            <div key={i} style={rowStyle}>
-              <select value={row.role} onChange={(e) => updateRow(i, { role: e.target.value as MissionRole })} style={selectStyle}>
-                {MISSION_ROLES.map((role) => (
-                  <option key={role} value={role}>
-                    {role}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={row.agent}
-                onChange={(e) => updateRow(i, { agent: e.target.value as AgentId | "" })}
-                style={selectStyle}
-              >
-                <option value="" disabled>
-                  Agent CLI…
-                </option>
-                {availableAgents.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.displayName}
-                  </option>
-                ))}
-              </select>
-              <input
-                type="number"
-                min={1}
-                value={row.count}
-                onChange={(e) => updateRow(i, { count: Math.max(1, Number(e.target.value) || 1) })}
-                style={countInputStyle}
-              />
-              <button
-                type="button"
-                onClick={() => removeRow(i)}
-                disabled={rows.length <= 1}
-                title="Remove row"
-                style={removeButtonStyle}
-              >
-                ✕
-              </button>
+            <label style={{ ...labelStyle, marginTop: SPACE.md }}>Agents</label>
+            <div style={{ display: "flex", flexDirection: "column", gap: SPACE.sm }}>
+              {rows.map((row, i) => (
+                <div key={i} style={rowStyle}>
+                  <select value={row.role} onChange={(e) => updateRow(i, { role: e.target.value as MissionRole })} style={selectStyle}>
+                    {MISSION_ROLES.map((role) => (
+                      <option key={role} value={role}>
+                        {role}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={row.agent}
+                    onChange={(e) => updateRow(i, { agent: e.target.value as AgentId | "" })}
+                    style={selectStyle}
+                  >
+                    <option value="" disabled>
+                      Agent CLI…
+                    </option>
+                    {availableAgents.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.displayName}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    min={1}
+                    value={row.count}
+                    onChange={(e) => updateRow(i, { count: Math.max(1, Number(e.target.value) || 1) })}
+                    style={countInputStyle}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeRow(i)}
+                    disabled={rows.length <= 1}
+                    title="Remove row"
+                    style={removeButtonStyle}
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
 
-        <button type="button" onClick={addRow} style={addRowButtonStyle}>
-          + Add role
-        </button>
+            <button type="button" onClick={addRow} style={addRowButtonStyle}>
+              + Add role
+            </button>
 
-        {availableAgents.length === 0 && (
-          <p style={{ color: "var(--vd-warn)", fontSize: 11, marginTop: 8 }}>
-            No agent CLIs are installed/available on this machine — install one first (see the top bar's agent
-            picker for install hints).
-          </p>
-        )}
+            {availableAgents.length === 0 && (
+              <p style={{ color: "var(--vd-warn)", fontSize: FONT.meta, marginTop: SPACE.sm }}>
+                No agent CLIs are installed/available on this machine — install one first (see the top bar's agent
+                picker for install hints).
+              </p>
+            )}
 
-        {(validationError ?? error) && <p style={errorStyle}>{validationError ?? error}</p>}
+            {(validationError ?? error) && <p style={errorStyle}>{validationError ?? error}</p>}
 
-        <button type="submit" disabled={submitting} style={submitButtonStyle}>
-          {submitting ? "Launching…" : "Launch mission"}
-        </button>
+            <div style={{ marginTop: SPACE.lg }}>
+              <Button type="submit" variant="primary" disabled={submitting}>
+                {submitting ? "Launching…" : "Launch mission"}
+              </Button>
+            </div>
+          </form>
+        </EmptyState>
       </div>
-    </form>
+    </div>
   );
 }
 
-const formStyle: React.CSSProperties = {
+/** A small mission-swarm glyph — three small nodes around a centre one, the
+ * same "coordinator with team radiating out" shape the mission canvas itself
+ * draws (MissionCanvas.tsx), so this onboarding icon previews what launching
+ * actually produces. Inline SVG, no icon library. */
+function MissionGlyph() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden style={{ color: "var(--vd-accent)" }}>
+      <path d="M10 10L4 5.5M10 10L16 5.5M10 10L4 14.5M10 10L16 14.5" stroke="currentColor" strokeWidth="1.2" opacity="0.6" />
+      <circle cx="10" cy="10" r="2.6" fill="currentColor" />
+      <circle cx="4" cy="5.5" r="1.8" stroke="currentColor" strokeWidth="1.2" />
+      <circle cx="16" cy="5.5" r="1.8" stroke="currentColor" strokeWidth="1.2" />
+      <circle cx="4" cy="14.5" r="1.8" stroke="currentColor" strokeWidth="1.2" />
+      <circle cx="16" cy="14.5" r="1.8" stroke="currentColor" strokeWidth="1.2" />
+    </svg>
+  );
+}
+
+/** The full-pane wrapper — same dotted-texture "real content lives here"
+ * background PaneView.tsx's own empty-pane picker uses, so a workspace's
+ * first look at Swarm reads as a designed onboarding screen rather than a
+ * bare form marooned in blank space. */
+const wrapStyle: React.CSSProperties = {
   display: "flex",
   alignItems: "flex-start",
   justifyContent: "center",
   height: "100%",
   overflowY: "auto",
-  padding: 32,
+  padding: SPACE.xl,
   boxSizing: "border-box",
+  background: "var(--vd-bg)",
+  ...EMPTY_SURFACE_BACKGROUND,
 };
 
-const introStyle: React.CSSProperties = {
-  color: "var(--vd-text-muted)",
-  fontSize: 12,
-  lineHeight: 1.5,
-  marginBottom: 16,
+const iconBadgeStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  width: 40,
+  height: 40,
+  borderRadius: "50%",
+  background: "color-mix(in srgb, var(--vd-accent) 16%, transparent)",
+};
+
+/** The form's own fields render left-aligned, overriding EmptyState's
+ * centred text — the icon/title/description above stay centred (that part
+ * IS a headline), but a form of labelled inputs reads naturally left-to-
+ * right, same as every other form in the app. */
+const formBodyStyle: React.CSSProperties = {
+  textAlign: "left",
+  width: "100%",
+  marginTop: SPACE.lg,
 };
 
 const labelStyle: React.CSSProperties = {
   display: "block",
-  fontSize: 10,
+  fontSize: FONT.label,
   letterSpacing: "0.08em",
   textTransform: "uppercase",
   color: "var(--vd-text-faint)",
-  marginBottom: 6,
+  marginBottom: SPACE.xs + 2,
 };
 
 const textareaStyle: React.CSSProperties = {
@@ -186,16 +233,16 @@ const textareaStyle: React.CSSProperties = {
   background: "var(--vd-bg)",
   color: "var(--vd-text)",
   border: "1px solid var(--vd-border)",
-  borderRadius: 4,
+  borderRadius: RADIUS.sm,
   padding: "6px 8px",
-  fontSize: 12,
+  fontSize: FONT.body,
   resize: "vertical",
   fontFamily: "inherit",
 };
 
 const rowStyle: React.CSSProperties = {
   display: "flex",
-  gap: 6,
+  gap: SPACE.sm,
   alignItems: "center",
 };
 
@@ -203,9 +250,9 @@ const selectStyle: React.CSSProperties = {
   background: "var(--vd-bg)",
   color: "var(--vd-text)",
   border: "1px solid var(--vd-border)",
-  borderRadius: 4,
+  borderRadius: RADIUS.sm,
   padding: "5px 6px",
-  fontSize: 12,
+  fontSize: FONT.body,
   flex: 1,
 };
 
@@ -214,9 +261,9 @@ const countInputStyle: React.CSSProperties = {
   background: "var(--vd-bg)",
   color: "var(--vd-text)",
   border: "1px solid var(--vd-border)",
-  borderRadius: 4,
+  borderRadius: RADIUS.sm,
   padding: "5px 6px",
-  fontSize: 12,
+  fontSize: FONT.body,
 };
 
 const removeButtonStyle: React.CSSProperties = {
@@ -224,34 +271,23 @@ const removeButtonStyle: React.CSSProperties = {
   border: "none",
   color: "var(--vd-text-faint)",
   cursor: "pointer",
-  fontSize: 11,
+  fontSize: FONT.meta,
   padding: 4,
 };
 
 const addRowButtonStyle: React.CSSProperties = {
-  marginTop: 8,
+  marginTop: SPACE.sm,
   background: "transparent",
   border: "1px dashed var(--vd-border)",
-  borderRadius: 4,
+  borderRadius: RADIUS.sm,
   color: "var(--vd-text-muted)",
-  fontSize: 11,
+  fontSize: FONT.meta,
   padding: "5px 10px",
-  cursor: "pointer",
-};
-
-const submitButtonStyle: React.CSSProperties = {
-  marginTop: 16,
-  background: "var(--vd-accent)",
-  color: "var(--vd-accent-text)",
-  border: "none",
-  borderRadius: 4,
-  padding: "6px 14px",
-  fontSize: 12,
   cursor: "pointer",
 };
 
 const errorStyle: React.CSSProperties = {
   color: "var(--vd-danger)",
-  fontSize: 11,
-  marginTop: 8,
+  fontSize: FONT.meta,
+  marginTop: SPACE.sm,
 };

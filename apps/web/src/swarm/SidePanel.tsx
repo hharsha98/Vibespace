@@ -120,7 +120,7 @@ export default function SidePanel({
         )}
         <div style={{ flex: 1 }} />
         {selectedAgent && activeTab === "agent" && (
-          <button type="button" title="Deselect agent" onClick={onClose} style={closeButtonStyle}>
+          <button type="button" title="Deselect agent" onClick={onClose} className="vd-icon-btn" style={closeButtonStyle}>
             ✕
           </button>
         )}
@@ -151,7 +151,12 @@ export default function SidePanel({
             </div>
 
             {selectedAgent.sessionId && (
-              <button type="button" onClick={() => onShowTerminal(selectedAgent.sessionId!)} style={showTerminalButtonStyle}>
+              <button
+                type="button"
+                onClick={() => onShowTerminal(selectedAgent.sessionId!)}
+                className="vd-btn-secondary"
+                style={showTerminalButtonStyle}
+              >
                 Show terminal
               </button>
             )}
@@ -257,7 +262,7 @@ export default function SidePanel({
 
 function TabButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
-    <button type="button" onClick={onClick} style={tabButtonStyle(active)}>
+    <button type="button" onClick={onClick} className="vd-view-tab" style={tabButtonStyle(active)}>
       {label}
     </button>
   );

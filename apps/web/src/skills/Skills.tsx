@@ -39,7 +39,8 @@
  * exact same outcome, just via a click instead of a drop.
  */
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
-import { ListRow, Pill } from "../shell/ui.js";
+import { Button, EmptyState, ListRow, Pill } from "../shell/ui.js";
+import { FONT, RADIUS, SPACE } from "../shell/tokens.js";
 import {
   filterSkills,
   groupSkillsByScope,
@@ -207,13 +208,29 @@ export default function Skills({ workspaceId, visible, panes, onFocusSession }: 
   const errorDiagnosticCount = diagnostics.filter((d) => d.level === "error").length;
 
   if (!workspaceId) {
-    return <div style={emptyStateStyle}>No workspace open.</div>;
+    return (
+      <div style={emptyStateStyle}>
+        <EmptyState icon={<SkillsGlyph />} title="No workspace open" description="Open a workspace to browse its skills." />
+      </div>
+    );
   }
   if (loadState === "loading" && catalog.length === 0) {
-    return <div style={emptyStateStyle}>Loading skills…</div>;
+    return (
+      <div style={emptyStateStyle}>
+        <EmptyState icon={<SkillsGlyph />} title="Loading skills…" />
+      </div>
+    );
   }
   if (loadState === "error") {
-    return <div style={emptyStateStyle}>{loadError ?? "Failed to load skills."}</div>;
+    return (
+      <div style={emptyStateStyle}>
+        <EmptyState
+          icon={<SkillsGlyph tint="var(--vd-danger)" />}
+          title="Couldn't load skills"
+          description={loadError ?? "Failed to load skills."}
+        />
+      </div>
+    );
   }
 
   return (
@@ -258,13 +275,32 @@ export default function Skills({ workspaceId, visible, panes, onFocusSession }: 
 
         <div style={{ flex: 1, overflowY: "auto", padding: 4 }}>
           {filtered.length === 0 && catalog.length === 0 && (
-            <p style={emptyListStyle}>
-              No skills found. Skills live in <code>.agents/skills/</code>, <code>.vibedeck/skills/</code>, or{" "}
-              <code>.claude/skills/</code>, under either this workspace or your home directory.
-            </p>
+            <div style={listEmptyWrapStyle}>
+              <EmptyState
+                icon={<SkillsGlyph />}
+                title="No skills found"
+                description={
+                  <>
+                    Skills live in <code>.agents/skills/</code>, <code>.vibedeck/skills/</code>, or{" "}
+                    <code>.claude/skills/</code>, under either this workspace or your home directory.
+                  </>
+                }
+              />
+            </div>
           )}
           {filtered.length === 0 && catalog.length > 0 && (
-            <p style={emptyListStyle}>No skills match "{query}".</p>
+            <div style={listEmptyWrapStyle}>
+              <EmptyState
+                icon={<SkillsGlyph tint="var(--vd-text-faint)" />}
+                title="No matches"
+                description={`Nothing in this catalog matches "${query}".`}
+                action={
+                  <Button variant="secondary" onClick={() => setQuery("")}>
+                    Clear search
+                  </Button>
+                }
+              />
+            </div>
           )}
 
           {project.length > 0 && (
@@ -298,36 +334,73 @@ export default function Skills({ workspaceId, visible, panes, onFocusSession }: 
       </div>
 
       <div style={detailPaneStyle}>
-        {!selectedName && <div style={emptyDetailStyle}>Select a skill to see its full instructions.</div>}
+        {!selectedName && (
+          <div style={emptyDetailStyle}>
+            <EmptyState
+              icon={<SkillsGlyph />}
+              title="Select a skill"
+              description="Pick one from the list to read its full instructions and, if a pane is running, send it in."
+            />
+          </div>
+        )}
 
-        {selectedName && detailState === "loading" && <div style={emptyDetailStyle}>Loading…</div>}
+        {selectedName && detailState === "loading" && (
+          <div style={emptyDetailStyle}>
+            <EmptyState icon={<SkillsGlyph />} title="Loading…" />
+          </div>
+        )}
         {selectedName && detailState === "error" && (
-          <div style={emptyDetailStyle}>{detailError ?? "Failed to load skill."}</div>
+          <div style={emptyDetailStyle}>
+            <EmptyState
+              icon={<SkillsGlyph tint="var(--vd-danger)" />}
+              title="Couldn't load this skill"
+              description={detailError ?? "Failed to load skill."}
+            />
+          </div>
         )}
 
         {selectedName && detail && detailState === "loaded" && (
           <div style={detailContentStyle}>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-              <h3 style={detailTitleStyle}>{detail.name}</h3>
-              <Pill status={detail.scope.kind === "project" ? "info" : "idle"}>
-                {detail.scope.kind === "project" ? "Project" : "User"}
-              </Pill>
+            <div style={detailHeaderStyle}>
+              <span style={detailIconBadgeStyle(detail.scope.kind === "project" ? "var(--vd-info)" : "var(--vd-idle)")}>
+                <SkillsGlyph
+                  size={18}
+                  tint={detail.scope.kind === "project" ? "var(--vd-info)" : "var(--vd-idle)"}
+                />
+              </span>
+              <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: SPACE.sm, flexWrap: "wrap" }}>
+                  <h3 style={detailTitleStyle}>{detail.name}</h3>
+                  <Pill status={detail.scope.kind === "project" ? "info" : "idle"}>
+                    {detail.scope.kind === "project" ? "Project" : "User"}
+                  </Pill>
+                </div>
+                <p style={detailDirStyle} title={detail.dir}>
+                  {detail.scope.dirLabel} · {detail.dir}
+                </p>
+              </div>
             </div>
-            <p style={detailDirStyle} title={detail.dir}>
-              {detail.scope.dirLabel} · {detail.dir}
-            </p>
 
             <p style={detailDescriptionStyle}>{detail.description}</p>
 
-            {(detail.license || detail.compatibility) && (
-              <div style={detailMetaRowStyle}>
-                {detail.license && <span>License: {detail.license}</span>}
-                {detail.compatibility && <span>Compatibility: {detail.compatibility}</span>}
+            {(detail.license || detail.compatibility || detail.allowedTools) && (
+              <div style={detailMetaCardStyle}>
+                {detail.license && (
+                  <span>
+                    <span style={detailMetaKeyStyle}>License</span> {detail.license}
+                  </span>
+                )}
+                {detail.compatibility && (
+                  <span>
+                    <span style={detailMetaKeyStyle}>Compatibility</span> {detail.compatibility}
+                  </span>
+                )}
+                {detail.allowedTools && (
+                  <span>
+                    <span style={detailMetaKeyStyle}>Allowed tools</span> {detail.allowedTools}
+                  </span>
+                )}
               </div>
-            )}
-
-            {detail.allowedTools && (
-              <p style={detailMetaRowStyle}>Allowed tools: {detail.allowedTools}</p>
             )}
 
             <PaneSendSection
@@ -338,12 +411,32 @@ export default function Skills({ workspaceId, visible, panes, onFocusSession }: 
               onFocusSession={onFocusSession}
             />
 
-            <div style={bodyLabelStyle}>Body</div>
-            <pre style={bodyStyle}>{detail.body}</pre>
+            <div>
+              <div style={bodyLabelStyle}>Body</div>
+              <pre style={bodyStyle}>{detail.body}</pre>
+            </div>
           </div>
         )}
       </div>
     </div>
+  );
+}
+
+/** A small plain "skill" glyph — a simple document-with-a-spark shape, no
+ * icon library, matching the rest of the app's inline-SVG convention (see
+ * board/Column.tsx's `ColumnIcon`). `tint` defaults to the accent, same
+ * "meaningful colour, not decoration" rule Column.tsx's own icon follows. */
+function SkillsGlyph({ size = 20, tint = "var(--vd-accent)" }: { size?: number; tint?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 20 20" fill="none" aria-hidden style={{ color: tint }}>
+      <path
+        d="M5.5 3.5h6l3 3v10a1 1 0 0 1-1 1h-8a1 1 0 0 1-1-1v-12a1 1 0 0 1 1-1Z"
+        stroke="currentColor"
+        strokeWidth="1.3"
+      />
+      <path d="M11.5 3.5v3h3" stroke="currentColor" strokeWidth="1.3" />
+      <path d="M8 10.5l1.4 3.2L12.5 15l-3.1 1.3L8 19.5l-1.4-3.2L3.5 15l3.1-1.3L8 10.5Z" fill="currentColor" opacity="0.85" />
+    </svg>
   );
 }
 
@@ -537,12 +630,12 @@ const diagnosticItemStyle: CSSProperties = {
   color: "var(--vd-text-muted)",
 };
 
-const emptyListStyle: CSSProperties = {
-  fontSize: 11,
-  color: "var(--vd-text-faint)",
-  padding: "8px 8px",
-  margin: 0,
-  lineHeight: 1.6,
+/** Wraps the list column's own two "nothing found" EmptyStates — enough top
+ * padding that they don't sit flush under the search box, same "content
+ * gets room to breathe" idiom board/Column.tsx's own invite-empty wrapper
+ * uses. */
+const listEmptyWrapStyle: CSSProperties = {
+  padding: `${SPACE.xl}px ${SPACE.sm}px ${SPACE.sm}px`,
 };
 
 const sectionLabelStyle: CSSProperties = {
@@ -576,7 +669,7 @@ const detailPaneStyle: CSSProperties = {
   flex: 1,
   minWidth: 0,
   overflowY: "auto",
-  padding: 16,
+  padding: SPACE.lg,
 };
 
 const emptyDetailStyle: CSSProperties = {
@@ -585,26 +678,49 @@ const emptyDetailStyle: CSSProperties = {
   justifyContent: "center",
   height: "100%",
   color: "var(--vd-text-muted)",
-  fontSize: 12,
+  fontSize: FONT.body,
 };
 
 const detailContentStyle: CSSProperties = {
   display: "flex",
   flexDirection: "column",
-  gap: 10,
+  gap: SPACE.md,
   maxWidth: 760,
 };
 
+/** The detail header row: an icon badge (same `color-mix` tinted-circle
+ * pattern board/Column.tsx's own icon badge uses) next to the name/scope
+ * pill/dir stack — replaces the old bare `<h3>` with real hierarchy, per
+ * this view's own brief ("a better detail layout"). */
+const detailHeaderStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "flex-start",
+  gap: SPACE.md,
+};
+
+function detailIconBadgeStyle(tint: string): CSSProperties {
+  return {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 36,
+    height: 36,
+    flexShrink: 0,
+    borderRadius: "50%",
+    background: `color-mix(in srgb, ${tint} 16%, transparent)`,
+  };
+}
+
 const detailTitleStyle: CSSProperties = {
   margin: 0,
-  fontSize: 15,
+  fontSize: FONT.heading,
   fontWeight: 600,
   color: "var(--vd-text)",
 };
 
 const detailDirStyle: CSSProperties = {
   margin: 0,
-  fontSize: 11,
+  fontSize: FONT.meta,
   color: "var(--vd-text-faint)",
   fontFamily: "monospace",
   overflow: "hidden",
@@ -614,16 +730,30 @@ const detailDirStyle: CSSProperties = {
 
 const detailDescriptionStyle: CSSProperties = {
   margin: 0,
-  fontSize: 13,
+  fontSize: FONT.title,
   color: "var(--vd-text)",
   lineHeight: 1.5,
 };
 
-const detailMetaRowStyle: CSSProperties = {
+/** A small card of license/compatibility/allowed-tools facts — replaces the
+ * old bare inline `<span>` row so this metadata reads as a distinct group,
+ * not a continuation of the description paragraph above it. */
+const detailMetaCardStyle: CSSProperties = {
   display: "flex",
-  gap: 16,
-  fontSize: 11,
+  flexDirection: "column",
+  gap: SPACE.xs,
+  padding: SPACE.sm,
+  background: "var(--vd-surface)",
+  border: "1px solid var(--vd-border)",
+  borderRadius: RADIUS.sm,
+  fontSize: FONT.meta,
   color: "var(--vd-text-muted)",
+};
+
+const detailMetaKeyStyle: CSSProperties = {
+  display: "inline-block",
+  minWidth: 96,
+  color: "var(--vd-text-faint)",
 };
 
 const sendSectionStyle: CSSProperties = {

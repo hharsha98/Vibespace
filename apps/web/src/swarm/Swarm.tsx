@@ -32,6 +32,7 @@ import SidePanel from "./SidePanel.js";
 import CommandBar from "./CommandBar.js";
 import CreateMissionForm from "./CreateMissionForm.js";
 import { computeProgress } from "./logic.js";
+import { EmptyState } from "../shell/ui.js";
 
 export interface SwarmProps {
   workspaceId: string | null;
@@ -252,13 +253,28 @@ export default function Swarm({ workspaceId, agents, visible, onFocusSession }: 
   const progress = useMemo(() => computeProgress(detail?.tasks ?? []), [detail?.tasks]);
 
   if (!workspaceId) {
-    return <div style={emptyStateStyle}>No workspace open.</div>;
+    return (
+      <div style={emptyStateStyle}>
+        <EmptyState title="No workspace open" description="Open a workspace to launch or view its swarm missions." />
+      </div>
+    );
   }
   if (missionsLoadState === "loading" && missions.length === 0) {
-    return <div style={emptyStateStyle}>Loading…</div>;
+    return (
+      <div style={emptyStateStyle}>
+        <EmptyState title="Loading missions…" />
+      </div>
+    );
   }
   if (missionsLoadState === "error") {
-    return <div style={emptyStateStyle}>Failed to load missions for this workspace.</div>;
+    return (
+      <div style={emptyStateStyle}>
+        <EmptyState
+          title="Couldn't load missions"
+          description="Failed to load missions for this workspace."
+        />
+      </div>
+    );
   }
   if (!missionId || !detail) {
     return <CreateMissionForm agents={agents} submitting={creating} error={createError} onSubmit={handleCreate} />;

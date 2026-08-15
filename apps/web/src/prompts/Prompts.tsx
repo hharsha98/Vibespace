@@ -34,7 +34,8 @@
  */
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import type { SavedPrompt } from "@vibedeck/shared";
-import { Pill } from "../shell/ui.js";
+import { Button, EmptyState, ListRow, Pill } from "../shell/ui.js";
+import { FONT, RADIUS, SPACE } from "../shell/tokens.js";
 import { groupPromptsByScope } from "./logic.js";
 
 export interface PromptsProps {
@@ -203,10 +204,18 @@ export default function Prompts({ workspaceId, visible }: PromptsProps) {
   }, []);
 
   if (loadState === "loading" && prompts.length === 0) {
-    return <div style={emptyStateStyle}>Loading prompts…</div>;
+    return (
+      <div style={emptyStateStyle}>
+        <EmptyState title="Loading prompts…" />
+      </div>
+    );
   }
   if (loadState === "error") {
-    return <div style={emptyStateStyle}>{loadError ?? "Failed to load prompts."}</div>;
+    return (
+      <div style={emptyStateStyle}>
+        <EmptyState title="Couldn't load prompts" description={loadError ?? "Failed to load prompts."} />
+      </div>
+    );
   }
 
   const showForm = creatingNew || selected !== null;
@@ -216,12 +225,29 @@ export default function Prompts({ workspaceId, visible }: PromptsProps) {
       <div style={listPaneStyle}>
         <div style={listHeaderStyle}>
           <span style={listTitleStyle}>Prompts</span>
-          <button type="button" onClick={startCreate} style={addButtonStyle}>
-            + New prompt
-          </button>
+          {/* Hidden while the list is empty — same "don't duplicate the
+              EmptyState's own CTA" idiom Agents.tsx follows. */}
+          {prompts.length > 0 && (
+            <button type="button" onClick={startCreate} style={addButtonStyle}>
+              + New prompt
+            </button>
+          )}
         </div>
         <div style={{ flex: 1, overflowY: "auto", padding: 4 }}>
-          {prompts.length === 0 && <p style={emptyListStyle}>No saved prompts yet.</p>}
+          {prompts.length === 0 && (
+            <div style={emptyListWrapStyle}>
+              <EmptyState
+                icon={<PromptGlyphBadge />}
+                title="No saved prompts yet"
+                description="Save reusable prompt text here — global ones are available in every workspace, scoped ones stay local to this one."
+                action={
+                  <Button variant="primary" onClick={startCreate}>
+                    + New prompt
+                  </Button>
+                }
+              />
+            </div>
+          )}
 
           {global.length > 0 && (
             <>
@@ -258,7 +284,20 @@ export default function Prompts({ workspaceId, visible }: PromptsProps) {
       </div>
 
       <div style={detailPaneStyle}>
-        {!showForm && <div style={emptyDetailStyle}>Select a prompt to edit, or create a new one.</div>}
+        {!showForm && (
+          <div style={emptyDetailStyle}>
+            <EmptyState
+              icon={<PromptGlyphBadge />}
+              title="Select a prompt"
+              description="Pick one from the list to edit it, or create a new one."
+              action={
+                <Button variant="secondary" onClick={startCreate}>
+                  + New prompt
+                </Button>
+              }
+            />
+          </div>
+        )}
 
         {showForm && (
           <div style={formStyle}>
@@ -274,13 +313,18 @@ export default function Prompts({ workspaceId, visible }: PromptsProps) {
             {selected && pendingDeleteId === selected.id && (
               <div style={confirmBannerStyle}>
                 <span>Delete "{selected.title}"? This can't be undone.</span>
-                <div style={{ display: "flex", gap: 6 }}>
-                  <button type="button" onClick={() => confirmDelete(selected.id)} style={dangerButtonStyle}>
+                <div style={{ display: "flex", gap: SPACE.sm }}>
+                  <button
+                    type="button"
+                    onClick={() => confirmDelete(selected.id)}
+                    className="vd-btn-danger"
+                    style={dangerButtonStyle}
+                  >
                     Delete
                   </button>
-                  <button type="button" onClick={() => setPendingDeleteId(null)} style={secondaryButtonStyle}>
+                  <Button variant="secondary" onClick={() => setPendingDeleteId(null)}>
                     Cancel
-                  </button>
+                  </Button>
                 </div>
               </div>
             )}
@@ -326,17 +370,17 @@ export default function Prompts({ workspaceId, visible }: PromptsProps) {
 
             {formError && <p style={errorStyle}>{formError}</p>}
 
-            <div style={{ display: "flex", gap: 6 }}>
-              <button type="button" onClick={submit} disabled={saving} style={primaryButtonStyle}>
+            <div style={{ display: "flex", gap: SPACE.sm }}>
+              <Button type="submit" variant="primary" onClick={submit} disabled={saving}>
                 {saving ? "Saving…" : "Save"}
-              </button>
-              <button type="button" onClick={cancelForm} style={secondaryButtonStyle}>
+              </Button>
+              <Button variant="secondary" onClick={cancelForm}>
                 Cancel
-              </button>
+              </Button>
               {selected && (
-                <button type="button" onClick={() => copyBody(selected)} style={secondaryButtonStyle}>
+                <Button variant="secondary" onClick={() => copyBody(selected)}>
                   {copiedId === selected.id ? "Copied" : "Copy body"}
-                </button>
+                </Button>
               )}
             </div>
           </div>
@@ -350,11 +394,15 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   return <div style={sectionLabelStyle}>{children}</div>;
 }
 
-/** One row in the prompt list: title, a scope `Pill` (docs/DESIGN.md's
- * `info` tint for global, `idle` for workspace-scoped — the same
- * "meaningful colour, not decoration" rule every other Pill in the app
- * follows), and a "copy body" icon button that stops propagation so
- * clicking it copies without also selecting/opening the row for editing. */
+/** One row in the prompt list — now built on the shared `ListRow` primitive
+ * (Stage B: this used to be a bespoke div with no hover response at all,
+ * the one dead spot in an otherwise-consistent set of list views) so it
+ * gets the same 32px density, active-row treatment, and hover feedback
+ * every other list in the app already has. Scope (global vs. this
+ * workspace) is shown via the section headers above each group, not a
+ * per-row Pill — see `groupPromptsByScope`. The trailing "copy body" icon
+ * button stops propagation so clicking it copies without also
+ * selecting/opening the row for editing. */
 function PromptRow({
   prompt,
   active,
@@ -369,20 +417,52 @@ function PromptRow({
   onCopy: () => void;
 }) {
   return (
-    <div onClick={onSelect} style={{ ...promptRowStyle, background: active ? "var(--vd-surface-raised)" : undefined }}>
-      <span style={promptRowTitleStyle}>{prompt.title}</span>
-      <button
-        type="button"
-        title="Copy body"
-        onClick={(e) => {
-          e.stopPropagation();
-          onCopy();
-        }}
-        style={copyButtonStyle}
-      >
-        {copied ? "✓" : "⧉"}
-      </button>
-    </div>
+    <ListRow
+      active={active}
+      label={prompt.title}
+      title={prompt.title}
+      onClick={onSelect}
+      trailing={
+        <button
+          type="button"
+          title="Copy body"
+          onClick={(e) => {
+            e.stopPropagation();
+            onCopy();
+          }}
+          style={copyButtonStyle}
+        >
+          {copied ? "✓" : "⧉"}
+        </button>
+      }
+    />
+  );
+}
+
+/** The Prompts page's own tinted-circle icon badge — a small "saved text"
+ * glyph (a document with a folded corner and a couple of text lines),
+ * reused between the list-empty and detail-empty states, matching the
+ * badge pattern Agents.tsx's `AgentGlyphBadge` and skills/Skills.tsx's
+ * detail badge already use, so this page reads as consistent with both. */
+function PromptGlyphBadge() {
+  return (
+    <span
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: 36,
+        height: 36,
+        borderRadius: "50%",
+        background: "color-mix(in srgb, var(--vd-accent) 16%, transparent)",
+      }}
+    >
+      <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden style={{ color: "var(--vd-accent)" }}>
+        <path d="M5.5 2.5h6l3 3v11a1 1 0 0 1-1 1h-8a1 1 0 0 1-1-1v-13a1 1 0 0 1 1-1Z" stroke="currentColor" strokeWidth="1.3" />
+        <path d="M11.5 2.5v3h3" stroke="currentColor" strokeWidth="1.3" />
+        <path d="M6.5 11h7M6.5 13.5h7M6.5 16h4.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" opacity="0.7" />
+      </svg>
+    </span>
   );
 }
 
@@ -413,7 +493,7 @@ const listHeaderStyle: CSSProperties = {
 };
 
 const listTitleStyle: CSSProperties = {
-  fontSize: 11,
+  fontSize: FONT.meta,
   letterSpacing: "0.08em",
   textTransform: "uppercase",
   color: "var(--vd-text-faint)",
@@ -423,16 +503,16 @@ const addButtonStyle: CSSProperties = {
   background: "transparent",
   border: "none",
   color: "var(--vd-accent)",
-  fontSize: 11,
+  fontSize: FONT.meta,
   cursor: "pointer",
   padding: 0,
 };
 
-const emptyListStyle: CSSProperties = {
-  fontSize: 11,
-  color: "var(--vd-text-faint)",
-  padding: "8px 8px",
-  margin: 0,
+/** Wraps the list column's empty EmptyState with the same top-heavy
+ * padding board/Column.tsx's own invite-empty wrapper (and Agents.tsx's
+ * mirrored `emptyListWrapStyle`) use. */
+const emptyListWrapStyle: CSSProperties = {
+  padding: `${SPACE.xl}px ${SPACE.sm}px ${SPACE.sm}px`,
 };
 
 const sectionLabelStyle: CSSProperties = {
@@ -441,26 +521,6 @@ const sectionLabelStyle: CSSProperties = {
   textTransform: "uppercase",
   color: "var(--vd-text-faint)",
   padding: "8px 8px 4px",
-};
-
-const promptRowStyle: CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: 6,
-  height: 30,
-  padding: "0 8px",
-  borderRadius: 4,
-  cursor: "pointer",
-};
-
-const promptRowTitleStyle: CSSProperties = {
-  flex: 1,
-  minWidth: 0,
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-  whiteSpace: "nowrap",
-  fontSize: 12,
-  color: "var(--vd-text)",
 };
 
 const copyButtonStyle: CSSProperties = {
@@ -483,7 +543,7 @@ const detailPaneStyle: CSSProperties = {
   flex: 1,
   minWidth: 0,
   overflowY: "auto",
-  padding: 16,
+  padding: SPACE.lg,
 };
 
 const emptyDetailStyle: CSSProperties = {
@@ -492,19 +552,19 @@ const emptyDetailStyle: CSSProperties = {
   justifyContent: "center",
   height: "100%",
   color: "var(--vd-text-muted)",
-  fontSize: 12,
+  fontSize: FONT.body,
 };
 
 const formStyle: CSSProperties = {
   display: "flex",
   flexDirection: "column",
-  gap: 12,
+  gap: SPACE.md,
   maxWidth: 640,
 };
 
 const formTitleStyle: CSSProperties = {
   margin: 0,
-  fontSize: 13,
+  fontSize: FONT.title,
   fontWeight: 600,
   color: "var(--vd-text)",
 };
@@ -513,12 +573,12 @@ const labelStyle: CSSProperties = {
   display: "flex",
   flexDirection: "column",
   gap: 4,
-  fontSize: 12,
+  fontSize: FONT.body,
   color: "var(--vd-text-muted)",
 };
 
 const labelTextStyle: CSSProperties = {
-  fontSize: 11,
+  fontSize: FONT.meta,
   letterSpacing: "0.04em",
   color: "var(--vd-text-muted)",
 };
@@ -529,52 +589,32 @@ const inputStyle: CSSProperties = {
   background: "var(--vd-bg)",
   color: "var(--vd-text)",
   border: "1px solid var(--vd-border)",
-  borderRadius: 4,
+  borderRadius: RADIUS.sm,
   padding: "6px 8px",
-  fontSize: 12,
+  fontSize: FONT.body,
 };
 
 const textareaStyle: CSSProperties = {
   ...inputStyle,
   fontFamily: "monospace",
-  fontSize: 11,
+  fontSize: FONT.meta,
   lineHeight: 1.5,
   resize: "vertical",
 };
 
 const errorStyle: CSSProperties = {
-  fontSize: 11,
+  fontSize: FONT.meta,
   color: "var(--vd-danger)",
   margin: 0,
-};
-
-const primaryButtonStyle: CSSProperties = {
-  background: "var(--vd-accent)",
-  color: "var(--vd-accent-text)",
-  border: "none",
-  borderRadius: 4,
-  padding: "5px 14px",
-  fontSize: 12,
-  cursor: "pointer",
-};
-
-const secondaryButtonStyle: CSSProperties = {
-  background: "transparent",
-  color: "var(--vd-text-muted)",
-  border: "1px solid var(--vd-border)",
-  borderRadius: 4,
-  padding: "5px 14px",
-  fontSize: 12,
-  cursor: "pointer",
 };
 
 const dangerButtonStyle: CSSProperties = {
   background: "var(--vd-danger)",
   color: "var(--vd-bg)",
   border: "none",
-  borderRadius: 4,
+  borderRadius: RADIUS.sm,
   padding: "5px 14px",
-  fontSize: 12,
+  fontSize: FONT.body,
   cursor: "pointer",
 };
 
