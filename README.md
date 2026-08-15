@@ -23,6 +23,36 @@ Think of it as a mission control screen for AI coding agents:
 (here: AI coding agents editing code, running commands, etc.) rather than
 just answering questions.
 
+## Download
+
+**[Get v0.1.0 →](https://github.com/hharsha98/vibedeck/releases/latest)**
+
+| Platform | File |
+|---|---|
+| macOS (Apple Silicon) | `vibedeck_0.1.0_aarch64.dmg` |
+| Windows | `vibedeck_0.1.0_x64-setup.exe` |
+| Linux | `.deb`, `.rpm`, or `.AppImage` |
+
+Two things to know before you install:
+
+- **You need [Node.js 22+](https://nodejs.org) installed.** vibedeck runs
+  real terminals and a real database through Node, and the installer does
+  not bundle a Node runtime.
+- **The app is not code-signed**, so the first launch is blocked. On macOS,
+  right-click the app → **Open** → **Open**. On Windows, SmartScreen shows
+  "More info" → **Run anyway**. Once, then never again. This is a
+  deliberate trade-off (signing certificates cost money annually), not a
+  sign anything is wrong.
+
+Honest about testing: **macOS is verified end-to-end** — the released DMG
+was downloaded, installed, launched, and used to spawn real terminals. The
+Windows and Linux packages build cleanly in CI but nobody has launched
+them yet. If you are the first, and something breaks,
+[open an issue](https://github.com/hharsha98/vibedeck/issues) — that is
+genuinely useful information.
+
+Prefer to run from source? See [Quickstart](#quickstart) below.
+
 ## Status: usable, and still being built
 
 The core works today. You can open a workspace, split the screen into up to
@@ -31,15 +61,23 @@ browse and edit files, and dispatch work to an agent from a task board.
 Closing the browser tab does not kill your agents — sessions live on the
 server, so you can come back and pick up where you left off.
 
-What is **not** here yet: multi-agent orchestration and drag-and-drop
-skills. The desktop app now has a relocatable installer and an
-auto-updater (macOS verified end-to-end; the Windows/Linux release
-workflow is written but hasn't run against a real CI runner yet — see
-[docs/DESKTOP.md](./docs/DESKTOP.md)). Still not in scope: real platform
-code-signing (Apple notarization, a Windows certificate) — Gatekeeper/
-SmartScreen warn on first launch, a deliberate trade-off, not a bug. Those
-are the remaining slices of Phase 9–10 below. This is a young project
-moving quickly; expect rough edges.
+Multi-agent orchestration and skills are in too: missions with role-based
+agents and database-arbitrated file ownership, and skills on the open
+[agentskills.io](https://agentskills.io) standard — so skills you already
+have installed for other tools are picked up as-is.
+
+What is **not** here: real platform code-signing (Apple notarization, a
+Windows certificate), so Gatekeeper and SmartScreen warn on first launch.
+That is a deliberate trade-off, not a bug. There is no Windows MSI either —
+WiX cannot build one for this app, so Windows gets an NSIS installer
+instead ([docs/DESKTOP.md](./docs/DESKTOP.md) explains why).
+
+Known limits worth reading before you rely on it: the desktop app needs
+system Node, the "is the agent busy" signal is exact for shells but a
+heuristic for agent TUIs, and swarm file ownership is cooperative rather
+than OS-enforced. Each of those is documented where it lives rather than
+glossed over — [docs/PARITY.md](./docs/PARITY.md) collects them. This is a
+young project moving quickly; expect rough edges.
 
 ## Roadmap
 
