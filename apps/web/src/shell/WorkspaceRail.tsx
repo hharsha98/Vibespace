@@ -211,7 +211,7 @@ export default function WorkspaceRail(props: WorkspaceRailProps) {
         </IconButton>
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 2, padding: "0 8px" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 3, padding: "0 8px" }}>
         {workspaces.map((workspace) =>
           renamingId === workspace.id ? (
             <div
@@ -261,8 +261,12 @@ export default function WorkspaceRail(props: WorkspaceRailProps) {
                   // written inline on each button instead of once here.
                   <div
                     onClick={(e) => e.stopPropagation()}
-                    style={{ display: "flex", alignItems: "center", gap: 2, position: "relative" }}
+                    style={{ display: "flex", alignItems: "center", gap: 3, position: "relative" }}
                   >
+                    {/* Always visible — this is information (which colour
+                        this workspace carries, how many panes are running),
+                        not a destructive action, so it doesn't hide behind
+                        hover the way rename/delete now do below. */}
                     <button
                       type="button"
                       onClick={() =>
@@ -296,7 +300,8 @@ export default function WorkspaceRail(props: WorkspaceRailProps) {
                       <span
                         style={{
                           fontSize: 10,
-                          color: "var(--vd-text-faint)",
+                          color: "var(--vd-ok)",
+                          fontWeight: 600,
                           minWidth: 12,
                           textAlign: "right",
                         }}
@@ -304,18 +309,23 @@ export default function WorkspaceRail(props: WorkspaceRailProps) {
                         {runningCount(workspace)}
                       </span>
                     )}
-                    <IconButton
-                      title="Rename workspace"
-                      onClick={() => onStartRename(workspace)}
+                    {/* Rename/delete: destructive/rarely-used controls, so
+                        they only reveal on hover/focus (see the
+                        .vd-workspace-row-actions rule in shell/ui.tsx's
+                        GlobalShellStyles) — a resting row shows just its
+                        name, colour and count, not five icons crammed
+                        together. */}
+                    <span
+                      className="vd-workspace-row-actions"
+                      style={{ display: "flex", alignItems: "center", gap: 1 }}
                     >
-                      <span style={{ fontSize: 11 }}>✎</span>
-                    </IconButton>
-                    <IconButton
-                      title="Delete workspace"
-                      onClick={() => onRequestDelete(workspace.id)}
-                    >
-                      <span style={{ fontSize: 11 }}>✕</span>
-                    </IconButton>
+                      <IconButton title="Rename workspace" onClick={() => onStartRename(workspace)}>
+                        <span style={{ fontSize: 11 }}>✎</span>
+                      </IconButton>
+                      <IconButton title="Delete workspace" onClick={() => onRequestDelete(workspace.id)}>
+                        <span style={{ fontSize: 11 }}>✕</span>
+                      </IconButton>
+                    </span>
                   </div>
                 }
               />

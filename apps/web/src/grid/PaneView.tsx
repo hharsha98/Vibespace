@@ -3,7 +3,9 @@ import type { AgentId, SessionInfo, Workspace } from "@vibedeck/shared";
 import Terminal from "../term/Terminal.js";
 import type { Theme } from "../themes/themes.js";
 import type { Direction, PaneId } from "./tree.js";
-import { IconButton, StatusDot, sessionStatusKind } from "../shell/ui.js";
+import { IconButton, Pill, StatusDot, sessionStatusKind } from "../shell/ui.js";
+import { FONT, RADIUS, SHADOW, SPACE } from "../shell/tokens.js";
+import { AgentGlyph, agentAccentVar } from "./agentVisuals.js";
 import { useGitBranch } from "./useGitBranch.js";
 
 /** One entry from `GET /api/agents` — mirrors the shape App.tsx already fetches. */
@@ -11,6 +13,18 @@ export interface AgentOption {
   id: AgentId;
   displayName: string;
   available: boolean;
+  /** How to install this agent's CLI if it's missing (`null` once installed,
+   * or for agents — like the plain shell — that never need a separate
+   * install). Server-sent by `GET /api/agents` (see
+   * apps/server/src/index.ts) since before this phase, but the frontend
+   * type never carried it — the empty-pane picker below is the first
+   * caller that actually shows it, per the premium-pass instruction that an
+   * unavailable agent should "ideally hint how to install it". Optional so
+   * every pre-existing caller that builds an `AgentOption` without this
+   * field (there are none in practice, since it always comes straight off
+   * the fetch response, but the type itself shouldn't require it) keeps
+   * compiling unchanged. */
+  installHint?: string | null;
 }
 
 interface PaneViewProps {
@@ -136,9 +150,15 @@ export default function PaneView({
         flexDirection: "column",
         height: "100%",
         boxSizing: "border-box",
-        borderRadius: 6,
+        borderRadius: RADIUS.md,
         overflow: "hidden",
         border: `1px solid ${isFocused ? "var(--vd-accent)" : "var(--vd-border)"}`,
+        // Premium-pass (problem #2): every pane now sits on a faint shadow,
+        // lifting it off the black canvas — deliberately NOT tied to focus
+        // (docs/DESIGN.md §5 is explicit that the focus border is the ONLY
+        // focus affordance, no glow), so this is elevation for its own
+        // sake, present on every pane equally.
+        boxShadow: SHADOW.sm,
         background: "var(--vd-bg)",
       }}
     >
@@ -146,19 +166,34 @@ export default function PaneView({
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 6,
-          height: 26,
-          padding: "0 6px",
+          gap: SPACE.xs + 2,
+          height: 30,
+          padding: "0 8px",
           borderBottom: "1px solid var(--vd-border)",
+          background: "var(--vd-surface)",
           flexShrink: 0,
-          fontSize: 12,
+          fontSize: FONT.body,
           color: "var(--vd-text-muted)",
           boxSizing: "border-box",
         }}
       >
         <StatusDot status={statusKind} title={session ? session.status : "empty"} />
-        <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {session ? session.title : "empty pane"}
+        <span
+          style={{
+            flex: 1,
+            minWidth: 0,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            // Premium-pass (problem #6): a running session's title is real
+            // information (which agent, essentially) and now reads at full
+            // text contrast + a touch of weight; an empty pane's label stays
+            // muted — it's genuinely secondary until something starts.
+            color: session ? "var(--vd-text)" : "var(--vd-text-muted)",
+            fontWeight: session ? 500 : 400,
+          }}
+        >
+          {session ? session.title : "Empty pane"}
           {session?.status === "exited" && ` (exited ${session.exitCode})`}
         </span>
         {/* Phase 9.5c, PARITY #13c: names the workspace alongside the agent
@@ -173,18 +208,25 @@ export default function PaneView({
               display: "flex",
               alignItems: "center",
               gap: 4,
-              color: "var(--vd-text-faint)",
+              padding: "2px 6px",
+              borderRadius: RADIUS.sm,
+              background: "var(--vd-surface-raised)",
+              color: "var(--vd-text-muted)",
+              fontSize: FONT.meta,
               maxWidth: 140,
               overflow: "hidden",
             }}
           >
-            <span aria-hidden>·</span>
-            {workspace.color && (
-              <span
-                aria-hidden
-                style={{ width: 6, height: 6, borderRadius: "50%", flexShrink: 0, background: workspace.color }}
-              />
-            )}
+            <span
+              aria-hidden
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                flexShrink: 0,
+                background: workspace.color ?? "var(--vd-text-faint)",
+              }}
+            />
             <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {workspace.name}
             </span>
@@ -202,8 +244,11 @@ export default function PaneView({
               display: "flex",
               alignItems: "center",
               gap: 3,
-              color: "var(--vd-text-faint)",
-              fontSize: 11,
+              padding: "2px 6px",
+              borderRadius: RADIUS.sm,
+              background: "var(--vd-surface-raised)",
+              color: "var(--vd-text-muted)",
+              fontSize: FONT.meta,
               maxWidth: 120,
               overflow: "hidden",
             }}
@@ -253,35 +298,154 @@ export default function PaneView({
             onSplit={(direction) => onSplit(paneId, direction)}
           />
         ) : (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>
-            <div style={{ textAlign: "center" }}>
-              <p style={{ color: "var(--vd-text-muted)", fontSize: 12, marginBottom: 10 }}>
-                Start an agent in this pane
-              </p>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 160 }}>
-                {agents.map((agent) => (
-                  <button
-                    key={agent.id}
-                    disabled={!agent.available || starting}
-                    onClick={() => void startSession(agent.id)}
-                    style={{
-                      background: agent.id === defaultAgent ? "var(--vd-accent)" : "var(--vd-surface)",
-                      color: agent.id === defaultAgent ? "var(--vd-accent-text)" : "var(--vd-text)",
-                      border: "1px solid var(--vd-border)",
-                      borderRadius: 4,
-                      padding: "6px 14px",
-                      cursor: agent.available && !starting ? "pointer" : "not-allowed",
-                      opacity: agent.available ? 1 : 0.5,
-                      fontSize: 12,
-                    }}
-                  >
-                    {agent.displayName}
-                    {!agent.available ? " (not installed)" : ""}
-                  </button>
-                ))}
+          // Premium-pass (problem #1): the empty-pane state used to be four
+          // identical grey rectangles under one line of tiny muted text —
+          // ~70% black void with no visual identity. Now every agent gets
+          // its own glyph/colour (agentVisuals.tsx) on a real card, and an
+          // unavailable agent reads as clearly (not brokenly) disabled, with
+          // an install hint when the server has one.
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              height: "100%",
+              padding: SPACE.lg,
+              boxSizing: "border-box",
+            }}
+          >
+            <div style={{ width: "100%", maxWidth: 440 }}>
+              <div style={{ textAlign: "center", marginBottom: SPACE.lg }}>
+                <h2
+                  style={{
+                    margin: 0,
+                    fontSize: FONT.heading,
+                    fontWeight: 600,
+                    color: "var(--vd-text)",
+                    letterSpacing: "-0.01em",
+                  }}
+                >
+                  Start an agent
+                </h2>
+                <p style={{ margin: "4px 0 0", fontSize: FONT.meta, color: "var(--vd-text-faint)" }}>
+                  Pick one to run in this pane
+                </p>
               </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                  gap: SPACE.sm,
+                }}
+              >
+                {agents.map((agent) => {
+                  const disabled = !agent.available || starting;
+                  const isDefault = agent.id === defaultAgent && agent.available;
+                  return (
+                    <button
+                      key={agent.id}
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => void startSession(agent.id)}
+                      title={
+                        agent.available
+                          ? `Start ${agent.displayName}`
+                          : agent.installHint
+                            ? `Not installed — ${agent.installHint}`
+                            : "Not installed"
+                      }
+                      className={`vd-agent-card${disabled ? " is-disabled" : ""}`}
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "flex-start",
+                        gap: SPACE.xs + 2,
+                        textAlign: "left",
+                        background: "var(--vd-surface-raised)",
+                        border: `1px solid ${isDefault ? "var(--vd-accent)" : "var(--vd-border)"}`,
+                        borderStyle: agent.available ? "solid" : "dashed",
+                        borderRadius: RADIUS.xl,
+                        padding: SPACE.md,
+                        cursor: agent.available && !starting ? "pointer" : "not-allowed",
+                        opacity: agent.available ? 1 : 0.55,
+                        transition: "border-color 120ms ease, transform 120ms ease, box-shadow 120ms ease",
+                        boxSizing: "border-box",
+                        width: "100%",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: SPACE.xs, width: "100%" }}>
+                        <span
+                          aria-hidden
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            width: 30,
+                            height: 30,
+                            borderRadius: "50%",
+                            flexShrink: 0,
+                            background: agent.available
+                              ? `color-mix(in srgb, ${agentAccentVar(agent.id)} 16%, transparent)`
+                              : "var(--vd-surface)",
+                          }}
+                        >
+                          <AgentGlyph
+                            id={agent.id}
+                            size={17}
+                            color={agent.available ? undefined : "var(--vd-text-faint)"}
+                          />
+                        </span>
+                        {isDefault && <Pill status="info">Default</Pill>}
+                      </div>
+
+                      <span
+                        style={{
+                          fontSize: FONT.body,
+                          fontWeight: 600,
+                          color: agent.available ? "var(--vd-text)" : "var(--vd-text-muted)",
+                        }}
+                      >
+                        {agent.displayName}
+                      </span>
+
+                      {agent.available ? (
+                        <span style={{ fontSize: FONT.meta, color: "var(--vd-text-faint)" }}>Ready</span>
+                      ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                          <Pill status="idle">Not installed</Pill>
+                          {agent.installHint && (
+                            <code
+                              style={{
+                                fontSize: FONT.meta - 1,
+                                color: "var(--vd-text-faint)",
+                                fontFamily:
+                                  "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+                                overflowWrap: "anywhere",
+                              }}
+                            >
+                              {agent.installHint}
+                            </code>
+                          )}
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
               {startError && (
-                <p style={{ color: "var(--vd-danger)", fontSize: 11, marginTop: 8 }}>{startError}</p>
+                <p
+                  style={{
+                    color: "var(--vd-danger)",
+                    fontSize: FONT.meta,
+                    marginTop: SPACE.sm,
+                    marginBottom: 0,
+                    textAlign: "center",
+                  }}
+                >
+                  {startError}
+                </p>
               )}
             </div>
           </div>

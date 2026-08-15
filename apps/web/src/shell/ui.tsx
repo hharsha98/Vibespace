@@ -13,6 +13,7 @@
  * into slightly-different-looking copies.
  */
 import type { ReactNode } from "react";
+import { FONT, RADIUS, SHADOW } from "./tokens.js";
 
 /** The five semantic status colours every theme defines (docs/DESIGN.md
  * §2) — the only "meaningful" colours in the whole app; everything else is
@@ -105,12 +106,12 @@ export function Pill({ status, children }: { status: StatusKind; children: React
     <span
       style={{
         display: "inline-block",
-        fontSize: 10,
+        fontSize: FONT.label,
         lineHeight: 1.5,
         textTransform: "uppercase",
         letterSpacing: "0.04em",
         padding: "1px 6px",
-        borderRadius: 4,
+        borderRadius: RADIUS.sm,
         color,
         background: `color-mix(in srgb, ${color} 15%, transparent)`,
         whiteSpace: "nowrap",
@@ -163,7 +164,7 @@ export function IconButton({
         padding: 0,
         background: "transparent",
         border: "none",
-        borderRadius: 4,
+        borderRadius: RADIUS.sm,
         cursor: "pointer",
         flexShrink: 0,
       }}
@@ -221,9 +222,14 @@ export function ListRow({
         height: 32,
         padding: "0 8px",
         boxSizing: "border-box",
-        borderRadius: 4,
+        borderRadius: RADIUS.sm,
         cursor: onClick ? "pointer" : "default",
         background: active ? "var(--vd-surface-raised)" : undefined,
+        // Premium-pass (problem #2/#5): an active row now reads as
+        // genuinely "raised", not just recoloured — a faint shadow on top
+        // of the layering that was already there, same elevation idiom the
+        // rest of this pass applies to panes and cards.
+        boxShadow: active ? SHADOW.sm : undefined,
         borderLeft: active
           ? `${accentColor ? 3 : 2}px solid ${accentColor ?? "var(--vd-accent)"}`
           : "2px solid transparent",
@@ -237,7 +243,8 @@ export function ListRow({
           overflow: "hidden",
           textOverflow: "ellipsis",
           whiteSpace: "nowrap",
-          fontSize: 12,
+          fontSize: FONT.body,
+          fontWeight: active ? 500 : 400,
           color: "var(--vd-text)",
         }}
       >
@@ -266,6 +273,28 @@ export function GlobalShellStyles() {
 .vd-pane:hover .vd-pane-icons, .vd-pane.is-focused .vd-pane-icons { opacity: 1; }
 .vd-board-card-actions { opacity: 0; transition: opacity 120ms ease; }
 .vd-board-card:hover .vd-board-card-actions { opacity: 1; }
+
+/* Premium-pass additions (problems #2/#4/#5): a hovered, inactive top-bar
+   tab gets a raised background so the whole switcher feels responsive, not
+   just the one active pill (the active tab's own inline background always
+   wins over this rule regardless, since inline styles outrank a class
+   selector — see shell/ui.tsx's IconButton doc comment for the same
+   reasoning applied here). */
+.vd-view-tab:hover { background: var(--vd-surface-raised); color: var(--vd-text); }
+
+/* A workspace row's rename/delete controls only reveal on hover — the
+   colour swatch and running-count badge stay always-visible (they're
+   information, not a destructive action), same "hide the controls, not the
+   meaning" idiom board cards already use above. */
+.vd-workspace-row-actions { opacity: 0; transition: opacity 120ms ease; }
+.vd-workspace-row-wrap:hover .vd-workspace-row-actions,
+.vd-workspace-row-wrap:focus-within .vd-workspace-row-actions { opacity: 1; }
+
+/* The empty-pane agent picker's cards (PaneView.tsx): a soft lift on hover
+   for available agents only — unavailable ("not installed") cards opt out
+   via .vd-agent-card.is-disabled so they never look interactive. */
+.vd-agent-card:hover:not(.is-disabled) { border-color: var(--vd-accent); transform: translateY(-1px); box-shadow: 0 6px 16px rgba(0, 0, 0, 0.32); }
+.vd-agent-card:focus-visible:not(.is-disabled) { outline: 2px solid var(--vd-accent); outline-offset: 1px; }
 `}</style>
   );
 }

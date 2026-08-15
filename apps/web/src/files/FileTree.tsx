@@ -374,13 +374,13 @@ function FileTreeNode({
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 4,
-          height: 22,
+          gap: 5,
+          height: 24,
           paddingLeft: indent,
           paddingRight: 8,
           cursor: "pointer",
           fontSize: 12,
-          color: "var(--vd-text)",
+          color: isDir ? "var(--vd-text)" : "var(--vd-text-muted)",
           borderRadius: 4,
           // Dragged row lifts and follows the pointer; a directory row
           // currently being dragged OVER gets an obvious accent

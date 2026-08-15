@@ -46,6 +46,9 @@ import Prompts from "./prompts/Prompts.js";
 import Skills from "./skills/Skills.js";
 import type { PaneRef } from "./skills/logic.js";
 import Settings from "./settings/Settings.js";
+import type { CenterView } from "./viewTypes.js";
+import { ViewIcon } from "./shell/viewIcons.js";
+import { FONT, RADIUS, SHADOW } from "./shell/tokens.js";
 
 /** Which full-screen overlay (if any) is currently open. Only one at a
  * time — opening a new one implicitly replaces whichever was open, and
@@ -54,25 +57,15 @@ import Settings from "./settings/Settings.js";
  * theme picker. */
 type OverlayKind = "palette" | "theme" | "help" | "quickOpen" | null;
 
-/** Which view the centre column is showing (Phase 6's view switcher, see
- * docs/DESIGN.md's centre-column note in this phase's spec; Phase 7 adds
- * "board" as the fourth, Phase 9.5b adds "agents"/"prompts" as the
- * seventh/eighth). All are kept MOUNTED at all times once a workspace is
- * active (see the render below) — only CSS `display` toggles which one is
- * visible — so switching views never disconnects a running terminal's
- * WebSocket, never discards an editor tab's unsaved buffer, and never
- * re-fetches the board's card list on every switch either. */
-type CenterView =
-  | "terminals"
-  | "editor"
-  | "preview"
-  | "board"
-  | "graph"
-  | "swarm"
-  | "agents"
-  | "prompts"
-  | "skills"
-  | "settings";
+// `CenterView` (which view the centre column is showing, Phase 6's view
+// switcher — see docs/DESIGN.md's centre-column note; Phase 7 added
+// "board", Phase 9.5b added "agents"/"prompts") now lives in viewTypes.ts,
+// shared with shell/viewIcons.tsx's icon lookup — see that file's top
+// comment for why. All views are kept MOUNTED at all times once a
+// workspace is active (see the render below) — only CSS `display` toggles
+// which one is visible — so switching views never disconnects a running
+// terminal's WebSocket, never discards an editor tab's unsaved buffer, and
+// never re-fetches the board's card list on every switch either.
 
 interface HealthResponse {
   status: string;
@@ -1149,7 +1142,7 @@ export default function App() {
         }}
       >
         <Logo size={16} accent="var(--vd-accent)" />
-        <strong style={{ fontSize: 13, fontWeight: 600, letterSpacing: "-0.01em", flexShrink: 0 }}>
+        <strong style={{ fontSize: FONT.title, fontWeight: 600, letterSpacing: "-0.01em", flexShrink: 0 }}>
           vibedeck
         </strong>
 
@@ -1189,10 +1182,13 @@ export default function App() {
 
         <div style={{ flex: 1 }} />
 
-        {/* Phase 6/7: the centre-column view switcher — Terminals (the
-            existing grid) | Editor | Preview | Board. See CenterView's doc
-            comment above for why all four stay mounted regardless of which
-            is visible. */}
+        {/* Phase 6/7/9.5b, now grouped (premium-pass, problem #4): Terminals/
+            Editor/Preview (the workspace views) | Board/Graph/Swarm (planning
+            & orchestration) | Agents/Prompts/Skills (the library) | Settings
+            on its own, each cluster separated by a hairline divider instead
+            of ten flat tabs in an undifferentiated row. See CenterView's doc
+            comment in viewTypes.ts for why all ten stay mounted regardless
+            of which is visible. */}
         <div
           role="tablist"
           aria-label="Centre column view"
@@ -1202,12 +1198,13 @@ export default function App() {
             gap: 2,
             background: "var(--vd-bg)",
             border: "1px solid var(--vd-border)",
-            borderRadius: 4,
-            padding: 2,
+            borderRadius: RADIUS.md,
+            padding: 3,
             flexShrink: 0,
           }}
         >
           <ViewTabButton
+            view="terminals"
             active={centerView === "terminals"}
             onClick={() => setCenterView("terminals")}
             shortcut={formatShortcut(KEYMAP.find((s) => s.id === "view-terminals")!, isMac)}
@@ -1215,6 +1212,7 @@ export default function App() {
             Terminals
           </ViewTabButton>
           <ViewTabButton
+            view="editor"
             active={centerView === "editor"}
             onClick={() => setCenterView("editor")}
             shortcut={formatShortcut(KEYMAP.find((s) => s.id === "view-editor")!, isMac)}
@@ -1222,13 +1220,18 @@ export default function App() {
             Editor
           </ViewTabButton>
           <ViewTabButton
+            view="preview"
             active={centerView === "preview"}
             onClick={() => setCenterView("preview")}
             shortcut={formatShortcut(KEYMAP.find((s) => s.id === "view-preview")!, isMac)}
           >
             Preview
           </ViewTabButton>
+
+          <TabGroupDivider />
+
           <ViewTabButton
+            view="board"
             active={centerView === "board"}
             onClick={() => setCenterView("board")}
             shortcut={formatShortcut(KEYMAP.find((s) => s.id === "view-board")!, isMac)}
@@ -1236,6 +1239,7 @@ export default function App() {
             Board
           </ViewTabButton>
           <ViewTabButton
+            view="graph"
             active={centerView === "graph"}
             onClick={() => setCenterView("graph")}
             shortcut={formatShortcut(KEYMAP.find((s) => s.id === "view-graph")!, isMac)}
@@ -1243,13 +1247,18 @@ export default function App() {
             Graph
           </ViewTabButton>
           <ViewTabButton
+            view="swarm"
             active={centerView === "swarm"}
             onClick={() => setCenterView("swarm")}
             shortcut={formatShortcut(KEYMAP.find((s) => s.id === "view-swarm")!, isMac)}
           >
             Swarm
           </ViewTabButton>
+
+          <TabGroupDivider />
+
           <ViewTabButton
+            view="agents"
             active={centerView === "agents"}
             onClick={() => setCenterView("agents")}
             shortcut={formatShortcut(KEYMAP.find((s) => s.id === "view-agents")!, isMac)}
@@ -1257,6 +1266,7 @@ export default function App() {
             Agents
           </ViewTabButton>
           <ViewTabButton
+            view="prompts"
             active={centerView === "prompts"}
             onClick={() => setCenterView("prompts")}
             shortcut={formatShortcut(KEYMAP.find((s) => s.id === "view-prompts")!, isMac)}
@@ -1264,13 +1274,18 @@ export default function App() {
             Prompts
           </ViewTabButton>
           <ViewTabButton
+            view="skills"
             active={centerView === "skills"}
             onClick={() => setCenterView("skills")}
             shortcut={formatShortcut(KEYMAP.find((s) => s.id === "view-skills")!, isMac)}
           >
             Skills
           </ViewTabButton>
+
+          <TabGroupDivider />
+
           <ViewTabButton
+            view="settings"
             active={centerView === "settings"}
             onClick={() => setCenterView("settings")}
             shortcut={formatShortcut(KEYMAP.find((s) => s.id === "view-settings")!, isMac)}
@@ -1537,13 +1552,21 @@ export default function App() {
   );
 }
 
-/** One button in the top bar's Terminals/Editor/Preview segmented control. */
+/** One button in the top bar's grouped view-switcher segmented control
+ * (docs/DESIGN.md §1; premium-pass problem #4). Now carries its own icon
+ * (`ViewIcon`, keyed off `view`) and a "solid" active state — a filled
+ * accent pill with a soft shadow and bolder text, rather than the flat
+ * accent rectangle this replaced — while keeping every existing
+ * accessibility/keyboard-shortcut hook (`role="tab"`, `aria-selected`, the
+ * shortcut-bearing `title`) byte-for-byte the same. */
 function ViewTabButton({
+  view,
   active,
   onClick,
   shortcut,
   children,
 }: {
+  view: CenterView;
   active: boolean;
   onClick: () => void;
   shortcut: string;
@@ -1556,18 +1579,44 @@ function ViewTabButton({
       aria-selected={active}
       onClick={onClick}
       title={`${children} (${shortcut})`}
+      className="vd-view-tab"
       style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
         background: active ? "var(--vd-accent)" : "transparent",
         color: active ? "var(--vd-accent-text)" : "var(--vd-text-muted)",
         border: "none",
-        borderRadius: 3,
-        padding: "3px 10px",
-        fontSize: 11,
+        borderRadius: RADIUS.sm,
+        padding: "5px 10px",
+        fontSize: FONT.meta,
+        fontWeight: active ? 600 : 500,
+        boxShadow: active ? SHADOW.sm : "none",
         cursor: "pointer",
+        whiteSpace: "nowrap",
       }}
     >
+      <ViewIcon view={view} />
       {children}
     </button>
+  );
+}
+
+/** A 1px hairline between logical groups of view tabs (workspace views /
+ * planning views / the library / settings) — see the tablist's own comment
+ * for why these four clusters, replacing ten undifferentiated tabs. */
+function TabGroupDivider() {
+  return (
+    <span
+      aria-hidden
+      style={{
+        width: 1,
+        alignSelf: "stretch",
+        margin: "3px 2px",
+        background: "var(--vd-border)",
+        flexShrink: 0,
+      }}
+    />
   );
 }
 

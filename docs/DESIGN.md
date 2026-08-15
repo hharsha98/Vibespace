@@ -36,8 +36,15 @@ reviewed 2026-08-11.
 - **Centre** — the pane grid. Always the widest column.
 - **Right dock (320px)** — tabbed panel. Hidden until it has content; Phases
   7/8/10 fill it with Board, Memory and Skills. Collapsible.
-- **Top bar (36px)** — mark, breadcrumb (`workspace › directory`), right-aligned
-  icon buttons. Deliberately short: vertical space belongs to terminals.
+- **Top bar (36px)** — mark, breadcrumb (`workspace › directory`), the
+  centre-column view switcher, right-aligned icon buttons. Deliberately
+  short: vertical space belongs to terminals. The view switcher's ten tabs
+  are grouped into four logical clusters, separated by hairline dividers —
+  workspace views (Terminals/Editor/Preview), planning & orchestration
+  (Board/Graph/Swarm), the library (Agents/Prompts/Skills), and Settings on
+  its own — each tab carries a small icon (`shell/viewIcons.tsx`), and the
+  active tab is a solid accent pill with a soft shadow, not a flat
+  rectangle.
 
 ## 2. Colour
 
@@ -72,29 +79,69 @@ reviewer = `#c084fc`.
 
 ## 3. Type
 
-- UI: system stack, **12px** base, 11px for meta, 13px for headings. Dense on
-  purpose — this is a control surface, not a reading surface.
+- UI: system stack, **12px** base, 11px for meta, 13px for headings, 15px
+  for the one real headline surface (the empty-pane state's title) — dense
+  on purpose everywhere else; this is a control surface, not a reading
+  surface. The full named scale (`label`/`meta`/`body`/`title`/`heading`)
+  lives as `FONT` in `apps/web/src/shell/tokens.ts`.
 - Terminals: monospace stack, 13px, line-height 1.2.
 - Labels like `WORKSPACES`, `TO DO`: 10px, `letter-spacing: .08em`, uppercase,
   `--text-faint`.
+- Hierarchy is deliberate, not just size: a pane's title bar shows a running
+  session's name at full `--text` contrast + medium weight, while an empty
+  pane's label stays `--text-muted` — the same "earn contrast" rule applies
+  to list rows (an active row's label is medium weight, a resting row's is
+  regular).
 
 ## 4. Shape and spacing
 
-- Radius: 6px panes and cards, 4px pills and small controls, 10px overlays.
-- Borders are 1px hairlines. Depth comes from surface layering, not shadows.
-  Only floating overlays (command palette, menus) get a shadow.
-- Spacing scale: 4 / 8 / 12 / 16px. Nothing larger inside chrome.
+- Radius: 6px panes and cards, 4px pills and small controls, 10px overlays,
+  14px for the larger empty-pane agent cards (§5).
+- Borders are 1px hairlines. Depth comes from surface layering FIRST — every
+  raised surface also carries a subtle neutral shadow (plain black at low
+  alpha, so it reads the same "closer to the viewer" cue on every theme,
+  including the one light theme) as a secondary reinforcement: panes rest on
+  a faint shadow off the black canvas, an active list row and a hovered
+  empty-pane card lift further. Floating overlays (command palette, menus,
+  popovers) still get the strongest shadow of the three.
+- Spacing scale: 4 / 8 / 12 / 16 / 24px. The top of that scale (24px) is for
+  page-level breathing room (the empty-pane state); dense chrome controls
+  stay on the 4-12px end.
+- Every one of the above (radius/spacing/shadow steps, plus the type scale
+  in §3) is a named constant in `apps/web/src/shell/tokens.ts`
+  (`RADIUS`/`SPACE`/`SHADOW`/`FONT`) — components import the named step
+  instead of writing a bare number, so the scale stays a single decision
+  made once, not re-decided ad hoc at each call site.
+
+### Agent identity (empty-pane picker)
+
+Each `AgentId` gets a hand-drawn glyph (`apps/web/src/grid/agentVisuals.tsx`)
+plus an accent drawn from the theme's EXISTING palette — never a new hex
+value — via `agentAccentVar`: `claude` → `--vd-accent`, `cursor-agent` →
+`--vd-info`, `codex` → `--vd-ok`, `shell` → `--vd-idle`. Distinctness comes
+from pairing that colour with a genuinely different glyph shape per agent,
+not from inventing new brand hues, which would violate rule 2 below. An
+unavailable agent's card uses a dashed border, a muted glyph, and (when the
+server has one) shows its install command in a small monospace line.
 
 ## 5. Components
 
 ### Pane
-Rounded 6px, 1px `--border`. **Focused pane gets a 1px `--accent` border** —
-that is the only focus affordance; no glow.
+Rounded 6px, 1px `--border`, resting on a faint elevation shadow (§4) that
+lifts it off the black canvas. **Focused pane gets a 1px `--accent`
+border** — that is the only focus AFFORDANCE; no glow. (The shadow is not a
+focus cue — every pane gets it, focused or not.)
 
-Title bar (26px): status dot · agent name · flexible gap · icon row
-(split-vertical, split-horizontal, maximise, close). Icons are 14px,
-`--text-faint`, going `--text` on hover. They appear on hover or focus,
-not permanently — 16 panes of always-on icons is visual noise.
+Title bar (30px), on `--surface` (one layer up from the pane body itself, so
+the header itself reads as a distinct strip, not a continuation of empty
+black): status dot · session name (full `--text` contrast + medium weight
+once a session exists; `--text-muted` while empty) · workspace chip · git
+branch chip · flexible gap · icon row (split-vertical, split-horizontal,
+maximise, close). The workspace/branch chips are small `--surface-raised`
+pills, not bare text — this is real information (which project, which
+branch), not a caption. Icons are 14px, `--text-faint`, going `--text` on
+hover. They appear on hover or focus, not permanently — 16 panes of
+always-on icons is visual noise.
 
 ### Status dot
 6px circle in a status colour. The single most repeated element in the UI:
