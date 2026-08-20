@@ -11,3 +11,8 @@ coverage
 !.env.example
 *.db
 *.sqlite
+
+# Screenshots pasted into an agent pane (see apps/server/src/files/paste-image.ts).
+# These are transient scratch images, not knowledge — unlike `.vibedeck/memory/`,
+# which is plain markdown deliberately meant to be committed (docs/MEMORY.md).
+.vibedeck/pastes/

@@ -322,6 +322,35 @@ function up005WorkspacesColor(db: Database): void {
 }
 
 /**
+ * Migration 6 (BridgeSpace parity item 4): `command_history`, per-workspace
+ * command/prompt history backing the per-pane prompt bar's autocomplete
+ * (see `apps/server/src/db/command-history.ts` and
+ * `apps/web/src/term/commandHistory.ts`). `UNIQUE(workspace_id, command)`
+ * is the enforced invariant behind `CommandHistoryStore.record`'s
+ * delete-then-insert dedupe (see that method's own comment for why it's a
+ * delete+insert, in a transaction, rather than an `ON CONFLICT ... DO
+ * UPDATE` — a plain UPDATE would leave a re-recorded row's original
+ * `rowid` in place, breaking "most recently run sorts first" for two
+ * commands recorded within the same millisecond).
+ */
+function up006CommandHistory(db: Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS command_history (
+      id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      command TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE(workspace_id, command)
+    )
+  `);
+  // Serves both `CommandHistoryStore.list`'s "newest first" ordering and
+  // its own pruning query (see that store's `MAX_ENTRIES_PER_WORKSPACE`).
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_command_history_workspace ON command_history(workspace_id, created_at)`
+  );
+}
+
+/**
  * Every migration, in ascending version order. Audited against the live
  * `~/.vibedeck/vibedeck.db` on this machine by comparing each `CREATE
  * TABLE` above to `PRAGMA table_info` on every table that db actually had:
@@ -340,6 +369,7 @@ export const MIGRATIONS: Migration[] = [
   { version: 3, name: "add board_cards.task_knowledge", up: up003BoardCardsTaskKnowledge },
   { version: 4, name: "add agent_profiles and saved_prompts", up: up004AgentProfilesAndSavedPrompts },
   { version: 5, name: "add workspaces.color", up: up005WorkspacesColor },
+  { version: 6, name: "add command_history", up: up006CommandHistory },
 ];
 
 /** Copies the database file to `<dbPath>.backup-v<version>`. Flushes WAL

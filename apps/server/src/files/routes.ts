@@ -7,18 +7,37 @@
  * file calls `fs` with a path that hasn't been through `safeResolve` first.
  */
 import chokidar, { type FSWatcher } from "chokidar";
-import { existsSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
-import { relative, sep } from "node:path";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { randomUUID } from "node:crypto";
+import { join, relative, sep } from "node:path";
 import type { FastifyInstance } from "fastify";
 import type { FileEntry, FileWatchEvent } from "@vibedeck/shared";
 import type { WorkspaceStore } from "../db/workspaces.js";
 import { isInside, isProbablyBinary, safeResolve } from "./safe-path.js";
+import { PASTE_IMAGE_DIR_NAME, pickPasteImagePath } from "./paste-image.js";
 
 /** Refuse to read/write anything bigger than this — both for the text
  * editor's own sanity (nobody wants a 50MB file dumped into CodeMirror) and
  * as a basic resource guard against a client hammering the endpoint with a
  * huge PUT body. */
 const MAX_FILE_BYTES = 2 * 1024 * 1024; // 2MB
+
+/** Refuse a pasted image bigger than this, decoded — generous for a
+ * screenshot (even a large multi-monitor capture is usually a few MB as
+ * PNG) while still bounding memory use for one request. The server's own
+ * `bodyLimit` (see `index.ts`'s `Fastify({...})` call) is set well above
+ * this once you account for base64's ~33% size overhead over raw bytes, so
+ * a request under this cap should never be rejected at the body-parsing
+ * layer before it even reaches this check. */
+const MAX_PASTE_IMAGE_BYTES = 20 * 1024 * 1024; // 20MB
 
 /** Directory names skipped by default in `GET /api/files/tree` (and never
  * watched by chokidar) — noisy, huge, or not source the user is likely to
@@ -179,6 +198,78 @@ export function registerFileRoutes(app: FastifyInstance, workspaceStore: Workspa
     }
 
     return reply.status(204).send();
+  });
+
+  // BridgeSpace parity item 2: "paste a screenshot into an agent pane".
+  // Agent CLIs (claude, cursor-agent, codex) read an image by its file
+  // PATH, not a clipboard bitmap, so Terminal.tsx's paste handler (see that
+  // file's "Paste a screenshot" comment) intercepts an image paste,
+  // base64-encodes it, and POSTs it here rather than ever trying to type
+  // raw image bytes into the pty. This endpoint just writes those bytes
+  // into the workspace and hands back the relative path Terminal.tsx then
+  // types into the pty — same "type a path, don't paste content" idiom
+  // `handleDrop` (dragged files) already uses client-side.
+  //
+  // `pickPasteImagePath` (paste-image.ts) decides WHERE inside the
+  // workspace the image lands (`.vibedeck/pastes/...`); this handler only
+  // owns request validation and the actual write, and — same rule as every
+  // other route in this file — runs that decision's relative path through
+  // `safeResolve` before ever touching `fs`, even though it's a
+  // server-generated path, not raw client input: a write endpoint that
+  // ever skips that check even once, "because this particular path is
+  // trusted," is exactly the kind of thing that stops being true after the
+  // next refactor.
+  app.post("/api/files/paste-image", async (request, reply) => {
+    const body = (request.body ?? {}) as { workspaceId?: unknown; mimeType?: unknown; dataBase64?: unknown };
+    const workspace = requireWorkspace(workspaceStore, body.workspaceId, reply);
+    if (!workspace) return;
+
+    if (typeof body.mimeType !== "string" || body.mimeType.length === 0) {
+      return reply.status(400).send({ error: '"mimeType" must be a non-empty string' });
+    }
+    if (typeof body.dataBase64 !== "string" || body.dataBase64.length === 0) {
+      return reply.status(400).send({ error: '"dataBase64" must be a non-empty string' });
+    }
+
+    const decision = pickPasteImagePath(body.mimeType, Date.now(), randomUUID().slice(0, 8));
+    if (!decision.ok) {
+      return reply.status(400).send({ error: decision.error });
+    }
+
+    let buf: Buffer;
+    try {
+      buf = Buffer.from(body.dataBase64, "base64");
+    } catch {
+      return reply.status(400).send({ error: '"dataBase64" is not valid base64' });
+    }
+    if (buf.length === 0) {
+      return reply.status(400).send({ error: "Decoded image is empty" });
+    }
+    if (buf.length > MAX_PASTE_IMAGE_BYTES) {
+      return reply.status(413).send({ error: `Image must be under ${MAX_PASTE_IMAGE_BYTES} bytes` });
+    }
+
+    // safeResolve requires the target's parent to already exist on disk to
+    // realpath it (see safe-path.ts's top comment) — ensure the dot-dir
+    // first, same "mkdir, then resolve into it" order memory/store.ts's
+    // ensureMemoryDir already uses for the same reason.
+    mkdirSync(join(workspace.rootPath, PASTE_IMAGE_DIR_NAME), { recursive: true });
+
+    const resolved = safeResolve(workspace.rootPath, decision.relPath);
+    if (!resolved.ok) {
+      // Should never actually happen for a path this handler generated
+      // itself (not raw client input) — but see this route's own top
+      // comment for why that's not a reason to skip the check.
+      return reply.status(500).send({ error: resolved.error });
+    }
+
+    try {
+      writeFileSync(resolved.path, buf);
+    } catch {
+      return reply.status(500).send({ error: "Failed to write pasted image" });
+    }
+
+    return reply.status(201).send({ path: decision.relPath });
   });
 
   // Phase 9.5c (PARITY #20): move/rename a file or directory within a

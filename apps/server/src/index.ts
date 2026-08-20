@@ -24,6 +24,8 @@ import { SavedPromptStore } from "./prompts/store.js";
 import { registerPromptRoutes } from "./prompts/routes.js";
 import { registerGitRoutes } from "./git/routes.js";
 import { registerSkillRoutes } from "./skills/routes.js";
+import { CommandHistoryStore } from "./db/command-history.js";
+import { registerHistoryRoutes } from "./history/routes.js";
 
 const VERSION = "0.0.0";
 // Phase 11a (PARITY #50): resolveServerPort defaults to 4317 — identical to
@@ -51,6 +53,8 @@ export interface BuildAppOptions {
   agentProfileStore?: AgentProfileStore;
   /** Inject a SavedPromptStore (mainly for tests). Defaults to a fresh one. */
   savedPromptStore?: SavedPromptStore;
+  /** Inject a CommandHistoryStore (mainly for tests). Defaults to a fresh one. */
+  commandHistoryStore?: CommandHistoryStore;
   /**
    * Phase 11a (PARITY #50): absolute path to a built `apps/web/dist` to
    * serve as static files, turning this server into the single origin for
@@ -73,7 +77,18 @@ export interface BuildAppOptions {
  * `app.inject()`) without binding a real network port.
  */
 export function buildApp(options: BuildAppOptions = {}) {
-  const app = Fastify({ logger: false });
+  const app = Fastify({
+    logger: false,
+    // Fastify's default bodyLimit is 1MiB, comfortably enough for every
+    // route in this file except one: POST /api/files/paste-image (BridgeSpace
+    // parity item 2) sends a pasted screenshot as a base64 JSON string,
+    // which runs ~33% bigger than the raw image bytes it encodes. That
+    // route enforces its own 20MB (raw, decoded) cap — see
+    // `files/routes.ts`'s `MAX_PASTE_IMAGE_BYTES` — so this just needs to
+    // be comfortably above 20MB's base64 size (~27MB) plus JSON overhead,
+    // not itself the real limit.
+    bodyLimit: 30 * 1024 * 1024, // 30MB
+  });
   const sessionManager = options.sessionManager ?? new SessionManager();
   const workspaceStore = options.workspaceStore ?? new WorkspaceStore();
   const boardStore = options.boardStore ?? new BoardStore();
@@ -83,6 +98,7 @@ export function buildApp(options: BuildAppOptions = {}) {
   const tasksStore = options.tasksStore ?? new TasksStore();
   const agentProfileStore = options.agentProfileStore ?? new AgentProfileStore();
   const savedPromptStore = options.savedPromptStore ?? new SavedPromptStore();
+  const commandHistoryStore = options.commandHistoryStore ?? new CommandHistoryStore();
 
   // Make the manager/store reachable from outside (tests call
   // app.sessionManager/app.workspaceStore/app.boardStore/etc directly to
@@ -96,6 +112,7 @@ export function buildApp(options: BuildAppOptions = {}) {
   app.decorate("mailboxStore", mailboxStore);
   app.decorate("agentProfileStore", agentProfileStore);
   app.decorate("savedPromptStore", savedPromptStore);
+  app.decorate("commandHistoryStore", commandHistoryStore);
 
   // Kill every pty and close the database when the Fastify instance closes,
   // so `app.close()` in tests (and a real process shutdown) doesn't leave
@@ -111,6 +128,7 @@ export function buildApp(options: BuildAppOptions = {}) {
     tasksStore.close();
     agentProfileStore.close();
     savedPromptStore.close();
+    commandHistoryStore.close();
     done();
   });
 
@@ -159,6 +177,10 @@ export function buildApp(options: BuildAppOptions = {}) {
   // Phase 10: Skills (PARITY #37) — the agentskills.io standard. See
   // skills/routes.ts's top comment and docs/SKILLS.md.
   registerSkillRoutes(app, { workspaceStore, sessionManager });
+
+  // BridgeSpace parity item 4: per-workspace command history backing the
+  // prompt bar's autocomplete. See history/routes.ts's top comment.
+  registerHistoryRoutes(app, { workspaceStore, commandHistoryStore });
 
   app.get("/api/health", async () => ({
     status: "ok" as const,
@@ -442,6 +464,7 @@ declare module "fastify" {
     tasksStore: TasksStore;
     agentProfileStore: AgentProfileStore;
     savedPromptStore: SavedPromptStore;
+    commandHistoryStore: CommandHistoryStore;
   }
 }
 

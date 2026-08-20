@@ -311,6 +311,114 @@ describe("PUT /api/files/content", () => {
   });
 });
 
+describe("POST /api/files/paste-image", () => {
+  // A tiny valid 1x1 PNG, base64-encoded — real bytes, not a placeholder
+  // string, so `isProbablyBinary`-style content sanity (if this endpoint
+  // ever added it) and simple byte-count assertions both have something
+  // real to check.
+  const TINY_PNG_BASE64 =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+
+  it("writes the decoded image under .vibedeck/pastes and returns its relative path", async () => {
+    const app = buildApp();
+    const workspaceId = await createWorkspace(app);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/files/paste-image",
+      payload: { workspaceId, mimeType: "image/png", dataBase64: TINY_PNG_BASE64 },
+    });
+
+    expect(response.statusCode).toBe(201);
+    const body = response.json() as { path: string };
+    expect(body.path.startsWith(".vibedeck/pastes/")).toBe(true);
+    expect(body.path.endsWith(".png")).toBe(true);
+
+    const written = readFileSync(join(projectDir, body.path));
+    expect(written.equals(Buffer.from(TINY_PNG_BASE64, "base64"))).toBe(true);
+    await app.close();
+  });
+
+  it("rejects an unrecognized MIME type with 400 and writes nothing", async () => {
+    const app = buildApp();
+    const workspaceId = await createWorkspace(app);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/files/paste-image",
+      payload: { workspaceId, mimeType: "application/pdf", dataBase64: TINY_PNG_BASE64 },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(existsSync(join(projectDir, ".vibedeck", "pastes"))).toBe(false);
+    await app.close();
+  });
+
+  it("rejects a missing dataBase64 with 400", async () => {
+    const app = buildApp();
+    const workspaceId = await createWorkspace(app);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/files/paste-image",
+      payload: { workspaceId, mimeType: "image/png" },
+    });
+
+    expect(response.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it("rejects an unknown workspaceId with 400", async () => {
+    const app = buildApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/files/paste-image",
+      payload: { workspaceId: "no-such-workspace", mimeType: "image/png", dataBase64: TINY_PNG_BASE64 },
+    });
+    expect(response.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it("rejects an image over the size cap with 413", async () => {
+    const app = buildApp();
+    const workspaceId = await createWorkspace(app);
+
+    // One byte over MAX_PASTE_IMAGE_BYTES (20MB), base64-encoded.
+    const oversized = Buffer.alloc(20 * 1024 * 1024 + 1, 1).toString("base64");
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/files/paste-image",
+      payload: { workspaceId, mimeType: "image/png", dataBase64: oversized },
+    });
+
+    expect(response.statusCode).toBe(413);
+    await app.close();
+  });
+
+  it("two pastes in the workspace each get their own file, neither overwriting the other", async () => {
+    const app = buildApp();
+    const workspaceId = await createWorkspace(app);
+
+    const first = await app.inject({
+      method: "POST",
+      url: "/api/files/paste-image",
+      payload: { workspaceId, mimeType: "image/png", dataBase64: TINY_PNG_BASE64 },
+    });
+    const second = await app.inject({
+      method: "POST",
+      url: "/api/files/paste-image",
+      payload: { workspaceId, mimeType: "image/png", dataBase64: TINY_PNG_BASE64 },
+    });
+
+    const firstPath = (first.json() as { path: string }).path;
+    const secondPath = (second.json() as { path: string }).path;
+    expect(firstPath).not.toBe(secondPath);
+    expect(existsSync(join(projectDir, firstPath))).toBe(true);
+    expect(existsSync(join(projectDir, secondPath))).toBe(true);
+    await app.close();
+  });
+});
+
 describe("POST /api/files/move", () => {
   it("moves a file to a new location within the workspace", async () => {
     const app = buildApp();

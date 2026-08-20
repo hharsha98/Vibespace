@@ -368,6 +368,7 @@ export default function PaneView({
             // guards the theoretical instant it isn't, defaulting to the
             // SAFER of the two busy-detection paths (exact, not heuristic).
             agentId={session?.agent ?? "shell"}
+            workspaceId={workspaceId}
             theme={theme}
             isFocused={isFocused}
             onClose={() => onClosePane(paneId)}

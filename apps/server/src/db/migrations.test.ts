@@ -86,6 +86,8 @@ const EXPECTED_SCHEMA: Record<string, string[]> = {
     "updated_at",
   ],
   saved_prompts: ["id", "workspace_id", "title", "body", "created_at", "updated_at"],
+  // BridgeSpace parity item 4 (migration 6): per-workspace command history.
+  command_history: ["id", "workspace_id", "command", "created_at"],
 };
 
 function columnsOf(db: Database.Database, table: string): string[] {

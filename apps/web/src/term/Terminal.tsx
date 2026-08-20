@@ -9,6 +9,7 @@ import { ImageAddon } from "@xterm/addon-image";
 import type { AgentId, ClientMessage, ServerMessage } from "@vibedeck/shared";
 import { AGENT_SPECS } from "@vibedeck/shared";
 import { isMacPlatform, matchShortcut } from "../keys/keymap.js";
+import { isCopyShortcut } from "./copyShortcut.js";
 import type { Theme } from "../themes/themes.js";
 import type { Direction } from "../grid/tree.js";
 import { MOTION, RADIUS, SHADOW_VAR } from "../shell/tokens.js";
@@ -47,6 +48,15 @@ interface TerminalProps {
    * See the "Command blocks" and "Per-pane prompt bar" module comments
    * below. */
   agentId: AgentId;
+  /** The active workspace's id, or null in the (should-be-rare) case no
+   * workspace is active — same prop PaneView.tsx already threads down for
+   * `POST /api/sessions`. Terminal.tsx uses this for two BridgeSpace
+   * parity features that are both inherently workspace-scoped: pasting a
+   * screenshot (item 2 — the image has to be saved SOMEWHERE inside a real
+   * workspace) and command history (item 4 — history is persisted and
+   * fetched per workspace). Both features simply no-op without one: see
+   * the paste handler's and the history-fetch effect's own comments below. */
+  workspaceId: string | null;
   /** The active theme — its `.terminal` palette colours this instance,
    * live, whenever the user switches themes (see the effect below); it's
    * not just used at creation time. */
@@ -92,6 +102,51 @@ function shellEscapeSpaces(path: string): string {
 function buildWebSocketUrl(sessionId: string): string {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   return `${protocol}//${window.location.host}/api/sessions/${sessionId}/ws`;
+}
+
+/** Reads `file`'s bytes as a base64 string, via the `FileReader` `data:`
+ * URL API (`readAsDataURL`) — the simplest way to get base64 out of a
+ * `File`/`Blob` without a Buffer polyfill in the browser. A `data:` URL is
+ * `data:<mimeType>;base64,<the actual base64>`, so this just slices off
+ * everything up to (and including) the first comma. */
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      resolve(result.slice(result.indexOf(",") + 1));
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("Failed to read pasted image"));
+    reader.readAsDataURL(file);
+  });
+}
+
+/** BridgeSpace parity item 2: uploads a pasted image to
+ * `POST /api/files/paste-image` (see `files/routes.ts`) and returns the
+ * workspace-relative path it was written to, or `null` if the upload
+ * failed (network error, server refusal — an unsupported MIME type, an
+ * oversized image, ...). Deliberately fails soft: a failed screenshot
+ * paste should leave the pane exactly as it was, never throw into React or
+ * leave half-typed garbage in the pty. */
+async function uploadPastedImage(file: File, workspaceId: string): Promise<string | null> {
+  try {
+    const dataBase64 = await readFileAsBase64(file);
+    const res = await fetch("/api/files/paste-image", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ workspaceId, mimeType: file.type, dataBase64 }),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      console.warn("vibedeck: failed to upload pasted image", body.error ?? res.statusText);
+      return null;
+    }
+    const body = (await res.json()) as { path: string };
+    return body.path;
+  } catch (err) {
+    console.warn("vibedeck: failed to upload pasted image", err);
+    return null;
+  }
 }
 
 interface ContextMenuState {
@@ -198,7 +253,15 @@ function styleGutterBar(el: HTMLElement, color: string): void {
  * (switching sessions, unmounting) only closes the *view* — the pty itself
  * keeps running on the server until explicitly killed (see `onClose`).
  */
-export default function Terminal({ sessionId, agentId, theme, isFocused, onClose, onSplit }: TerminalProps) {
+export default function Terminal({
+  sessionId,
+  agentId,
+  workspaceId,
+  theme,
+  isFocused,
+  onClose,
+  onSplit,
+}: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -268,6 +331,54 @@ export default function Terminal({ sessionId, agentId, theme, isFocused, onClose
   const lastOutputAtRef = useRef<number | null>(null);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
+  // --- Command history (BridgeSpace parity item 4) ------------------------
+  // The workspace's history pool, newest-first, fed straight to PromptBar
+  // (which does its own prefix-matching — see commandHistory.ts). Fetched
+  // once per workspace below, then kept in sync locally: every submitted
+  // prompt is prepended here immediately (optimistic — no round trip needed
+  // before it shows up as a future suggestion), same-shaped dedupe as the
+  // server's own `CommandHistoryStore.record` (move-to-front on a repeat,
+  // never a second copy), while the real POST below persists it for next
+  // time/other panes in the same workspace.
+  const [history, setHistory] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!workspaceId) {
+      setHistory([]);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/command-history?workspaceId=${encodeURIComponent(workspaceId)}`)
+      .then((res) => (res.ok ? (res.json() as Promise<{ commands: string[] }>) : null))
+      .then((body) => {
+        if (!cancelled && body) setHistory(body.commands);
+      })
+      .catch((err: unknown) => {
+        console.warn("vibedeck: failed to load command history", err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [workspaceId]);
+
+  /** Records `text` as a history entry: optimistically, in local state
+   * (immediately available to PromptBar's own suggestions), and for real,
+   * via a fire-and-forget POST (persisted for next session / other panes
+   * in the same workspace). No-ops with no active workspace — there is
+   * nowhere workspace-scoped to persist it, and PromptBar's suggestions
+   * are meaningless without a workspace's history to draw from anyway. */
+  const recordHistory = (text: string) => {
+    if (!workspaceId) return;
+    setHistory((prev) => [text, ...prev.filter((c) => c !== text)]);
+    fetch("/api/command-history", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ workspaceId, command: text }),
+    }).catch((err: unknown) => {
+      console.warn("vibedeck: failed to record command history", err);
+    });
+  };
+
   /** Writes `data` straight into this pane's pty over the socket — the same
    * "input" message `term.onData` sends (see the main effect below), just
    * reachable from outside that effect too (the prompt bar and the agent-
@@ -333,6 +444,7 @@ export default function Terminal({ sessionId, agentId, theme, isFocused, onClose
   /** The prompt bar's submit handler — idle sends immediately, busy queues
    * it (see promptQueue.ts's `submitPrompt`). */
   const handlePromptSubmit = (text: string) => {
+    recordHistory(text);
     const result = submitPrompt(queueStateRef.current, text);
     queueStateRef.current = result.state;
     setQueueStateForRender(result.state);
@@ -382,6 +494,24 @@ export default function Terminal({ sessionId, agentId, theme, isFocused, onClose
       // an ALREADY-OPEN terminal in sync with the picker instead of only
       // colouring newly-created ones.
       theme: theme.terminal,
+      // BridgeSpace parity item 3: "copyable drag-selection inside
+      // mouse-tracking TUIs". When a full-screen app (claude, htop, vim...)
+      // turns on mouse tracking, xterm forwards mouse events to it instead
+      // of running its own selection — there is genuinely nothing to copy
+      // by default. xterm.js's own `shouldForceSelection` already bypasses
+      // that and runs a REAL selection instead whenever a modifier is
+      // held: Shift, on every non-Mac platform, completely unconditionally
+      // (nothing to opt into there). On Mac it's Option/Alt, but ONLY once
+      // this option is turned on — it defaults to false because Option is
+      // also used for word-boundary cursor movement and composing special
+      // characters, so xterm doesn't claim it for selection unless asked.
+      // We ask: Option-drag-to-select is the documented, discoverable
+      // escape hatch for exactly this situation, matching how iTerm2 and
+      // Terminal.app both already handle it, so it's the least surprising
+      // choice for anyone dragging inside a mouse-tracking TUI on a Mac.
+      // See copyShortcut.ts's top comment for the other half (the Cmd/
+      // Ctrl+C keyboard shortcut that reads the resulting selection).
+      macOptionClickForcesSelection: true,
     });
     termRef.current = term;
 
@@ -396,7 +526,22 @@ export default function Terminal({ sessionId, agentId, theme, isFocused, onClose
     // `preventDefault()` on these before they'd reach this textarea in the
     // first place; this is the belt-and-suspenders backstop in case some
     // browser/OS combination still hands xterm the event.
-    term.attachCustomKeyEventHandler((event) => matchShortcut(event, isMacPlatform()) === null);
+    const isMac = isMacPlatform();
+    term.attachCustomKeyEventHandler((event) => {
+      // BridgeSpace parity item 3, part 2: Cmd/Ctrl+C copies the current
+      // selection (including one made by Option/Shift-dragging inside a
+      // mouse-tracking TUI, per the `macOptionClickForcesSelection` option
+      // above) instead of reaching the pty as a literal Ctrl+C. This app
+      // never bound this chord to anything before — the right-click "Copy"
+      // menu item (`handleCopy`) was the only way in — so this is pure
+      // addition, gated by `isCopyShortcut` on there actually BEING a
+      // selection, so a shell mid-command always keeps its real Ctrl+C.
+      if (isCopyShortcut({ key: event.key, metaKey: event.metaKey, ctrlKey: event.ctrlKey, shiftKey: event.shiftKey, altKey: event.altKey, hasSelection: term.hasSelection(), isMac })) {
+        void navigator.clipboard.writeText(term.getSelection());
+        return false; // Handled — never also send ^C to the pty.
+      }
+      return matchShortcut(event, isMac) === null;
+    });
 
     const fitAddon = new FitAddon();
     fitAddonRef.current = fitAddon;
@@ -406,7 +551,8 @@ export default function Terminal({ sessionId, agentId, theme, isFocused, onClose
     searchAddonRef.current = searchAddon;
     term.loadAddon(searchAddon);
 
-    term.loadAddon(new WebLinksAddon());
+    const webLinksAddon = new WebLinksAddon();
+    term.loadAddon(webLinksAddon);
 
     // --- Command blocks (Phase 5) ---------------------------------------
     // A fresh BlockTracker per mount (per `sessionId`, since this whole
@@ -596,13 +742,26 @@ export default function Terminal({ sessionId, agentId, theme, isFocused, onClose
     // so we decrement `activeWebglTerminals` exactly once no matter which
     // of the two paths releases it (context loss vs. component unmount).
     let holdsWebglSlot = false;
+    // Hoisted above the `try` below (rather than `const`-declared inside
+    // it) so the cleanup function at the bottom of this effect can reach
+    // it too — see that cleanup's own comment for why it now disposes this
+    // addon explicitly instead of only ever relying on `term.dispose()` to
+    // cascade to it.
+    let webglAddon: WebglAddon | undefined;
     if (activeWebglTerminals < MAX_WEBGL_TERMINALS) {
       try {
-        const webglAddon = new WebglAddon();
-        term.loadAddon(webglAddon);
+        // A separate `const` (not the outer `let webglAddon` directly)
+        // inside this closure: TS can't narrow a captured `let` across a
+        // closure boundary (it could theoretically be reassigned before the
+        // callback runs), so referencing the outer variable inside
+        // `onContextLoss`'s callback would type as possibly-undefined even
+        // though it's always defined by the time this callback can fire.
+        const addon = new WebglAddon();
+        webglAddon = addon;
+        term.loadAddon(addon);
         activeWebglTerminals++;
         holdsWebglSlot = true;
-        webglAddon.onContextLoss(() => {
+        addon.onContextLoss(() => {
           console.warn(
             `vibedeck: WebGL context lost for session ${sessionId}; falling back to default renderer`
           );
@@ -610,7 +769,7 @@ export default function Terminal({ sessionId, agentId, theme, isFocused, onClose
           // documented xterm.js recovery path: xterm detaches the WebGL
           // renderer and reverts this terminal to its default renderer,
           // so the pane keeps repainting instead of going dark.
-          webglAddon.dispose();
+          addon.dispose();
           if (holdsWebglSlot) {
             holdsWebglSlot = false;
             activeWebglTerminals--;
@@ -634,18 +793,21 @@ export default function Terminal({ sessionId, agentId, theme, isFocused, onClose
     // construct/activate it (an unsupported browser API, some other
     // environment quirk) must degrade to "no inline images in this pane,"
     // never break the terminal itself.
+    // Hoisted for the same reason `webglAddon` above is: the cleanup
+    // function needs to reach it to dispose it explicitly, before
+    // `term.dispose()` — see that cleanup's own comment.
+    let imageAddon: ImageAddon | undefined;
     try {
-      term.loadAddon(
-        new ImageAddon({
-          // Default is 128MB per addon instance; with up to 16 panes each
-          // potentially holding an ImageAddon, the worst case at the
-          // default would be 2GB. 32MB/pane keeps that worst case (16 ×
-          // 32MB = 512MB) more reasonable while still comfortably fitting
-          // any single sixel/iTerm2 image a terminal session is likely to
-          // print.
-          storageLimit: 32,
-        })
-      );
+      imageAddon = new ImageAddon({
+        // Default is 128MB per addon instance; with up to 16 panes each
+        // potentially holding an ImageAddon, the worst case at the
+        // default would be 2GB. 32MB/pane keeps that worst case (16 ×
+        // 32MB = 512MB) more reasonable while still comfortably fitting
+        // any single sixel/iTerm2 image a terminal session is likely to
+        // print.
+        storageLimit: 32,
+      });
+      term.loadAddon(imageAddon);
     } catch (err) {
       console.warn("vibedeck: image addon failed to load, inline images will not render", err);
     }
@@ -750,8 +912,42 @@ export default function Terminal({ sessionId, agentId, theme, isFocused, onClose
       unregisterBlockTracker(sessionId);
       blockTrackerRef.current = null;
       pendingCommandRef.current = null;
-      // term.dispose() also disposes any still-loaded addons (including
-      // the WebGL one, if context loss hasn't already disposed it).
+      // Dispose every renderer/rendering-adjacent addon BEFORE the terminal
+      // core (`term.dispose()` below) — this is the actual latent bug this
+      // block fixes. It's tempting to assume `term.dispose()` alone is
+      // enough, since xterm.js's own `Terminal.dispose()` DOES cascade to
+      // every addon still loaded on it... but tracing through xterm.js's
+      // source (`browser/public/Terminal.ts`) shows its constructor
+      // registers the terminal's own core BEFORE its `AddonManager`
+      // (`this._core = this._register(new TerminalCore(...)); this._addonManager
+      // = this._register(new AddonManager())`), and its base `Disposable`
+      // class tears down everything it registered in REGISTRATION order —
+      // so that cascade disposes the core FIRST and every addon SECOND,
+      // the exact wrong order. WebglAddon's own renderer, in particular,
+      // holds live references into the core's render/decoration/theme
+      // services (see `@xterm/addon-webgl`'s `WebglRenderer`) and tears
+      // down a WebGL context + canvas — running that teardown against a
+      // core that's already torn down its own DOM/services is exactly the
+      // "renderer teardown breakage" class of bug. Disposing these
+      // ourselves, HERE, while `term` is still fully alive, sidesteps the
+      // internal ordering entirely: by the time `term.dispose()` runs
+      // below, its `AddonManager` has nothing left in it (each addon's own
+      // dispose() unregisters itself — see `AddonManager.loadAddon`'s
+      // wrapped dispose), so there's no double-free and no addon ever runs
+      // its teardown against an already-disposed core.
+      //
+      // `fitAddon`/`searchAddon` aren't renderer addons and don't share
+      // this specific hazard, but they're included here too for the same
+      // "dispose what you loaded, in a controlled order, before the thing
+      // it's attached to goes away" discipline — and it costs nothing,
+      // since `.dispose()` is idempotent (AddonManager guards against
+      // double-dispose, e.g. `webglAddon` here may already be disposed by
+      // the `onContextLoss` handler above; calling it again is a no-op).
+      fitAddon.dispose();
+      searchAddon.dispose();
+      webLinksAddon.dispose();
+      imageAddon?.dispose();
+      webglAddon?.dispose();
       term.dispose();
       termRef.current = null;
       fitAddonRef.current = null;
@@ -790,6 +986,82 @@ export default function Terminal({ sessionId, agentId, theme, isFocused, onClose
     container.addEventListener("keydown", onKeyDown);
     return () => container.removeEventListener("keydown", onKeyDown);
   }, []);
+
+  // --- Paste a screenshot into an agent pane (BridgeSpace parity item 2) --
+  // Pressing Cmd/Ctrl+V with an IMAGE on the clipboard (a screenshot,
+  // typically) can't usefully paste as terminal input — agent CLIs (claude,
+  // cursor-agent, codex) read an image by its file PATH, not a bitmap typed
+  // as escape-sequence garbage, and xterm.js has no concept of an inline
+  // image paste at all. So: when the native browser `paste` event's
+  // clipboard holds an image, we intercept it BEFORE xterm's own paste
+  // handling ever sees it, upload the bytes to the server
+  // (`uploadPastedImage`, defined at module scope above), and type the
+  // resulting workspace-relative path into the pty as though the user had
+  // typed it — same "type a path, don't paste content" idiom `handleDrop`
+  // below already uses for a dragged file. A plain TEXT paste never enters
+  // the `if (!imageItem)` branch at all and falls straight through to
+  // xterm's own handling, completely unchanged.
+  //
+  // This is a CAPTURE-phase listener, not the usual bubble phase, and that
+  // is load-bearing: xterm.js's `CoreBrowserTerminal` registers its OWN
+  // paste listeners on `term.textarea`/`term.element` (both descendants of
+  // `container`) in the default bubble phase (see that file's `_bindEvents`
+  // if you go looking) — a bubble-phase listener on `container` would fire
+  // AFTER those, too late to ever stop them. Capture phase runs
+  // container-then-descendants, BEFORE the event reaches its target, so
+  // this always gets first look, and `stopPropagation()` here reliably
+  // prevents xterm's own paste handler from running at all.
+  //
+  // Deliberately NOT agent-conditional — see this feature's own report for
+  // the full reasoning, but in short: a shell pane still benefits from
+  // having a real, resolvable path typed in (to `open` it, `cat` it, pass
+  // it to a command about to be typed...), so every agentId gets identical
+  // behaviour here, no `if (agentId === ...)` branch anywhere in this effect.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const onPaste = (event: ClipboardEvent) => {
+      const items = event.clipboardData?.items;
+      if (!items) return;
+      const imageItem = Array.from(items).find(
+        (item) => item.kind === "file" && item.type.startsWith("image/")
+      );
+      if (!imageItem) return; // No image on the clipboard — let xterm paste the text normally.
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (!workspaceId) {
+        // No active workspace to save the image next to, and therefore
+        // nothing sensible to type into the pty either — same honest
+        // "can't do this without a workspace" degrade the git-branch chip
+        // (PaneView.tsx) already uses elsewhere in this app.
+        console.warn("vibedeck: pasted image, but this pane has no active workspace to save it under");
+        return;
+      }
+
+      const file = imageItem.getAsFile();
+      if (!file) return;
+
+      void uploadPastedImage(file, workspaceId).then((path) => {
+        if (!path) return; // uploadPastedImage already warned; nothing left to do.
+        const socket = socketRef.current;
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.send(
+            JSON.stringify({
+              type: "input",
+              sessionId,
+              data: shellEscapeSpaces(path),
+            } satisfies ClientMessage)
+          );
+        }
+      });
+    };
+
+    container.addEventListener("paste", onPaste, true);
+    return () => container.removeEventListener("paste", onPaste, true);
+  }, [sessionId, workspaceId]);
 
   // Close the context menu on any click elsewhere.
   useEffect(() => {
@@ -1075,6 +1347,7 @@ export default function Terminal({ sessionId, agentId, theme, isFocused, onClose
         queuedCount={queueState.queue.length}
         agentDisplayName={AGENT_SPECS[agentId].displayName}
         isFocused={isFocused}
+        history={history}
         onSubmit={handlePromptSubmit}
         onClearQueue={handleClearQueue}
         onEscape={() => termRef.current?.focus()}
