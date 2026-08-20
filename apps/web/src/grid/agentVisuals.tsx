@@ -1,8 +1,8 @@
 /**
  * Per-agent visual identity for the empty-pane agent picker (PaneView.tsx) —
- * a small hand-drawn glyph plus an accent colour for each `AgentId`, so
- * every agent reads as a distinct, intentional choice instead of identical
- * grey rectangles.
+ * a small glyph plus an accent colour for each `AgentId`, so every agent
+ * reads as a distinct, intentional choice instead of identical grey
+ * rectangles.
  *
  * Two deliberate constraints, both inherited from docs/DESIGN.md §6 ("colour
  * means status, never decoration... one accent at a time"):
@@ -17,31 +17,37 @@
  *    `packages/shared/src/protocol.ts` — a couple of tokens are now reused
  *    across two agents each rather than every one being 1:1 unique. The
  *    visual *distinctness* the design brief asks for comes primarily from
- *    each agent's genuinely different GLYPH SHAPE (and, per this phase's
- *    explicit brand-icon exception below, real brand colour baked into a
- *    handful of the more recognisable glyphs themselves), not from the
- *    wrapper accent alone.
- *  - Every glyph is drawn by hand as inline SVG using `currentColor` —
- *    no icon library, no external asset, matching every other icon already
- *    in this codebase (see PaneView.tsx's SplitVerticalIcon etc.) — WITH
- *    one deliberate exception new to this phase: a brand mark is allowed to
- *    use its own real (approximate, hand-picked) brand colour INSIDE its
- *    own `<svg>`, because a brand's colours are part of what makes it
- *    recognisable and they're fixed by the brand, not a decoration this
- *    app invented. That exception stays scoped to inside the glyph
- *    component — it never leaks into `agentAccentVar` or any layout/text/
- *    surface colour, which still resolve only through the CSS custom
- *    properties above on every one of the 26 themes. Used sparingly here:
- *    Gemini's sparkle (Google's well-known 4-colour brand palette, high
- *    confidence) and DeepSeek's whale mark (an approximate brand blue,
- *    lower confidence — see agents.ts's INSTALL_HINTS comment for why).
- *    Every other new glyph (droid, antigravity, opencode, grok) stays
- *    monochrome `currentColor` like the original four, because no brand
- *    colour for those could be confirmed with any real confidence and a
- *    guessed hex would be worse than none. None of these glyphs are traced
- *    from any product's actual logo asset — same "generic, recognisable
- *    shape" policy the original four already established (see ClaudeGlyph's
- *    comment below), not a reproduction of proprietary artwork.
+ *    each agent's genuinely different GLYPH SHAPE, not from the wrapper
+ *    accent alone.
+ *  - Every glyph is inline SVG, no icon library or external asset fetch —
+ *    WITH one deliberate exception: **real product logos are used for the
+ *    agents that name an actual third-party tool** (nominative use — the
+ *    mark identifies which tool a row launches, same as any IDE/launcher's
+ *    "open with X" list; it never appears in vibedeck's own branding —
+ *    Logo.tsx, favicon.svg, the Tauri app icons are untouched by this
+ *    file). Every path below is the exact `d` geometry published by one of
+ *    two source-of-truth icon sets, copied verbatim, not hand-traced:
+ *      - simple-icons (github.com/simple-icons/simple-icons, CC0) — Cursor,
+ *        OpenCode.
+ *      - lobehub/lobe-icons (github.com/lobehub/lobe-icons, MIT) — an
+ *        actively maintained AI/LLM-brand-logo set used for every mark
+ *        simple-icons doesn't (yet) carry: Claude Code, Codex, Gemini CLI,
+ *        DeepSeek, Antigravity, Grok/xAI. Two products have NO published
+ *        mark in either set — Factory's Droid and vibedeck's own plain
+ *        shell — those two glyphs are still hand-drawn approximations, and
+ *        say so in their own comments below.
+ *    A brand mark is allowed to use its own real brand colour INSIDE its
+ *    own `<svg>` (Claude Code's clay #D97757, DeepSeek's blue #4D6BFE,
+ *    Gemini CLI's red→purple→blue gradient — all copied from the source
+ *    icon set's own colour constants, not eyeballed). That exception stays
+ *    scoped to inside the glyph component — it never leaks into
+ *    `agentAccentVar` or any layout/text/surface colour, which still
+ *    resolve only through the CSS custom properties above on every one of
+ *    the 26 themes. Brands that are themselves monochrome black/white
+ *    (Codex, Cursor, OpenCode, Antigravity, Grok/xAI — confirmed by their
+ *    source icon set's own `COLOR_PRIMARY: '#fff'`/`'#000'` constants, not
+ *    guessed) render in `currentColor` instead, which reads correctly in
+ *    both light and dark themes rather than forcing a fixed black or white.
  *
  * `agentAccentVar` is exported on its own (not just used inside
  * `<AgentGlyph>`) so PaneView.tsx can also tint a card's border/background
@@ -69,9 +75,9 @@ export function agentAccentVar(id: AgentId): string {
     case "codex":
       return "var(--vd-ok)";
     case "gemini":
-      // The sparkle glyph itself already carries Google's real brand
-      // colours (see GeminiGlyph below) — the wrapper accent just needs to
-      // be a warm token that doesn't clash with it.
+      // The glyph itself already carries Gemini CLI's real brand gradient
+      // (see GeminiGlyph below) — the wrapper accent just needs to be a
+      // warm token that doesn't clash with it.
       return "var(--vd-warn)";
     case "droid":
       return "var(--vd-danger)";
@@ -80,7 +86,7 @@ export function agentAccentVar(id: AgentId): string {
     case "deepseek":
       // Reuses claude's token — see this file's top comment on why token
       // reuse is unavoidable once there are more agents than palette slots.
-      // DeepSeek's own whale glyph carries its (approximate) brand blue.
+      // DeepSeek's own whale glyph carries its real brand blue.
       return "var(--vd-accent)";
     case "grok":
       return "var(--vd-ok)";
@@ -139,64 +145,70 @@ export function AgentGlyph({
 }
 
 // --- Glyphs --------------------------------------------------------------
-// Every glyph shares a 24x24 viewBox and draws in `currentColor` so
-// `<AgentGlyph>`'s wrapper `color` (above) is the only place a colour
-// decision gets made — the SVGs themselves are pure shape.
+// Every glyph shares a 24x24 viewBox (the native viewBox of every source
+// path below, so no rescaling was needed) and renders at whatever pixel
+// size <AgentGlyph> is given — see this file's top comment for where each
+// `d` path came from and the brand-colour exception's scope.
 
-/** Claude: an abstract six-point spark — a generic "AI" mark, not a
- * reproduction of any product's actual logo. */
+/** Claude Code: Anthropic's actual "Claude Code" application mark — a
+ * terminal window motif rendered as a single cut path — in its real clay/
+ * terracotta brand colour (#D97757, copied from lobe-icons'
+ * `ClaudeCode.style.COLOR_PRIMARY`, not eyeballed). Source: lobehub/
+ * lobe-icons `src/ClaudeCode/components/Color.tsx`. This is Claude Code's
+ * own distinct app mark, not the general Claude.ai asterisk — the more
+ * correct choice since this row launches the Claude Code CLI specifically. */
 function ClaudeGlyph() {
   return (
-    <svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <g stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
-        <path d="M12 3.5V9.5" />
-        <path d="M12 14.5V20.5" />
-        <path d="M4.4 7L9.3 10.2" />
-        <path d="M14.7 13.8L19.6 17" />
-        <path d="M19.6 7L14.7 10.2" />
-        <path d="M9.3 13.8L4.4 17" />
-      </g>
-      <circle cx="12" cy="12" r="2.1" fill="currentColor" />
+    <svg width="100%" height="100%" viewBox="0 0 24 24" aria-hidden>
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        fill="#D97757"
+        d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z"
+      />
     </svg>
   );
 }
 
-/** Cursor: a mouse-pointer arrow — the literal shape "cursor" names. */
+/** Cursor: the real Cursor mark, a faceted diamond/pointer built from three
+ * flat-shaded triangular planes. Monochrome in the source brand itself
+ * (`COLOR_PRIMARY: '#000'`), so rendered in `currentColor`. Source: simple-
+ * icons `icons/cursor.svg` (path is byte-identical to lobe-icons' own
+ * Cursor Mono, cross-confirming it). */
 function CursorGlyph() {
   return (
-    <svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" aria-hidden>
+    <svg width="100%" height="100%" viewBox="0 0 24 24" aria-hidden>
       <path
-        d="M6 4.5L18 13.2L12.4 14.4L15.3 20L12.9 21.1L10 15.5L6 19V4.5Z"
         fill="currentColor"
-        fillOpacity="0.18"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinejoin="round"
+        d="M22.106 5.68L12.5.135a.998.998 0 00-.998 0L1.893 5.68a.84.84 0 00-.419.726v11.186c0 .3.16.577.42.727l9.607 5.547a.999.999 0 00.998 0l9.608-5.547a.84.84 0 00.42-.727V6.407a.84.84 0 00-.42-.726zm-.603 1.176L12.228 22.92c-.063.108-.228.064-.228-.061V12.34a.59.59 0 00-.295-.51l-9.11-5.26c-.107-.062-.063-.228.062-.228h18.55c.264 0 .428.286.296.514z"
       />
     </svg>
   );
 }
 
-/** Codex: a code bracket mark, `</>`. */
+/** OpenAI Codex: OpenAI's actual Codex product mark (a rounded, leaf-like
+ * abstract shape distinct from the general OpenAI "flower" logo — Codex
+ * has its own icon). Monochrome in the source brand (`COLOR_PRIMARY:
+ * '#fff'`), rendered in `currentColor`. Source: lobehub/lobe-icons
+ * `src/Codex/components/Mono.tsx`. */
 function CodexGlyph() {
   return (
-    <svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" aria-hidden>
+    <svg width="100%" height="100%" viewBox="0 0 24 24" aria-hidden>
       <path
-        d="M9 6.5L4 12L9 17.5M15 6.5L20 12L15 17.5"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
+        fill="currentColor"
+        fillRule="evenodd"
+        d="M8.086.457a6.105 6.105 0 013.046-.415c1.333.153 2.521.72 3.564 1.7a.117.117 0 00.107.029c1.408-.346 2.762-.224 4.061.366l.063.03.154.076c1.357.703 2.33 1.77 2.918 3.198.278.679.418 1.388.421 2.126a5.655 5.655 0 01-.18 1.631.167.167 0 00.04.155 5.982 5.982 0 011.578 2.891c.385 1.901-.01 3.615-1.183 5.14l-.182.22a6.063 6.063 0 01-2.934 1.851.162.162 0 00-.108.102c-.255.736-.511 1.364-.987 1.992-1.199 1.582-2.962 2.462-4.948 2.451-1.583-.008-2.986-.587-4.21-1.736a.145.145 0 00-.14-.032c-.518.167-1.04.191-1.604.185a5.924 5.924 0 01-2.595-.622 6.058 6.058 0 01-2.146-1.781c-.203-.269-.404-.522-.551-.821a7.74 7.74 0 01-.495-1.283 6.11 6.11 0 01-.017-3.064.166.166 0 00.008-.074.115.115 0 00-.037-.064 5.958 5.958 0 01-1.38-2.202 5.196 5.196 0 01-.333-1.589 6.915 6.915 0 01.188-2.132c.45-1.484 1.309-2.648 2.577-3.493.282-.188.55-.334.802-.438.286-.12.573-.22.861-.304a.129.129 0 00.087-.087A6.016 6.016 0 015.635 2.31C6.315 1.464 7.132.846 8.086.457zm-.804 7.85a.848.848 0 00-1.473.842l1.694 2.965-1.688 2.848a.849.849 0 001.46.864l1.94-3.272a.849.849 0 00.007-.854l-1.94-3.393zm5.446 6.24a.849.849 0 000 1.695h4.848a.849.849 0 000-1.696h-4.848z"
       />
-      <path d="M13.2 5L10.8 19" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
     </svg>
   );
 }
 
-/** Droid (Factory): a small robot head — rounded frame, two antennae, two
- * eye dots and a mouth line. Generic "robot" shape, not a trace of
- * Factory's actual logo. Monochrome — see this file's top comment on why
- * no brand colour is used here. */
+/** Droid (Factory): NEITHER simple-icons NOR lobehub/lobe-icons (checked
+ * both, including a raw github directory search) carries a published mark
+ * for Factory's Droid CLI — it's simply too new/niche for either set. This
+ * stays a hand-drawn approximation: a small robot head, generic "robot"
+ * shape, not a trace of any real Factory logo asset. Monochrome
+ * `currentColor` since no real brand colour could be confirmed either. */
 function DroidGlyph() {
   return (
     <svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -210,101 +222,109 @@ function DroidGlyph() {
   );
 }
 
-/** DeepSeek: a simplified whale silhouette — DeepSeek's real mark is a
- * whale, so the shape borrows that idea without tracing the actual logo
- * asset. Uses an approximate brand blue INSIDE the svg only (see this
- * file's top comment on the brand-colour exception and its confidence
- * level) — `agentAccentVar` itself still resolves through a theme token. */
+/** DeepSeek: DeepSeek's actual whale mark, in its real brand blue
+ * (#4D6BFE — copied from lobe-icons' `DeepSeek.style.COLOR_PRIMARY`; this
+ * exact hex is also independently confirmed by simple-icons'
+ * `icons/deepseek.svg`, so it's high confidence, not the "approximate"
+ * guess this file used before real path data was available). Source:
+ * lobehub/lobe-icons `src/DeepSeek/components/Color.tsx`. */
 function DeepSeekGlyph() {
   return (
-    <svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" aria-hidden>
+    <svg width="100%" height="100%" viewBox="0 0 24 24" aria-hidden>
       <path
-        d="M3.3 14.4c1.6-4.4 6.2-7.2 11-6.3c3.7.7 6.4 3.1 7.4 6.3c-1.9.6-3.7-.1-4.5-1.6c-.5 2.2-3.1 3.7-6.2 3.7c-3.1 0-6.1-1-7.7-2.1Z"
         fill="#4D6BFE"
+        d="M23.748 4.482c-.254-.124-.364.113-.512.234-.051.039-.094.09-.137.136-.372.397-.806.657-1.373.626-.829-.046-1.537.214-2.163.848-.133-.782-.575-1.248-1.247-1.548-.352-.156-.708-.311-.955-.65-.172-.241-.219-.51-.305-.774-.055-.16-.11-.323-.293-.35-.2-.031-.278.136-.356.276-.313.572-.434 1.202-.422 1.84.027 1.436.633 2.58 1.838 3.393.137.093.172.187.129.323-.082.28-.18.552-.266.833-.055.179-.137.217-.329.14a5.526 5.526 0 01-1.736-1.18c-.857-.828-1.631-1.742-2.597-2.458a11.365 11.365 0 00-.689-.471c-.985-.957.13-1.743.388-1.836.27-.098.093-.432-.779-.428-.872.004-1.67.295-2.687.684a3.055 3.055 0 01-.465.137 9.597 9.597 0 00-2.883-.102c-1.885.21-3.39 1.102-4.497 2.623C.082 8.606-.231 10.684.152 12.85c.403 2.284 1.569 4.175 3.36 5.653 1.858 1.533 3.997 2.284 6.438 2.14 1.482-.085 3.133-.284 4.994-1.86.47.234.962.327 1.78.397.63.059 1.236-.03 1.705-.128.735-.156.684-.837.419-.961-2.155-1.004-1.682-.595-2.113-.926 1.096-1.296 2.746-2.642 3.392-7.003.05-.347.007-.565 0-.845-.004-.17.035-.237.23-.256a4.173 4.173 0 001.545-.475c1.396-.763 1.96-2.015 2.093-3.517.02-.23-.004-.467-.247-.588zM11.581 18c-2.089-1.642-3.102-2.183-3.52-2.16-.392.024-.321.471-.235.763.09.288.207.486.371.739.114.167.192.416-.113.603-.673.416-1.842-.14-1.897-.167-1.361-.802-2.5-1.86-3.301-3.307-.774-1.393-1.224-2.887-1.298-4.482-.02-.386.093-.522.477-.592a4.696 4.696 0 011.529-.039c2.132.312 3.946 1.265 5.468 2.774.868.86 1.525 1.887 2.202 2.891.72 1.066 1.494 2.082 2.48 2.914.348.292.625.514.891.677-.802.09-2.14.11-3.054-.614zm1-6.44a.306.306 0 01.415-.287.302.302 0 01.2.288.306.306 0 01-.31.307.303.303 0 01-.304-.308zm3.11 1.596c-.2.081-.399.151-.59.16a1.245 1.245 0 01-.798-.254c-.274-.23-.47-.358-.552-.758a1.73 1.73 0 01.016-.588c.07-.327-.008-.537-.239-.727-.187-.156-.426-.199-.688-.199a.559.559 0 01-.254-.078c-.11-.054-.2-.19-.114-.358.028-.054.16-.186.192-.21.356-.202.767-.136 1.146.016.352.144.618.408 1.001.782.391.451.462.576.685.914.176.265.336.537.445.848.067.195-.019.354-.25.452z"
       />
-      <circle cx="9.3" cy="12.6" r="0.85" fill="#0B0F1A" fillOpacity="0.55" />
     </svg>
   );
 }
 
-/** Antigravity (Google): an arrow breaking straight up out of a dashed
- * "orbit" ellipse — a literal reading of "anti-gravity" (defying it,
- * floating free). Monochrome — no brand colour could be confirmed for
- * this product (see this file's top comment). */
+/** Antigravity (Google): Antigravity's own published mark — a swept
+ * wing/flame silhouette — found only in lobehub/lobe-icons (simple-icons
+ * doesn't carry it yet), so this is a real product mark but from a single
+ * source rather than cross-confirmed across two, worth flagging at a
+ * slightly lower confidence than the others. Monochrome in the source
+ * brand (`COLOR_PRIMARY: '#fff'`), rendered in `currentColor`. Source:
+ * lobehub/lobe-icons `src/Antigravity/components/Mono.tsx`. */
 function AntigravityGlyph() {
   return (
-    <svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <ellipse cx="12" cy="16.2" rx="7.2" ry="2.4" stroke="currentColor" strokeWidth="1.3" strokeDasharray="2 2.2" />
+    <svg width="100%" height="100%" viewBox="0 0 24 24" aria-hidden>
       <path
-        d="M12 15V4M12 4L8.6 7.4M12 4L15.4 7.4"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
+        fill="currentColor"
+        d="M21.751 22.607c1.34 1.005 3.35.335 1.508-1.508C17.73 15.74 18.904 1 12.037 1 5.17 1 6.342 15.74.815 21.1c-2.01 2.009.167 2.511 1.507 1.506 5.192-3.517 4.857-9.714 9.715-9.714 4.857 0 4.522 6.197 9.714 9.715z"
       />
     </svg>
   );
 }
 
-/** Gemini CLI (Google): the familiar four-point "sparkle" shape, in
- * Google's well-known brand gradient (blue/purple/red/orange — high
- * confidence, these are Google's long-standing brand colours). A generic
- * sparkle shape, not a trace of the actual Gemini logo asset. Uses
- * `useId()` for the gradient id so multiple instances of this glyph on
- * screen at once (e.g. several empty panes) never collide on one SVG
- * `<defs>` id. */
+/** Gemini CLI (Google): the real Gemini CLI application mark — a rounded
+ * squircle badge with Google's brand gradient (red #EE4D5D → purple
+ * #B381DD → blue #207CFE, copied from lobe-icons' own gradient stops) as
+ * its ring, and a dark (#1E1E2E) cut-out "flash" glyph on top — the actual
+ * app-icon design used by the Gemini CLI project, not the generic four-
+ * point Gemini sparkle this file used before real path data was available.
+ * Uses `useId()` for the gradient id so multiple instances on screen at
+ * once (e.g. several empty panes) never collide on one SVG `<defs>` id.
+ * Source: lobehub/lobe-icons `src/GeminiCLI/components/Color.tsx`. */
 function GeminiGlyph() {
   const gradientId = useId();
   return (
-    <svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" aria-hidden>
+    <svg width="100%" height="100%" viewBox="0 0 24 24" aria-hidden>
       <defs>
-        <linearGradient id={gradientId} x1="3" y1="21" x2="21" y2="3" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#4285F4" />
-          <stop offset="0.35" stopColor="#9B72CB" />
-          <stop offset="0.65" stopColor="#D96570" />
-          <stop offset="1" stopColor="#F2A93B" />
+        <linearGradient id={gradientId} x1="24" y1="6.587" x2="0" y2="16.494" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#EE4D5D" />
+          <stop offset="0.328" stopColor="#B381DD" />
+          <stop offset="0.476" stopColor="#207CFE" />
         </linearGradient>
       </defs>
       <path
-        d="M12 2C12 8 8 12 2 12C8 12 12 16 12 22C12 16 16 12 22 12C16 12 12 8 12 2Z"
         fill={`url(#${gradientId})`}
+        d="M0 4.391A4.391 4.391 0 014.391 0h15.217A4.391 4.391 0 0124 4.391v15.217A4.391 4.391 0 0119.608 24H4.391A4.391 4.391 0 010 19.608V4.391z"
+      />
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        fill="#1E1E2E"
+        d="M19.74 1.444a2.816 2.816 0 012.816 2.816v15.48a2.816 2.816 0 01-2.816 2.816H4.26a2.816 2.816 0 01-2.816-2.816V4.26A2.816 2.816 0 014.26 1.444h15.48zM7.236 8.564l7.752 3.728-7.752 3.727v2.802l9.557-4.596v-3.866L7.236 5.763v2.801z"
       />
     </svg>
   );
 }
 
-/** OpenCode: square brackets `[ ]` (an "open" idiom) around a chevron —
- * distinct from Codex's angle-bracket `</>` mark. Monochrome. */
+/** OpenCode: OpenCode's real mark, a nested-rectangle "frame" motif.
+ * Monochrome in the source brand (`COLOR_PRIMARY: '#000'`), rendered in
+ * `currentColor`. Source: simple-icons `icons/opencode.svg` (shape is
+ * independently confirmed by lobe-icons' own OpenCode Mono, which draws
+ * the same nested-frame idea at different coordinates). */
 function OpenCodeGlyph() {
   return (
-    <svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path d="M8.5 4H5.8A1.8 1.8 0 0 0 4 5.8V18.2A1.8 1.8 0 0 0 5.8 20H8.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M15.5 4H18.2A1.8 1.8 0 0 1 20 5.8V18.2A1.8 1.8 0 0 1 18.2 20H15.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M10.5 9.8L13.2 12L10.5 14.2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    <svg width="100%" height="100%" viewBox="0 0 24 24" aria-hidden>
+      <path fill="currentColor" d="M22 24H2V0h20zM17 4.8H7v14.4h10z" />
     </svg>
   );
 }
 
-/** Grok Build (xAI): an abstract "G" — an open circular arc plus a bar,
- * the same "generic initial/abstract mark" treatment this file's other
- * glyphs use, not a reproduction of xAI's actual logo. Monochrome — xAI's
- * own branding is itself black/white/minimal, so no colour is lost here. */
+/** Grok (xAI): xAI's actual angular "X" mark — used by xAI across Grok's
+ * own branding. Monochrome in the source brand (`COLOR_PRIMARY: '#fff'`,
+ * confirming this file's earlier note that xAI's branding is itself
+ * black/white/minimal), rendered in `currentColor`. Source: lobehub/
+ * lobe-icons `src/XAI/components/Mono.tsx` (its own `TITLE` constant is
+ * literally `'Grok'`). */
 function GrokGlyph() {
   return (
-    <svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" aria-hidden>
+    <svg width="100%" height="100%" viewBox="0 0 24 24" aria-hidden>
       <path
-        d="M17.2 8.3A6.6 6.6 0 1 0 18.6 15"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
+        fill="currentColor"
+        d="M6.469 8.776L16.512 23h-4.464L2.005 8.776H6.47zm-.004 7.9l2.233 3.164L6.467 23H2l4.465-6.324zM22 2.582V23h-3.659V7.764L22 2.582zM22 1l-9.952 14.095-2.233-3.163L17.533 1H22z"
       />
-      <path d="M13.2 12H18.6V16.2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
 
-/** Shell: a terminal prompt — a rounded frame with a `>` chevron and a
- * cursor underscore, the conventional "this is a terminal" glyph. */
+/** Shell: a plain login shell isn't a third-party product with its own
+ * brand mark, so this stays what it always was — a hand-drawn terminal
+ * prompt (a rounded frame with a `>` chevron and a cursor underscore), the
+ * conventional "this is a terminal" glyph. */
 function ShellGlyph() {
   return (
     <svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" aria-hidden>
