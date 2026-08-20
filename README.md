@@ -133,6 +133,12 @@ young project moving quickly; expect rough edges.
       SmartScreen warn on first launch) — see
       [docs/DESKTOP.md](./docs/DESKTOP.md) for exactly what's fixed and
       what isn't.
+- [x] **SSH connection profiles**: open a pane on a remote machine over
+      `ssh` — a saved host/user/port with a per-profile default directory
+      and startup command applied after connect, plus one-click Duplicate.
+      No credentials are stored; authentication is entirely your own
+      ssh-agent/keys, the same as any terminal — see
+      [docs/SSH.md](./docs/SSH.md).
 
 ## Prerequisites
 

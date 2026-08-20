@@ -294,6 +294,16 @@ export const KEYMAP: readonly Shortcut[] = [
     key: "s",
     shift: true,
   },
+  // SSH connection profiles join the same centre-column switcher. "s" is
+  // Swarm and Cmd+Shift+S is already Skills (see the two shortcuts just
+  // above) — R(emote) is the next-best mnemonic and is still free (nothing
+  // above claims it, plain or shifted).
+  {
+    id: "view-ssh",
+    label: "View: SSH",
+    description: "Show SSH connection profiles in the centre column.",
+    key: "r",
+  },
   // Phase 9.5c (PARITY #45): the Settings screen joins the same
   // centre-column switcher. Unlike every other view above, this one does
   // NOT use a plain mnemonic letter or its Shift fallback — it uses the

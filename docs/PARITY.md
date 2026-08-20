@@ -109,6 +109,12 @@ Legend: ✅ done · 🟡 partial · ⛔ not started · 🚫 not possible as spec
 | 48 | ⌘T new tab · ⌘W close tab · ⌘1–9 switch tab | ✅ | Browser build: Chrome reserves ⌘T/⌘W/⌘N, so we use ⌘⇧ variants there, and ⌘1–9 focuses panes. **Desktop build (Phase 11a): plain ⌘N/⌘W/⌘T now work too** — `matchShortcut`'s `isDesktop` flag accepts both forms, so muscle memory from either build keeps working. See `apps/web/src/keys/keymap.ts`. |
 | 49 | Command palette | ✅ | Better than parity — BridgeSpace has no palette |
 
+## Remote access
+
+| # | Capability | Status | Notes |
+|---|---|---|---|
+| 53 | **SSH connection profiles** — panes that run on a remote machine, with a per-profile default directory/startup command applied after connect, plus one-click Duplicate | ✅ | Was a real gap (no remote support at all), not polish. Spawns the real `ssh` binary in a pty — no SSH implemented ourselves, no credentials stored; auth is the user's own ssh-agent/keys. Deliberate difference from BridgeSpace: they keychain-store passwords, we don't — a host that only accepts password auth prompts inside the pane like any terminal. See `docs/SSH.md`. |
+
 ## Packaging
 
 | # | Capability | Status | Notes |

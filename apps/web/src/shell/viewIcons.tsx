@@ -23,6 +23,7 @@ const ICONS: Record<CenterView, () => React.JSX.Element> = {
   agents: AgentsIcon,
   prompts: PromptsIcon,
   skills: SkillsIcon,
+  ssh: SshIcon,
   settings: SettingsIcon,
 };
 
@@ -137,6 +138,24 @@ function SkillsIcon() {
         strokeWidth="1.1"
         strokeLinejoin="round"
       />
+    </svg>
+  );
+}
+
+/** SSH connection profiles: a small "remote machine" glyph — a monitor
+ * frame with a `>` prompt chevron inside, echoing TerminalsIcon's own
+ * chevron (a remote pane is still a terminal — this reads as "a terminal,
+ * elsewhere") plus a signal-arc above the top-right corner standing in for
+ * "over the network". Inline SVG, `currentColor`, same 14x14 viewBox as
+ * every other icon in this file — no icon library. */
+function SshIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
+      <rect x="1.5" y="3" width="9.5" height="7" rx="1.3" stroke="currentColor" strokeWidth="1.1" />
+      <path d="M3.6 5.2L5.6 6.5L3.6 7.8" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M6.6 7.8H8.6" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+      <path d="M10.6 2.4C11.7 3 12.3 4.1 12.3 5.3" stroke="currentColor" strokeWidth="1" strokeLinecap="round" opacity="0.75" />
+      <path d="M9.8 4C10.35 4.3 10.7 4.85 10.7 5.45" stroke="currentColor" strokeWidth="0.9" strokeLinecap="round" opacity="0.75" />
     </svg>
   );
 }

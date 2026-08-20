@@ -40,8 +40,16 @@ export function resolveAgent(id: AgentId): { command: string; args: string[] } {
  *
  * Never throws: any filesystem error (missing file, permission denied,
  * etc.) just means "not available", which we report as `false`.
+ *
+ * Exported (not just used internally by `detectAgent` below) so
+ * `../ssh/routes.ts` can reuse the exact same PATH-search logic to check
+ * whether the `ssh` binary itself is installed before spawning a remote
+ * pane — SSH profiles aren't an `AgentId` (see `SshProfile`'s doc comment
+ * in `packages/shared/src/protocol.ts`), so they can't go through
+ * `detectAgent`/`detectAllAgents` below, but the "is this executable on
+ * PATH" question underneath is identical.
  */
-async function commandExists(command: string): Promise<boolean> {
+export async function commandExists(command: string): Promise<boolean> {
   try {
     if (isAbsolute(command)) {
       await access(command, constants.X_OK);

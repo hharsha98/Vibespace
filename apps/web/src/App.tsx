@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { AgentId, SessionInfo, Workspace } from "@vibedeck/shared";
+import type { AgentId, SessionInfo, SshProfile, SshProfilesResponse, Workspace } from "@vibedeck/shared";
 import Grid from "./grid/Grid.js";
 import type { AgentOption } from "./grid/PaneView.js";
 import {
@@ -43,6 +43,7 @@ import type { OpenNoteRequest } from "./memory/MemoryPanel.js";
 import Swarm from "./swarm/Swarm.js";
 import Agents from "./agents/Agents.js";
 import Prompts from "./prompts/Prompts.js";
+import SshProfiles from "./ssh/SshProfiles.js";
 import Skills from "./skills/Skills.js";
 import type { PaneRef } from "./skills/logic.js";
 import Settings from "./settings/Settings.js";
@@ -195,6 +196,50 @@ export default function App() {
   const [health, setHealth] = useState<HealthState>({ kind: "loading" });
   const [agents, setAgents] = useState<AgentOption[]>([]);
   const [defaultAgent, setDefaultAgent] = useState<AgentId | "">("");
+
+  // --- SSH connection profiles ---------------------------------------------
+  // Owned HERE (not fetched independently by ssh/SshProfiles.tsx the way
+  // agents/Agents.tsx owns its own agent-profile fetch) because TWO
+  // different places read this same list: the SSH Profiles page itself and
+  // PaneView.tsx's empty-pane picker (its "Remote (SSH)" group, threaded
+  // through via <Grid sshProfiles={...}> below). A page-owned private copy
+  // would mean a profile created on the SSH page doesn't show up in the
+  // picker until some unrelated refetch happened to fire — see
+  // ssh/SshProfiles.tsx's own top comment for the fuller version of this
+  // reasoning.
+  const [sshProfiles, setSshProfiles] = useState<SshProfile[]>([]);
+  const [sshProfilesLoadState, setSshProfilesLoadState] = useState<"loading" | "loaded" | "error">(
+    "loading"
+  );
+  const [sshProfilesLoadError, setSshProfilesLoadError] = useState<string | null>(null);
+
+  const reloadSshProfiles = useCallback(() => {
+    setSshProfilesLoadState("loading");
+    setSshProfilesLoadError(null);
+    fetch("/api/ssh-profiles")
+      .then(async (res) => {
+        if (!res.ok) {
+          const body = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(body.error ?? `Server responded with ${res.status}`);
+        }
+        return (await res.json()) as SshProfilesResponse;
+      })
+      .then((body) => {
+        setSshProfiles(body.profiles);
+        setSshProfilesLoadState("loaded");
+      })
+      .catch((err: unknown) => {
+        setSshProfilesLoadError(err instanceof Error ? err.message : "Failed to load SSH profiles");
+        setSshProfilesLoadState("error");
+      });
+  }, []);
+
+  // Fetch once on mount — `reloadSshProfiles` has a stable (empty-deps)
+  // identity, so this effect only ever runs once, same as the big
+  // health/agents/sessions/workspaces mount effect below.
+  useEffect(() => {
+    reloadSshProfiles();
+  }, [reloadSshProfiles]);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [root, setRoot] = useState<GridNode | null>(null);
   const [focusedPaneId, setFocusedPaneId] = useState<PaneId | null>(null);
@@ -812,6 +857,33 @@ export default function App() {
     [root, focusedPaneId, activeWorkspaceId, handleSessionStarted]
   );
 
+  // The SSH-profile counterpart to startAgentInFocusedPane above — same
+  // "only acts on a currently-empty focused pane" guard, same request shape
+  // as PaneView.tsx's own startSshSession, just reachable from the command
+  // palette's "Connect to <profile> in this pane" entries too.
+  const startSshProfileInFocusedPane = useCallback(
+    async (profileId: string) => {
+      if (!root || !focusedPaneId) return;
+      const pane = findPane(root, focusedPaneId);
+      if (!pane || pane.kind !== "leaf" || pane.sessionId) return;
+      try {
+        const res = await fetch("/api/sessions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            activeWorkspaceId ? { sshProfileId: profileId, workspaceId: activeWorkspaceId } : { sshProfileId: profileId }
+          ),
+        });
+        if (!res.ok) return;
+        const info = (await res.json()) as SessionInfo;
+        handleSessionStarted(focusedPaneId, info);
+      } catch (err) {
+        console.warn("vibedeck: failed to start an SSH session from the command palette", err);
+      }
+    },
+    [root, focusedPaneId, activeWorkspaceId, handleSessionStarted]
+  );
+
   const applyTemplate = useCallback(
     (n: number) => {
       const hasRunningPanes = root ? listPanes(root).some((p) => p.sessionId) : false;
@@ -1030,6 +1102,7 @@ export default function App() {
       "view-agents": () => setCenterView("agents"),
       "view-prompts": () => setCenterView("prompts"),
       "view-skills": () => setCenterView("skills"),
+      "view-ssh": () => setCenterView("ssh"),
       "view-settings": () => setCenterView("settings"),
       "quick-open": () => {
         if (activeWorkspaceId) setActiveOverlay("quickOpen");
@@ -1161,6 +1234,14 @@ export default function App() {
           run: () => void startAgentInFocusedPane(agent.id),
         });
       }
+      for (const profile of sshProfiles) {
+        commands.push({
+          id: `start-ssh-${profile.id}`,
+          label: `Connect to ${profile.name} in this pane`,
+          category: "SSH",
+          run: () => void startSshProfileInFocusedPane(profile.id),
+        });
+      }
     }
 
     return commands;
@@ -1175,6 +1256,8 @@ export default function App() {
     focusedEmptyPane,
     agents,
     startAgentInFocusedPane,
+    sshProfiles,
+    startSshProfileInFocusedPane,
   ]);
 
   const healthStatusKind = health.kind === "loaded" ? "ok" : health.kind === "error" ? "danger" : "idle";
@@ -1361,6 +1444,14 @@ export default function App() {
           >
             Skills
           </ViewTabButton>
+          <ViewTabButton
+            view="ssh"
+            active={centerView === "ssh"}
+            onClick={() => setCenterView("ssh")}
+            shortcut={formatShortcut(KEYMAP.find((s) => s.id === "view-ssh")!, isMac)}
+          >
+            SSH
+          </ViewTabButton>
 
           <TabGroupDivider />
 
@@ -1525,6 +1616,7 @@ export default function App() {
                     root={root}
                     sessions={sessions}
                     agents={agents}
+                    sshProfiles={sshProfiles}
                     defaultAgent={defaultAgent}
                     workspaceId={activeWorkspaceId}
                     workspace={activeWorkspace}
@@ -1582,6 +1674,16 @@ export default function App() {
                     visible={centerView === "skills"}
                     panes={skillsPanes}
                     onFocusSession={focusSessionInGrid}
+                  />
+                </div>
+                <div style={{ position: "absolute", inset: 0, display: centerView === "ssh" ? "block" : "none" }}>
+                  <SshProfiles
+                    visible={centerView === "ssh"}
+                    profiles={sshProfiles}
+                    loadState={sshProfilesLoadState}
+                    loadError={sshProfilesLoadError}
+                    onReload={reloadSshProfiles}
+                    onProfilesChange={setSshProfiles}
                   />
                 </div>
                 <div style={{ position: "absolute", inset: 0, display: centerView === "settings" ? "block" : "none" }}>

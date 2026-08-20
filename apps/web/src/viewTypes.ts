@@ -17,4 +17,5 @@ export type CenterView =
   | "agents"
   | "prompts"
   | "skills"
+  | "ssh"
   | "settings";

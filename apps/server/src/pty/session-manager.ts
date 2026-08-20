@@ -19,12 +19,38 @@ import type { AgentId, SessionInfo } from "@vibedeck/shared";
 import { RingBuffer } from "./ring-buffer.js";
 import { resolveAgent } from "./agents.js";
 import { ShellIntegrationManager } from "./shell-integration/zdotdir.js";
+import { buildSshArgv, type SshSpawnProfile } from "../ssh/spawn.js";
+
+/**
+ * What `create()` needs to spawn a pane over an SSH profile instead of a
+ * local agent — `SshSpawnProfile`'s fields (host/user/port/etc, used to
+ * build the `ssh` argv — see `../ssh/spawn.ts`) plus the two bits only
+ * this layer cares about: which profile row this came from (so
+ * `SessionInfo.sshProfileId` can be set, letting the UI tell a remote pane
+ * apart from a local one) and its display name (used as the session's
+ * `title`, in place of the generic "shell").
+ */
+export interface CreateSessionSshOptions extends SshSpawnProfile {
+  profileId: string;
+  profileName: string;
+}
 
 export interface CreateSessionOptions {
   agent: AgentId;
   cwd?: string;
   cols?: number;
   rows?: number;
+  /**
+   * When set, this session is a remote pane over an SSH connection profile
+   * rather than a local agent — see `packages/shared/src/protocol.ts`'s
+   * `SshProfile` doc comment for the feature's design. `agent` should still
+   * be `"shell"` in this case (an SSH pane IS an interactive shell,
+   * protocol-wise; only WHERE it runs differs — see `SessionInfo.sshProfileId`'s
+   * own doc comment for why this isn't a new `AgentId`). When set, `create()`
+   * spawns `ssh` (via `buildSshArgv`) instead of resolving `agent` through
+   * `resolveAgent()`.
+   */
+  ssh?: CreateSessionSshOptions;
 }
 
 /** A message broadcast to attached listeners: raw output, or the exit event. */
@@ -78,19 +104,31 @@ export class SessionManager {
   // top comment for why this never touches the user's real dotfiles.
   private shellIntegration = new ShellIntegrationManager();
 
-  /** Spawn a new pty for the given agent and start tracking it. */
+  /** Spawn a new pty for the given agent — or, when `options.ssh` is set, an
+   * `ssh` connection to that profile — and start tracking it. */
   create(options: CreateSessionOptions): SessionInfo {
     const { agent } = options;
     const cwd = options.cwd ?? process.cwd();
     const cols = options.cols ?? 80;
     const rows = options.rows ?? 24;
 
-    const { command, args } = resolveAgent(agent);
+    // SSH profiles bypass resolveAgent() entirely: the command to spawn is
+    // always the real `ssh` binary, with argv built by ../ssh/spawn.ts (see
+    // that file's top comment for the injection-safety reasoning) rather
+    // than looked up from AGENT_SPECS.
+    const { command, args } = options.ssh
+      ? { command: "ssh", args: buildSshArgv(options.ssh) }
+      : resolveAgent(agent);
 
     // Only ask for shell-integration env when we're actually spawning a
-    // shell — asking unconditionally would create the throwaway ZDOTDIR
-    // temp dir even for a session that will never use it.
-    const shellIntegrationEnv = agent === "shell" ? this.shellIntegration.getEnvForShell() : null;
+    // LOCAL shell — asking unconditionally would create the throwaway
+    // ZDOTDIR temp dir even for a session that will never use it. An SSH
+    // session never gets this: `agent === "shell"` is true for one too (see
+    // CreateSessionOptions.ssh's doc comment), but the ZDOTDIR hooks are
+    // meaningless to the LOCAL `ssh` client process they'd be attached to —
+    // `options.ssh` being set is what actually distinguishes the two.
+    const shellIntegrationEnv =
+      agent === "shell" && !options.ssh ? this.shellIntegration.getEnvForShell() : null;
 
     const id = randomUUID();
     const ptyProcess = pty.spawn(command, args, {
@@ -105,10 +143,16 @@ export class SessionManager {
       id,
       agent,
       cwd,
-      title: agent,
+      // An SSH session's title is the profile's own name (e.g.
+      // "prod-server"), not the generic "shell" — this is the PRIMARY way
+      // PaneView.tsx's header reads as "you're on a remote pane" at a
+      // glance, since `agent` itself is indistinguishable from a local
+      // shell (see CreateSessionSshOptions' doc comment).
+      title: options.ssh ? options.ssh.profileName : agent,
       status: "running",
       exitCode: null,
       createdAt: new Date().toISOString(),
+      sshProfileId: options.ssh?.profileId ?? null,
     };
 
     const session: Session = {

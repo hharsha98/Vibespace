@@ -5,7 +5,7 @@ import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AGENT_IDS, AGENT_SPECS, WORKSPACE_COLORS, isWorkspaceColor, type ClientMessage } from "@vibedeck/shared";
 import { resolveServerPort, resolveStaticDir, formatReadyLine } from "./runtime-config.js";
-import { detectAllAgents, INSTALL_HINTS, isAgentId } from "./pty/agents.js";
+import { commandExists, detectAllAgents, INSTALL_HINTS, isAgentId } from "./pty/agents.js";
 import { SessionManager } from "./pty/session-manager.js";
 import { WorkspaceStore } from "./db/workspaces.js";
 import { BoardStore } from "./db/board.js";
@@ -26,6 +26,8 @@ import { registerGitRoutes } from "./git/routes.js";
 import { registerSkillRoutes } from "./skills/routes.js";
 import { CommandHistoryStore } from "./db/command-history.js";
 import { registerHistoryRoutes } from "./history/routes.js";
+import { SshProfileStore } from "./ssh/store.js";
+import { registerSshRoutes } from "./ssh/routes.js";
 
 const VERSION = "0.0.0";
 // Phase 11a (PARITY #50): resolveServerPort defaults to 4317 — identical to
@@ -55,6 +57,8 @@ export interface BuildAppOptions {
   savedPromptStore?: SavedPromptStore;
   /** Inject a CommandHistoryStore (mainly for tests). Defaults to a fresh one. */
   commandHistoryStore?: CommandHistoryStore;
+  /** Inject an SshProfileStore (mainly for tests). Defaults to a fresh one. */
+  sshProfileStore?: SshProfileStore;
   /**
    * Phase 11a (PARITY #50): absolute path to a built `apps/web/dist` to
    * serve as static files, turning this server into the single origin for
@@ -99,6 +103,7 @@ export function buildApp(options: BuildAppOptions = {}) {
   const agentProfileStore = options.agentProfileStore ?? new AgentProfileStore();
   const savedPromptStore = options.savedPromptStore ?? new SavedPromptStore();
   const commandHistoryStore = options.commandHistoryStore ?? new CommandHistoryStore();
+  const sshProfileStore = options.sshProfileStore ?? new SshProfileStore();
 
   // Make the manager/store reachable from outside (tests call
   // app.sessionManager/app.workspaceStore/app.boardStore/etc directly to
@@ -113,6 +118,7 @@ export function buildApp(options: BuildAppOptions = {}) {
   app.decorate("agentProfileStore", agentProfileStore);
   app.decorate("savedPromptStore", savedPromptStore);
   app.decorate("commandHistoryStore", commandHistoryStore);
+  app.decorate("sshProfileStore", sshProfileStore);
 
   // Kill every pty and close the database when the Fastify instance closes,
   // so `app.close()` in tests (and a real process shutdown) doesn't leave
@@ -129,6 +135,7 @@ export function buildApp(options: BuildAppOptions = {}) {
     agentProfileStore.close();
     savedPromptStore.close();
     commandHistoryStore.close();
+    sshProfileStore.close();
     done();
   });
 
@@ -181,6 +188,13 @@ export function buildApp(options: BuildAppOptions = {}) {
   // BridgeSpace parity item 4: per-workspace command history backing the
   // prompt bar's autocomplete. See history/routes.ts's top comment.
   registerHistoryRoutes(app, { workspaceStore, commandHistoryStore });
+
+  // SSH connection profiles (BridgeSpace v3.2.1 parity): CRUD + Duplicate
+  // for stored `{host, user, port, defaultDirectory, startupCommand}`
+  // records. See ssh/routes.ts's top comment and ssh/spawn.ts for how a
+  // profile becomes a real `ssh` pty session (wired into POST
+  // /api/sessions below, via the `sshProfileId` body field).
+  registerSshRoutes(app, { sshProfileStore });
 
   app.get("/api/health", async () => ({
     status: "ok" as const,
@@ -308,31 +322,27 @@ export function buildApp(options: BuildAppOptions = {}) {
       cols?: unknown;
       rows?: unknown;
       workspaceId?: unknown;
+      // SSH connection profiles: an alternative to `agent` — spawns an
+      // `ssh` pty against a stored SshProfile instead of a local CLI. See
+      // ssh/spawn.ts for how the profile becomes an argv, and
+      // SessionInfo.sshProfileId's doc comment (packages/shared/src/
+      // protocol.ts) for why this doesn't reuse the `agent` field itself.
+      sshProfileId?: unknown;
     };
 
-    if (!isAgentId(body.agent)) {
-      return reply.status(400).send({
-        error: `"agent" must be one of: ${AGENT_IDS.join(", ")}`,
-      });
-    }
-
-    const availability = await detectAllAgents();
-    if (!availability[body.agent]) {
-      const spec = AGENT_SPECS[body.agent];
-      return reply.status(409).send({
-        error:
-          `The "${body.agent}" agent isn't installed on this machine ` +
-          `(looked for the "${spec.command}" command on PATH). ` +
-          `Install it first, then try again.`,
-        installHint: INSTALL_HINTS[body.agent],
-      });
+    if (body.sshProfileId !== undefined && body.agent !== undefined) {
+      return reply.status(400).send({ error: 'Provide either "agent" or "sshProfileId", not both' });
     }
 
     // A workspaceId, if given, is the source of truth for where this pane
     // spawns — this is the actual fix for the "every pane opens in the
     // server's own cwd" bug: we look up the workspace's rootPath and use
     // that, ignoring any `cwd` the caller also sent, so a stale/incorrect
-    // client-supplied cwd can never silently override the workspace.
+    // client-supplied cwd can never silently override the workspace. Shared
+    // by both the local-agent and SSH paths below — for an SSH session this
+    // is only where the LOCAL `ssh` client process itself starts, never the
+    // remote directory (that's `defaultDirectory`, applied server-side by
+    // ssh/spawn.ts's remote command, not by `cwd`).
     let cwd: string;
     if (body.workspaceId !== undefined) {
       if (typeof body.workspaceId !== "string") {
@@ -349,6 +359,73 @@ export function buildApp(options: BuildAppOptions = {}) {
 
     const cols = typeof body.cols === "number" ? body.cols : 80;
     const rows = typeof body.rows === "number" ? body.rows : 24;
+
+    if (body.sshProfileId !== undefined) {
+      if (typeof body.sshProfileId !== "string") {
+        return reply.status(400).send({ error: '"sshProfileId" must be a string' });
+      }
+      const profile = sshProfileStore.get(body.sshProfileId);
+      if (!profile) {
+        return reply.status(400).send({ error: `No SSH profile with id "${body.sshProfileId}"` });
+      }
+
+      // Honest failure #1: `ssh` itself isn't installed. Checked BEFORE
+      // spawning (same "pre-check availability, 409 with an install hint"
+      // shape the local-agent path already uses below) rather than letting
+      // node-pty's spawn fail with a raw ENOENT the pane would have no
+      // clean way to explain.
+      if (!(await commandExists("ssh"))) {
+        return reply.status(409).send({
+          error: `The "ssh" command isn't installed on this machine. Install an SSH client, then try again.`,
+          installHint:
+            "Install an OpenSSH client — e.g. 'xcode-select --install' on macOS, or your distro's openssh-client package on Linux.",
+        });
+      }
+
+      // Honest failure #2 and #3 (host unreachable, auth rejected) are NOT
+      // checked here — they can only be discovered by actually connecting,
+      // which is exactly what the spawned `ssh` process does next. Its own
+      // stderr (connection refused, "Permission denied (publickey)", etc)
+      // streams straight into the pane's pty output like any other command
+      // would — see session-manager.ts, which never swallows pty output —
+      // so the failure is visible in the terminal itself, plus the pane's
+      // "exited" status/exit code once ssh gives up (Terminal.tsx already
+      // renders "(exited N)" in the header for any session that exits).
+      const info = sessionManager.create({
+        agent: "shell",
+        cwd,
+        cols,
+        rows,
+        ssh: {
+          profileId: profile.id,
+          profileName: profile.name,
+          host: profile.host,
+          user: profile.user,
+          port: profile.port,
+          defaultDirectory: profile.defaultDirectory,
+          startupCommand: profile.startupCommand,
+        },
+      });
+      return reply.status(201).send(info);
+    }
+
+    if (!isAgentId(body.agent)) {
+      return reply.status(400).send({
+        error: `"agent" must be one of: ${AGENT_IDS.join(", ")}, or send "sshProfileId" instead for a remote pane`,
+      });
+    }
+
+    const availability = await detectAllAgents();
+    if (!availability[body.agent]) {
+      const spec = AGENT_SPECS[body.agent];
+      return reply.status(409).send({
+        error:
+          `The "${body.agent}" agent isn't installed on this machine ` +
+          `(looked for the "${spec.command}" command on PATH). ` +
+          `Install it first, then try again.`,
+        installHint: INSTALL_HINTS[body.agent],
+      });
+    }
 
     const info = sessionManager.create({ agent: body.agent, cwd, cols, rows });
     return reply.status(201).send(info);
@@ -465,6 +542,7 @@ declare module "fastify" {
     agentProfileStore: AgentProfileStore;
     savedPromptStore: SavedPromptStore;
     commandHistoryStore: CommandHistoryStore;
+    sshProfileStore: SshProfileStore;
   }
 }
 

@@ -44,6 +44,27 @@ describe("SessionManager", () => {
     10_000
   );
 
+  // SSH connection profiles: `sshProfileId` is the new field on SessionInfo
+  // that tells a remote pane apart from a local one (see
+  // packages/shared/src/protocol.ts's SessionInfo doc comment). This test
+  // deliberately does NOT spawn a real `ssh` process (see spawn.test.ts's
+  // own top comment for why: no host to reach, would hang CI) — it only
+  // confirms the field defaults to `null` for an ordinary local session,
+  // which is the regression this new field could otherwise introduce. The
+  // ssh-path argv/quoting logic itself is exhaustively covered by
+  // `../ssh/spawn.test.ts`'s 33 tests, and `create()`'s few-line routing
+  // between the two paths is straightforward enough to verify by reading
+  // `session-manager.ts` directly.
+  it(
+    "sets sshProfileId to null for an ordinary (non-SSH) session",
+    () => {
+      manager = new SessionManager();
+      const info = manager.create({ agent: "shell" });
+      expect(info.sshProfileId).toBeNull();
+    },
+    10_000
+  );
+
   it(
     "streams live output to attached listeners and records it in history",
     async () => {

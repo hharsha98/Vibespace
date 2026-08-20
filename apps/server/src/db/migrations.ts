@@ -351,6 +351,46 @@ function up006CommandHistory(db: Database): void {
 }
 
 /**
+ * Migration 7: `ssh_profiles` — SSH connection profiles (see
+ * `packages/shared/src/protocol.ts`'s `SshProfile` doc comment for the full
+ * design, including why this is GLOBAL rather than `workspace_id`-scoped: a
+ * profile names a machine, not a project).
+ *
+ * `UNIQUE(name)` — not `UNIQUE(workspace_id, name)` the way `agent_profiles`
+ * is — is the same "let the database arbitrate a create race, don't
+ * check-then-insert" pattern as every other UNIQUE constraint in this file;
+ * see `swarm/claims.ts`'s top comment for the full reasoning. Because
+ * profiles are global, this also directly ANSWERS "duplicate — one-click
+ * Duplicate must therefore pick a NEW, non-colliding name" (see
+ * `apps/server/src/ssh/store.ts`'s `duplicate()`), rather than the
+ * duplicate silently landing in a different workspace where the same name
+ * would've been fine.
+ *
+ * `user`/`port`/`default_directory`/`startup_command` are all nullable —
+ * every one of them has an honest "not set" meaning (`ssh`'s own default
+ * user, `ssh`'s own default port 22, no `cd`, no startup command) rather
+ * than an empty string standing in for absence. `port` is INTEGER, not
+ * TEXT, so `apps/server/src/ssh/spawn.ts` never has to re-parse/validate a
+ * numeric string pulled back out of SQLite.
+ */
+function up007SshProfiles(db: Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS ssh_profiles (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      host TEXT NOT NULL,
+      user TEXT,
+      port INTEGER,
+      default_directory TEXT,
+      startup_command TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(name)
+    )
+  `);
+}
+
+/**
  * Every migration, in ascending version order. Audited against the live
  * `~/.vibedeck/vibedeck.db` on this machine by comparing each `CREATE
  * TABLE` above to `PRAGMA table_info` on every table that db actually had:
@@ -362,6 +402,9 @@ function up006CommandHistory(db: Database): void {
  * existing database has ever had `task_knowledge`, `agent_profiles`, or
  * `saved_prompts`, so there's nothing to audit them against yet. Migration 5
  * (Phase 9.5c) is the same kind of new addition for `workspaces.color`.
+ * Migration 7 (SSH connection profiles) is the same kind of brand-new
+ * addition as migration 6's `command_history` — a fresh `CREATE TABLE`, not
+ * a repair, since no existing database has ever had `ssh_profiles`.
  */
 export const MIGRATIONS: Migration[] = [
   { version: 1, name: "full schema", up: up001FullSchema },
@@ -370,6 +413,7 @@ export const MIGRATIONS: Migration[] = [
   { version: 4, name: "add agent_profiles and saved_prompts", up: up004AgentProfilesAndSavedPrompts },
   { version: 5, name: "add workspaces.color", up: up005WorkspacesColor },
   { version: 6, name: "add command_history", up: up006CommandHistory },
+  { version: 7, name: "add ssh_profiles", up: up007SshProfiles },
 ];
 
 /** Copies the database file to `<dbPath>.backup-v<version>`. Flushes WAL

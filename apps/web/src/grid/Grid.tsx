@@ -1,6 +1,6 @@
 import { Allotment } from "allotment";
 import "allotment/dist/style.css";
-import type { AgentId, SessionInfo, Workspace } from "@vibedeck/shared";
+import type { AgentId, SessionInfo, SshProfile, Workspace } from "@vibedeck/shared";
 import PaneView, { type AgentOption } from "./PaneView.js";
 import type { Theme } from "../themes/themes.js";
 import { findPane, type Direction, type GridNode, type PaneId } from "./tree.js";
@@ -9,6 +9,9 @@ interface GridProps {
   root: GridNode;
   sessions: SessionInfo[];
   agents: AgentOption[];
+  /** SSH connection profiles, threaded straight through to every empty
+   * pane's picker — see PaneView.tsx's own `sshProfiles` prop doc comment. */
+  sshProfiles: SshProfile[];
   defaultAgent: AgentId | "";
   workspaceId: string | null;
   /** Phase 9.5c, PARITY #13c/#41 — threaded straight through to every pane's
@@ -67,6 +70,7 @@ function GridNodeView({ node, ...rest }: GridProps & { node: GridNode }) {
   const {
     sessions,
     agents,
+    sshProfiles,
     defaultAgent,
     workspaceId,
     workspace,
@@ -89,6 +93,7 @@ function GridNodeView({ node, ...rest }: GridProps & { node: GridNode }) {
         sessionId={node.sessionId}
         session={session}
         agents={agents}
+        sshProfiles={sshProfiles}
         defaultAgent={defaultAgent}
         workspaceId={workspaceId}
         workspace={workspace}

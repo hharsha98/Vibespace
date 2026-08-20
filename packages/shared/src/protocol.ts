@@ -86,7 +86,109 @@ export interface SessionInfo {
   exitCode: number | null;
   /** ISO 8601 UTC timestamp string, e.g. "2026-08-10T12:34:56.000Z". */
   createdAt: string;
+  /**
+   * SSH connection profiles (see `SshProfile` below): the id of the profile
+   * this session was launched from, or `null`/`undefined` for every ordinary
+   * local session. Deliberately NOT a new `AgentId` — an SSH profile is a
+   * user-stored record (host/user/port/etc), not a fixed CLI vibedeck knows
+   * how to launch, so it doesn't belong in the closed `AgentId` union or any
+   * of the `Record<AgentId, ...>` tables keyed off it (AGENT_SPECS,
+   * INSTALL_HINTS, the picker's glyph map...). An SSH session's `agent`
+   * field is always `"shell"` instead — it IS, at the protocol level, an
+   * interactive shell; the only difference is where it runs. `sshProfileId`
+   * is what lets the UI (PaneView's header, the pane's title) tell "a local
+   * shell" and "a remote shell over this SSH profile" apart despite sharing
+   * the same `agent` value. Optional (not just nullable) so every existing
+   * hand-written `SessionInfo` literal in this codebase's tests keeps
+   * compiling unchanged — `apps/server/src/pty/session-manager.ts` always
+   * sets it explicitly (to a real id or `null`) for sessions it creates.
+   */
+  sshProfileId?: string | null;
 }
+
+/**
+ * An SSH connection profile (BridgeSpace v3.2.1 parity: "SSH profiles carry
+ * their workspace" — a per-profile default directory and startup command,
+ * applied after connect, plus one-click Duplicate).
+ *
+ * --- Global, not per-workspace, and here's the reasoning ---
+ * A `Workspace` is a project directory; an `SshProfile` names a MACHINE
+ * (a host you SSH into). The two are orthogonal — you might open the same
+ * remote build box from three different local project workspaces, or the
+ * same local workspace might want panes on several different remote hosts.
+ * Scoping a profile to one workspace would force you to redefine "my prod
+ * server" once per project that happens to want a pane on it. So, unlike
+ * `AgentProfile`/`SavedPrompt` (both `workspaceId`-scoped or nullable-for-
+ * global), `SshProfile` carries no `workspaceId` at all — every profile is
+ * global, the same way `~/.ssh/config` itself is a single, machine-wide
+ * file, not one per project. See `apps/server/src/ssh/store.ts`'s top
+ * comment for the UNIQUE-on-`name` constraint this implies.
+ *
+ * --- The auth trade-off, stated plainly ---
+ * vibedeck does NOT implement SSH itself and does NOT store credentials.
+ * Connecting spawns the system's real `ssh` binary in a pty (exactly how a
+ * local `shell`/`claude`/etc session is already spawned — see
+ * `apps/server/src/pty/session-manager.ts`), so authentication is entirely
+ * whatever the user's own `ssh-agent`, keys, and `~/.ssh/config` already do
+ * for them in a normal terminal. vibedeck never sees, stores, or transmits
+ * a password or key. The honest downside: a host that only accepts password
+ * auth will prompt for one INSIDE the pane, exactly like any terminal would
+ * — there is no keychain-backed autofill (BridgeSpace has one; this is the
+ * deliberate difference), because storing a password at rest is a liability
+ * this feature does not need to take on. See `apps/server/src/ssh/spawn.ts`
+ * for where the `ssh` argv itself is built.
+ */
+export interface SshProfile {
+  id: string;
+  name: string;
+  host: string;
+  /** SSH username, or null to let `ssh` fall back to its own default
+   * (the local user's name, or whatever `~/.ssh/config` says for this
+   * host) — the same "don't guess, let the real tool decide" reasoning
+   * `resolveAgent`'s shell-agent fallback already uses for `$SHELL`. */
+  user: string | null;
+  /** TCP port, or null to let `ssh` use its own default (22, or whatever
+   * `~/.ssh/config` overrides for this host). */
+  port: number | null;
+  /** Directory to `cd` into on the remote host immediately after connecting,
+   * or null to land wherever the remote shell's own default (login) directory
+   * is. Applied by a remote command `ssh` is told to run — see
+   * `apps/server/src/ssh/spawn.ts`'s top comment for exactly how, and how
+   * this value is quoted so it can never be interpreted as more than one
+   * literal path, no matter what characters it contains. */
+  defaultDirectory: string | null;
+  /** A shell command to run on the remote host, after `cd`ing into
+   * `defaultDirectory` (if set) and before handing off to an interactive
+   * shell — e.g. `source .venv/bin/activate`. Unlike `defaultDirectory`,
+   * this is deliberately run AS shell code, verbatim, not quoted into a
+   * single literal argument: that's the whole point of a "startup command"
+   * field. It is trusted the same way a `~/.ssh/config` `RemoteCommand`
+   * directive, a Makefile you wrote yourself, or `AgentProfile.systemPrompt`
+   * already are in this codebase — configuration you authored, not
+   * untrusted input arriving over the network. */
+  startupCommand: string | null;
+  /** ISO 8601 UTC timestamp string. */
+  createdAt: string;
+  /** ISO 8601 UTC timestamp string, updated on every create/update. */
+  updatedAt: string;
+}
+
+/** `GET /api/ssh-profiles` response. */
+export interface SshProfilesResponse {
+  profiles: SshProfile[];
+}
+
+/** Server-enforced cap on `SshProfile.startupCommand`, mirroring the same
+ * "export the limit so client and server can never drift" reasoning as
+ * `AGENT_PROFILE_SYSTEM_PROMPT_MAX_LENGTH` above. Smaller than that cap —
+ * a startup command is a shell one-liner or a short script, not a
+ * multi-thousand-word system prompt. */
+export const SSH_PROFILE_STARTUP_COMMAND_MAX_LENGTH = 20_000;
+
+/** Server-enforced cap on `SshProfile.name`/`host`/`user`/`defaultDirectory`
+ * — generous enough for any real value, small enough to keep a malformed or
+ * abusive request from writing an absurdly large row. */
+export const SSH_PROFILE_FIELD_MAX_LENGTH = 1024;
 
 /**
  * Static metadata about how to launch a given agent: what binary to run

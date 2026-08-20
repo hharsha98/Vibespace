@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { AgentId, SessionInfo, Workspace } from "@vibedeck/shared";
+import type { AgentId, SessionInfo, SshProfile, Workspace } from "@vibedeck/shared";
 import Terminal from "../term/Terminal.js";
 import type { Theme } from "../themes/themes.js";
 import type { Direction, PaneId } from "./tree.js";
@@ -9,6 +9,7 @@ import { AgentGlyph, agentAccentVar } from "./agentVisuals.js";
 import { canLaunchMultiple, splitByAvailability, toggleMultiLaunchSelection } from "./agentPicker.js";
 import { useGitBranch } from "./useGitBranch.js";
 import { KEYMAP, formatShortcut, isMacPlatform } from "../keys/keymap.js";
+import { formatSshDestination } from "../ssh/logic.js";
 
 /**
  * The empty-pane picker's footer hint row (premium-pass round 2): three
@@ -54,6 +55,15 @@ interface PaneViewProps {
   /** Looked-up SessionInfo for `sessionId` (title/status), or null if empty/not found yet. */
   session: SessionInfo | null;
   agents: AgentOption[];
+  /**
+   * SSH connection profiles (see `SshProfile`'s doc comment in
+   * `packages/shared/src/protocol.ts`), rendered as their own group in the
+   * empty-pane picker BELOW the local-agent grid — a separate, clearly
+   * labelled section so opening a remote pane is never confused with
+   * starting a local CLI (the whole point of "as a separate group... so
+   * it's obvious you're going remote" from this feature's design brief).
+   */
+  sshProfiles: SshProfile[];
   /** Pre-highlighted choice in the empty-pane agent picker (the header <select>'s current value). */
   defaultAgent: AgentId | "";
   /** The active workspace's id, sent with `POST /api/sessions` so the new
@@ -110,6 +120,7 @@ export default function PaneView({
   sessionId,
   session,
   agents,
+  sshProfiles,
   defaultAgent,
   workspaceId,
   workspace,
@@ -149,6 +160,39 @@ export default function PaneView({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(workspaceId ? { agent, workspaceId } : { agent }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? `Server responded with ${res.status}`);
+      }
+      const info = (await res.json()) as SessionInfo;
+      onSessionStarted(paneId, info);
+    } catch (err) {
+      setStartError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  /** The SSH-profile counterpart to `startSession` above — same request/
+   * response shape (`POST /api/sessions` -> `SessionInfo`, folded into
+   * this same pane via `onSessionStarted`), just `sshProfileId` instead of
+   * `agent` in the body (see `apps/server/src/index.ts`'s POST /api/sessions
+   * handler for how the two are told apart server-side). Honest failures —
+   * `ssh` not installed (a 409 with an install hint, same shape as a
+   * missing local agent binary), an unknown profile — surface through the
+   * SAME `startError` state a local agent's failed start already uses;
+   * failures that can only be discovered by actually connecting (host
+   * unreachable, auth rejected) show up as the pane's own pty output once
+   * the session starts, not here — see index.ts's own comment on that. */
+  const startSshSession = async (profileId: string) => {
+    setStartError(null);
+    setStarting(true);
+    try {
+      const res = await fetch("/api/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(workspaceId ? { sshProfileId: profileId, workspaceId } : { sshProfileId: profileId }),
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -565,6 +609,38 @@ export default function PaneView({
                 );
               })()}
 
+              {/* SSH connection profiles: a SEPARATE group below the local
+                  CLI grid, behind its own hairline + label — never merged
+                  into the grid above, so opening a remote pane is always a
+                  deliberate, visually distinct choice from starting a local
+                  agent (this feature's own design brief: "as a separate
+                  group... so it's obvious you're going remote"). Hidden
+                  entirely when there are no saved profiles, same "don't
+                  show an empty section" idiom the unavailable-agents
+                  disclosure above already follows. */}
+              {sshProfiles.length > 0 && (
+                <div style={{ marginTop: SPACE.lg, paddingTop: SPACE.md, borderTop: "1px solid var(--vd-border)" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: SPACE.sm }}>
+                    <span aria-hidden style={{ color: "var(--vd-info)", display: "flex" }}>
+                      <RemoteGlyph />
+                    </span>
+                    <span style={{ fontSize: FONT.meta, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--vd-text-faint)" }}>
+                      Remote (SSH)
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: SPACE.xs }}>
+                    {sshProfiles.map((profile) => (
+                      <SshProfileRow
+                        key={profile.id}
+                        profile={profile}
+                        disabled={starting}
+                        onClick={() => void startSshSession(profile.id)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {startError && (
                 <p
                   style={{
@@ -769,6 +845,118 @@ function AgentRow({
         <Pill status="info">Default</Pill>
       ) : null}
     </button>
+  );
+}
+
+/**
+ * One row in the SSH profiles group — deliberately a simpler, single-column
+ * shape than `AgentRow` above (no availability/install-hint states, no
+ * multi-select: every saved profile is always "clickable", since whether it
+ * actually connects can only be known by trying — see this pane's own
+ * `startSshSession` doc comment). Shows the profile's name plus its
+ * connection target (`user@host:port`, via `formatSshDestination`) so it's
+ * clear WHERE a profile goes before clicking it, and a small "SSH" pill
+ * that echoes the section header's `var(--vd-info)` tint, reinforcing "this
+ * row is remote" one more time at the row level, not just the section
+ * label above it.
+ */
+function SshProfileRow({
+  profile,
+  disabled,
+  onClick,
+}: {
+  profile: SshProfile;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      title={`Connect to ${formatSshDestination(profile)}`}
+      className="vd-agent-card"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: SPACE.sm,
+        textAlign: "left",
+        background: "var(--vd-surface-raised)",
+        borderWidth: 1,
+        borderColor: "var(--vd-border)",
+        borderStyle: "solid",
+        borderRadius: RADIUS.lg,
+        padding: "8px 10px",
+        cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.6 : 1,
+        transition: `border-color ${MOTION.fast} ${MOTION.easing}, box-shadow ${MOTION.fast} ${MOTION.easing}`,
+        boxSizing: "border-box",
+        width: "100%",
+      }}
+    >
+      <span
+        aria-hidden
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: 26,
+          height: 26,
+          borderRadius: "50%",
+          flexShrink: 0,
+          background: "color-mix(in srgb, var(--vd-info) 16%, transparent)",
+          color: "var(--vd-info)",
+        }}
+      >
+        <RemoteGlyph size={15} />
+      </span>
+      <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 1 }}>
+        <span
+          style={{
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            fontSize: FONT.body,
+            fontWeight: 500,
+            color: "var(--vd-text)",
+          }}
+        >
+          {profile.name}
+        </span>
+        <span
+          style={{
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            fontSize: FONT.meta - 1,
+            color: "var(--vd-text-faint)",
+            fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+          }}
+        >
+          {formatSshDestination(profile)}
+        </span>
+      </span>
+      <Pill status="info">SSH</Pill>
+    </button>
+  );
+}
+
+/** A small "remote machine" glyph — a monitor frame with a signal arc,
+ * shared between the section header and each `SshProfileRow`'s icon badge.
+ * Same hand-drawn, `currentColor`, no-icon-library convention as every
+ * other glyph in this file (SplitVerticalIcon, BranchIcon, ...) and
+ * `shell/viewIcons.tsx`'s own `SshIcon` (not imported from there directly:
+ * that one is a module-private 14x14 tab icon, not exported, so this is a
+ * separate but visually-matching glyph sized for a 26px badge instead). */
+function RemoteGlyph({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 14 14" fill="none" aria-hidden>
+      <rect x="1.5" y="3" width="9.5" height="7" rx="1.3" stroke="currentColor" strokeWidth="1.1" />
+      <path d="M3.6 5.2L5.6 6.5L3.6 7.8" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M6.6 7.8H8.6" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+      <path d="M10.6 2.4C11.7 3 12.3 4.1 12.3 5.3" stroke="currentColor" strokeWidth="1" strokeLinecap="round" opacity="0.75" />
+      <path d="M9.8 4C10.35 4.3 10.7 4.85 10.7 5.45" stroke="currentColor" strokeWidth="0.9" strokeLinecap="round" opacity="0.75" />
+    </svg>
   );
 }
 
