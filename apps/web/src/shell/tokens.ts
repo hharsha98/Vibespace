@@ -83,6 +83,47 @@ export const SHADOW = {
 } as const;
 
 /**
+ * The light-theme counterpart to `SHADOW` above. A light-theme audit (the
+ * "light themes are broken" pass) found the dark values reading as either
+ * invisible or muddy once applied to a cream/white canvas instead of a
+ * near-black one — a shadow tuned for maximum lift off `#0a0a0b` doesn't
+ * read as "elevation" the same way on a light surface, where the eye expects
+ * a softer, tighter cue (compare any light-mode OS/editor chrome: shadows
+ * shrink and fade, they don't just recolour). Same three steps, same neutral
+ * black-at-low-alpha colour (so the "closer to the viewer" cue stays
+ * consistent in HOW it's built, not just what it looks like) — every alpha
+ * is lower and every blur/spread is tighter than its `SHADOW` counterpart.
+ * `themes.ts`'s `applyThemeCssVars` is what actually picks between the two,
+ * per-theme, via `theme.isDark` — components never choose directly; they
+ * read `SHADOW_VAR.sm/md/lg` (below), which resolves to whichever one is
+ * active.
+ */
+export const LIGHT_SHADOW = {
+  /** Barely-there lift — a pane resting off a light canvas. */
+  sm: "0 1px 1px rgba(0, 0, 0, 0.08)",
+  /** A hovered/raised card — the empty-pane agent cards, a lifted list row. */
+  md: "0 3px 10px rgba(0, 0, 0, 0.12)",
+  /** Floating overlays — popovers, the command palette, menus. */
+  lg: "0 8px 20px rgba(0, 0, 0, 0.16)",
+} as const;
+
+/**
+ * The CSS custom properties `applyThemeCssVars` (themes.ts) sets to whichever
+ * of `SHADOW`/`LIGHT_SHADOW` matches the active theme's `isDark`. Every
+ * component that draws an elevation shadow reads through this lookup table
+ * (`boxShadow: SHADOW_VAR.sm`) instead of the raw `SHADOW.sm` string, so its
+ * shadow re-tunes itself the instant the theme switches — the same "read the
+ * named step, not a bare value" discipline the rest of this file already
+ * enforces, just resolved at paint time (via the CSS variable) instead of at
+ * import time.
+ */
+export const SHADOW_VAR = {
+  sm: "var(--vd-shadow-sm)",
+  md: "var(--vd-shadow-md)",
+  lg: "var(--vd-shadow-lg)",
+} as const;
+
+/**
  * Type scale. docs/DESIGN.md §3 named the base sizes (12px body, 11px meta,
  * 13px headings) but Phase 4.5 never named a step ABOVE 13px, which is
  * exactly what "everything is one size" complaints traced back to — there
@@ -102,4 +143,45 @@ export const FONT = {
   title: 13,
   /** 15px — a real headline: the empty-pane state's "Start an agent". */
   heading: 15,
+} as const;
+
+/**
+ * Motion. Before this pass the app was "instant-snap" everywhere — every
+ * hover/active/disclosure/panel change happened in a single frame, which
+ * (compared against Warp/Linear/Raycast, all of which use restrained,
+ * fast motion for exactly these interactions) read as unfinished rather
+ * than deliberately minimal. This is the named scale every component's
+ * `transition` should read from instead of scattering its own duration —
+ * same reasoning as `SPACE`/`RADIUS`/`SHADOW` above: the scale is a design
+ * decision made once, here, not re-decided per call site.
+ *
+ * Kept deliberately narrow (120-180ms, one easing curve for the whole app)
+ * per the brief: "short and easing-based; this should feel responsive,
+ * never floaty." A duration below this range reads as flicker; above it
+ * reads as sluggish chrome fighting the user's input.
+ *
+ * `prefers-reduced-motion` is handled centrally, not per-component: see
+ * `shell/ui.tsx`'s `GlobalShellStyles`, which collapses every transition
+ * and animation on the page to near-zero duration via a single `!important`
+ * media-query rule when the user has that OS preference set — a component
+ * using `MOTION.fast` never needs its own reduced-motion branch.
+ */
+export const MOTION = {
+  /** 120ms — the fast, ever-present feedback: hover states, active/selected
+   * toggles, icon show/hide, a pill's colour change. The most frequently
+   * fired transition in the app, so it's also the one most worth keeping
+   * snappy rather than floaty. */
+  fast: "120ms",
+  /** 160ms — slightly larger transitions: disclosure expand/collapse, a
+   * view switching. Enough motion to read as a real state change without
+   * feeling sluggish. */
+  base: "160ms",
+  /** 180ms — the slowest step this app ever uses: a dock/rail opening or
+   * closing. Still comfortably inside the 120-180ms range above. */
+  slow: "180ms",
+  /** The one easing curve every transition in the app shares: a gentle
+   * deceleration (quick start, soft landing) — not linear (which reads as
+   * mechanical) and not an overshooting bounce (which reads as playful,
+   * wrong register for a cockpit UI per docs/DESIGN.md §6 rule 1). */
+  easing: "cubic-bezier(0.2, 0, 0, 1)",
 } as const;

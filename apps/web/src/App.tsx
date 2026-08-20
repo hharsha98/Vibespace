@@ -48,7 +48,7 @@ import type { PaneRef } from "./skills/logic.js";
 import Settings from "./settings/Settings.js";
 import type { CenterView } from "./viewTypes.js";
 import { ViewIcon } from "./shell/viewIcons.js";
-import { FONT, RADIUS, SHADOW } from "./shell/tokens.js";
+import { FONT, MOTION, RADIUS, SHADOW_VAR } from "./shell/tokens.js";
 
 /** Which full-screen overlay (if any) is currently open. Only one at a
  * time — opening a new one implicitly replaces whichever was open, and
@@ -1640,9 +1640,16 @@ function ViewTabButton({
         padding: "5px 10px",
         fontSize: FONT.meta,
         fontWeight: active ? 600 : 500,
-        boxShadow: active ? SHADOW.sm : "none",
+        boxShadow: active ? SHADOW_VAR.sm : "none",
         cursor: "pointer",
         whiteSpace: "nowrap",
+        // Motion pass: the active pill's fill/shadow now animates in
+        // instead of snapping when a view switch changes which tab is
+        // active — ".vd-view-tab"'s own hover transition (GlobalShellStyles)
+        // covers the same properties, this just makes sure the ACTIVE-state
+        // change (driven by this inline style, which always wins over the
+        // class per shell/ui.tsx's IconButton doc comment) animates too.
+        transition: `background-color ${MOTION.fast} ${MOTION.easing}, color ${MOTION.fast} ${MOTION.easing}, box-shadow ${MOTION.fast} ${MOTION.easing}`,
       }}
     >
       <ViewIcon view={view} />

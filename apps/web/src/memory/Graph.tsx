@@ -28,7 +28,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation, type Simulation } from "d3-force";
 import type { MemoryGraphEdge, MemoryGraphNode } from "@vibedeck/shared";
 import { EmptyState, IconButton } from "../shell/ui.js";
-import { RADIUS, SHADOW, SPACE } from "../shell/tokens.js";
+import { RADIUS, SHADOW_VAR, SPACE } from "../shell/tokens.js";
 
 export interface GraphProps {
   workspaceId: string | null;
@@ -545,7 +545,7 @@ const zoomClusterStyle: React.CSSProperties = {
   background: "var(--vd-surface)",
   border: "1px solid var(--vd-border)",
   borderRadius: RADIUS.sm,
-  boxShadow: SHADOW.sm,
+  boxShadow: SHADOW_VAR.sm,
 };
 
 const legendStyle: React.CSSProperties = {
@@ -559,7 +559,7 @@ const legendStyle: React.CSSProperties = {
   borderRadius: RADIUS.sm,
   padding: "3px 8px",
   pointerEvents: "none",
-  boxShadow: SHADOW.sm,
+  boxShadow: SHADOW_VAR.sm,
 };
 
 const loadingOverlayStyle: React.CSSProperties = {

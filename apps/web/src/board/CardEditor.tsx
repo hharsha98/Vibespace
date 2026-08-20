@@ -30,6 +30,7 @@ import {
   type CardPriority,
 } from "@vibedeck/shared";
 import { charCountColor, charCountStatus } from "../shell/textLimits.js";
+import { SHADOW_VAR } from "../shell/tokens.js";
 
 export interface CardEditorProps {
   card: BoardCard;
@@ -118,6 +119,7 @@ export default function CardEditor({ card, saving, error, onClose, onSave }: Car
       <div
         onClick={(e) => e.stopPropagation()}
         onKeyDown={onKeyDown}
+        className="vd-scale-in"
         style={{
           width: "min(560px, 92vw)",
           maxHeight: "85vh",
@@ -128,7 +130,7 @@ export default function CardEditor({ card, saving, error, onClose, onSave }: Car
           background: "var(--vd-surface-raised)",
           border: "1px solid var(--vd-border)",
           borderRadius: 10,
-          boxShadow: "0 12px 40px rgba(0, 0, 0, 0.5)",
+          boxShadow: SHADOW_VAR.lg,
           padding: 16,
         }}
       >

@@ -14,6 +14,7 @@
  */
 import { useState } from "react";
 import { Pill } from "../shell/ui.js";
+import { MOTION } from "../shell/tokens.js";
 import type { AgentStatus } from "./promptQueue.js";
 
 interface PromptBarProps {
@@ -22,6 +23,11 @@ interface PromptBarProps {
   queuedCount: number;
   /** Display name of the agent this bar talks to (e.g. "Shell", "Claude Code") — used in the placeholder copy. */
   agentDisplayName: string;
+  /** Whether this bar's own pane is the focused one — dims the whole bar
+   * slightly when it isn't (terminal-chrome pass), the same treatment
+   * Terminal.tsx's own Live/Blocks toggle gets; see that prop's doc comment
+   * on `TerminalProps` for the full "why opacity, not a glow" reasoning. */
+  isFocused: boolean;
   /** Submits `text` — Terminal.tsx decides whether that means "send now" or "queue it". */
   onSubmit: (text: string) => void;
   /** Empties the queue (the Pill's own clear affordance). */
@@ -36,6 +42,7 @@ export default function PromptBar({
   status,
   queuedCount,
   agentDisplayName,
+  isFocused,
   onSubmit,
   onClearQueue,
   onEscape,
@@ -56,6 +63,10 @@ export default function PromptBar({
 
   return (
     <div
+      // Terminal-chrome pass: this bar now dims (opacity only, no glow —
+      // same reasoning as Terminal.tsx's Live/Blocks toggle) when its pane
+      // isn't the focused one, so the whole pane's own chrome recedes
+      // together instead of only the outer 1px border reacting to focus.
       style={{
         display: "flex",
         alignItems: "center",
@@ -66,6 +77,8 @@ export default function PromptBar({
         borderTop: "1px solid var(--vd-border)",
         background: "var(--vd-surface)",
         boxSizing: "border-box",
+        opacity: isFocused ? 1 : 0.7,
+        transition: `opacity ${MOTION.fast} ${MOTION.easing}`,
       }}
     >
       <input
@@ -87,6 +100,12 @@ export default function PromptBar({
         // (see promptQueue.ts's top comment) — the working/idle placeholder
         // above is what tells the user WHY a submitted prompt might sit
         // unsent for a while, rather than claiming any durability it doesn't have.
+        // "vd-prompt-input" (GlobalShellStyles) is what gives this input its
+        // OWN :focus border-color response — a real form-control focus
+        // ring, unrelated to (and not a substitute for) the pane-level
+        // focus border docs/DESIGN.md §5 owns; this is standard input
+        // affordance, not a second pane-focus cue.
+        className="vd-prompt-input"
         style={{
           flex: 1,
           minWidth: 0,
@@ -98,6 +117,7 @@ export default function PromptBar({
           fontSize: 12,
           height: 20,
           boxSizing: "border-box",
+          transition: `border-color ${MOTION.fast} ${MOTION.easing}`,
         }}
       />
       {queuedCount > 0 && (
@@ -105,6 +125,7 @@ export default function PromptBar({
           type="button"
           onClick={onClearQueue}
           title="Clear queued prompts"
+          className="vd-fade-in"
           style={{
             background: "transparent",
             border: "none",

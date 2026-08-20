@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FONT, RADIUS, SHADOW, SPACE } from "./tokens.js";
+import { FONT, LIGHT_SHADOW, MOTION, RADIUS, SHADOW, SHADOW_VAR, SPACE } from "./tokens.js";
 
 // These scales exist specifically so every component reads a NAMED step
 // instead of scattering ad hoc numbers (see tokens.ts's top comment). The
@@ -52,9 +52,88 @@ describe("SHADOW", () => {
     expect(Object.keys(SHADOW).sort()).toEqual(["lg", "md", "sm"]);
   });
 
-  it("uses a neutral (black, alpha-only) colour so it reads consistently on all 26 themes", () => {
+  it("uses a neutral (black, alpha-only) colour so it reads consistently on all themes", () => {
     for (const value of Object.values(SHADOW)) {
       expect(value).toMatch(/^0 .+ rgba\(0, 0, 0, 0\.\d+\)$/);
     }
+  });
+});
+
+/** Pulls the alpha (the last `0.NN` inside the `rgba(...)`) and the blur
+ * radius (the second length in `0 <offset> <blur> rgba(...)`) out of a
+ * SHADOW-shaped CSS value, so the light/dark comparison below can assert on
+ * the actual numbers rather than eyeballing the strings. */
+function shadowAlpha(value: string): number {
+  const match = value.match(/rgba\(0, 0, 0, (0\.\d+)\)/);
+  if (!match) throw new Error(`not a SHADOW-shaped value: ${value}`);
+  return Number(match[1]);
+}
+function shadowBlurPx(value: string): number {
+  const match = value.match(/^0 \d+px (\d+)px/);
+  if (!match) throw new Error(`not a SHADOW-shaped value: ${value}`);
+  return Number(match[1]);
+}
+
+// LIGHT_SHADOW exists because a shadow scale tuned against the near-black
+// dark canvas either vanished or read as muddy on a light one (the
+// "light themes are broken" bug this whole pass fixes) — the one property
+// that actually encodes "we fixed it" is that light is measurably lighter
+// AND tighter than dark at every one of the three steps, not just a
+// differently-worded comment saying so.
+describe("LIGHT_SHADOW", () => {
+  it("defines exactly the same three elevation steps SHADOW does", () => {
+    expect(Object.keys(LIGHT_SHADOW).sort()).toEqual(["lg", "md", "sm"]);
+  });
+
+  it("uses a neutral (black, alpha-only) colour, same as SHADOW", () => {
+    for (const value of Object.values(LIGHT_SHADOW)) {
+      expect(value).toMatch(/^0 .+ rgba\(0, 0, 0, 0\.\d+\)$/);
+    }
+  });
+
+  it("is lighter (lower alpha) than SHADOW at every step", () => {
+    for (const key of ["sm", "md", "lg"] as const) {
+      expect(shadowAlpha(LIGHT_SHADOW[key])).toBeLessThan(shadowAlpha(SHADOW[key]));
+    }
+  });
+
+  it("is tighter (smaller blur radius) than SHADOW at every step", () => {
+    for (const key of ["sm", "md", "lg"] as const) {
+      expect(shadowBlurPx(LIGHT_SHADOW[key])).toBeLessThan(shadowBlurPx(SHADOW[key]));
+    }
+  });
+
+  it("is itself a strictly increasing scale (sm < md < lg) in both alpha and blur", () => {
+    const alphas = (["sm", "md", "lg"] as const).map((k) => shadowAlpha(LIGHT_SHADOW[k]));
+    const blurs = (["sm", "md", "lg"] as const).map((k) => shadowBlurPx(LIGHT_SHADOW[k]));
+    expect(isStrictlyIncreasing(alphas)).toBe(true);
+    expect(isStrictlyIncreasing(blurs)).toBe(true);
+  });
+});
+
+describe("SHADOW_VAR", () => {
+  it("maps each SHADOW/LIGHT_SHADOW step to the matching CSS custom property", () => {
+    expect(SHADOW_VAR.sm).toBe("var(--vd-shadow-sm)");
+    expect(SHADOW_VAR.md).toBe("var(--vd-shadow-md)");
+    expect(SHADOW_VAR.lg).toBe("var(--vd-shadow-lg)");
+  });
+});
+
+describe("MOTION", () => {
+  it("is a strictly increasing scale", () => {
+    const ms = (v: string) => Number(v.replace("ms", ""));
+    expect(isStrictlyIncreasing([ms(MOTION.fast), ms(MOTION.base), ms(MOTION.slow)])).toBe(true);
+  });
+
+  it("stays inside the 120-180ms range the design brief specifies", () => {
+    for (const key of ["fast", "base", "slow"] as const) {
+      const value = Number(MOTION[key].replace("ms", ""));
+      expect(value).toBeGreaterThanOrEqual(120);
+      expect(value).toBeLessThanOrEqual(180);
+    }
+  });
+
+  it("defines one shared easing curve as a valid cubic-bezier function", () => {
+    expect(MOTION.easing).toMatch(/^cubic-bezier\((-?\d*\.?\d+,\s*){3}-?\d*\.?\d+\)$/);
   });
 });

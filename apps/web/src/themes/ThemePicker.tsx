@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { THEMES } from "./themes.js";
+import { MOTION, SHADOW_VAR } from "../shell/tokens.js";
 
 interface ThemePickerProps {
   currentThemeId: string;
@@ -53,6 +54,7 @@ export default function ThemePicker({ currentThemeId, onSelect, onClose }: Theme
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
         onKeyDown={onKeyDown}
+        className="vd-scale-in"
         style={{
           width: "min(480px, 90vw)",
           maxHeight: "70vh",
@@ -60,7 +62,7 @@ export default function ThemePicker({ currentThemeId, onSelect, onClose }: Theme
           background: "var(--vd-surface-raised)",
           border: "1px solid var(--vd-border)",
           borderRadius: 10,
-          boxShadow: "0 12px 40px rgba(0, 0, 0, 0.5)",
+          boxShadow: SHADOW_VAR.lg,
           padding: 12,
         }}
       >
@@ -121,6 +123,9 @@ export function ThemeSection({
               cursor: "pointer",
               fontSize: "0.8rem",
               textAlign: "left",
+              // Motion pass: picking a theme (or just hovering a swatch)
+              // now eases instead of snapping between selected/unselected.
+              transition: `background-color ${MOTION.fast} ${MOTION.easing}, border-color ${MOTION.fast} ${MOTION.easing}, color ${MOTION.fast} ${MOTION.easing}`,
             }}
           >
             <span

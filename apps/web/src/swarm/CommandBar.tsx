@@ -19,7 +19,7 @@
  */
 import { useMemo, useRef, useState } from "react";
 import type { MissionAgent } from "@vibedeck/shared";
-import { RADIUS, SHADOW, SPACE } from "../shell/tokens.js";
+import { RADIUS, SHADOW_VAR, SPACE } from "../shell/tokens.js";
 import { mentionQueryAt, parseMention, roleColorVar, roleGlyph } from "./logic.js";
 
 export interface CommandBarProps {
@@ -176,7 +176,7 @@ const barStyle: React.CSSProperties = {
   background: "var(--vd-surface)",
   border: "1px solid var(--vd-border)",
   borderRadius: RADIUS.lg,
-  boxShadow: SHADOW.md,
+  boxShadow: SHADOW_VAR.md,
 };
 
 const targetSelectStyle: React.CSSProperties = {
@@ -220,7 +220,7 @@ const suggestionListStyle: React.CSSProperties = {
   border: "1px solid var(--vd-border)",
   borderRadius: RADIUS.md,
   overflow: "hidden",
-  boxShadow: SHADOW.md,
+  boxShadow: SHADOW_VAR.md,
 };
 
 const suggestionRowStyle: React.CSSProperties = {

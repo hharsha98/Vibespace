@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { KEYMAP, formatShortcut, isMacPlatform } from "./keys/keymap.js";
+import { SHADOW_VAR } from "./shell/tokens.js";
 
 interface KeyboardCheatSheetProps {
   onClose: () => void;
@@ -48,6 +49,7 @@ export default function KeyboardCheatSheet({ onClose }: KeyboardCheatSheetProps)
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
         onKeyDown={onKeyDown}
+        className="vd-scale-in"
         style={{
           width: "min(440px, 90vw)",
           maxHeight: "75vh",
@@ -55,7 +57,7 @@ export default function KeyboardCheatSheet({ onClose }: KeyboardCheatSheetProps)
           background: "var(--vd-surface-raised)",
           border: "1px solid var(--vd-border)",
           borderRadius: 10,
-          boxShadow: "0 12px 40px rgba(0, 0, 0, 0.5)",
+          boxShadow: SHADOW_VAR.lg,
           padding: 16,
         }}
       >

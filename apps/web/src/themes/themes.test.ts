@@ -33,8 +33,8 @@ const REQUIRED_TERMINAL_FIELDS: (keyof TerminalPalette)[] = [
 const HEX_COLOR = /^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 
 describe("THEMES", () => {
-  it("has at least 25 themes", () => {
-    expect(THEMES.length).toBeGreaterThanOrEqual(25);
+  it("has at least 30 themes", () => {
+    expect(THEMES.length).toBeGreaterThanOrEqual(30);
   });
 
   it("gives every theme a unique id", () => {
@@ -94,11 +94,114 @@ describe("THEMES", () => {
     }
   });
 
-  it("includes at least one light theme alongside the dark-first majority", () => {
+  it("includes a real set of light themes alongside the dark-first majority", () => {
+    // Was "at least 1" before the light-theme pass (Solarized Light, alone,
+    // was the exact "token gesture, not a real choice" bug this pass fixes)
+    // — now at least 5 (Solarized Light + Gruvbox Light + One Light +
+    // Catppuccin Latte + Ayu Light), still comfortably outnumbered by the
+    // dark catalogue per this app's dark-first identity.
     const lightThemes = THEMES.filter((t) => !t.isDark);
     const darkThemes = THEMES.filter((t) => t.isDark);
-    expect(lightThemes.length).toBeGreaterThanOrEqual(1);
+    expect(lightThemes.length).toBeGreaterThanOrEqual(5);
     expect(darkThemes.length).toBeGreaterThan(lightThemes.length);
+  });
+});
+
+// --- Light-theme contrast (the class of bug that shipped Solarized Light
+// with a 1.14:1 surface-vs-background and a 2.48:1 border-vs-background —
+// both silently "valid hex colours" by every check above, and both
+// invisible in an actual screenshot) -----------------------------------
+//
+// A small, dependency-free WCAG relative-luminance/contrast-ratio
+// implementation, deliberately NOT imported from themes.ts's own private
+// `hexToRgb` (that function isn't exported, and re-deriving the maths here
+// keeps this test honest — it isn't allowed to share a bug with the code it
+// exists to catch).
+
+function hexToRgbForContrast(hex: string): [number, number, number] {
+  const h = hex.replace("#", "");
+  const full = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
+  const num = parseInt(full.slice(0, 6), 16);
+  return [(num >> 16) & 255, (num >> 8) & 255, num & 255];
+}
+
+function relativeLuminance(hex: string): number {
+  const [r, g, b] = hexToRgbForContrast(hex).map((c) => {
+    const s = c / 255;
+    return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/** The standard WCAG 2.x contrast-ratio formula: (L1 + 0.05) / (L2 + 0.05),
+ * lighter over darker, always >= 1. */
+function wcagContrast(hexA: string, hexB: string): number {
+  const lA = relativeLuminance(hexA);
+  const lB = relativeLuminance(hexB);
+  const lighter = Math.max(lA, lB);
+  const darker = Math.min(lA, lB);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+describe("light theme contrast (WCAG AA, roughly)", () => {
+  const lightThemes = THEMES.filter((t) => !t.isDark);
+
+  it("has at least one light theme to check (guards against this suite silently checking nothing)", () => {
+    expect(lightThemes.length).toBeGreaterThan(0);
+  });
+
+  it("keeps primary text at >= 4.5:1 against both the canvas and the raised card surface", () => {
+    for (const theme of lightThemes) {
+      const { background, surface, surfaceRaised, text } = theme.ui;
+      expect(wcagContrast(text, background), `${theme.name}: text vs background`).toBeGreaterThanOrEqual(4.5);
+      expect(wcagContrast(text, surface), `${theme.name}: text vs surface`).toBeGreaterThanOrEqual(4.5);
+      expect(wcagContrast(text, surfaceRaised), `${theme.name}: text vs surfaceRaised`).toBeGreaterThanOrEqual(
+        4.5
+      );
+    }
+  });
+
+  it("keeps secondary (muted) text at >= 4.5:1 against the canvas — this is what 'Ready'/status-line text reads at", () => {
+    for (const theme of lightThemes) {
+      const { background, textMuted } = theme.ui;
+      expect(wcagContrast(textMuted, background), `${theme.name}: textMuted vs background`).toBeGreaterThanOrEqual(
+        4.5
+      );
+    }
+  });
+
+  it("keeps secondary (muted) text at >= 3:1 against the raised card surface it appears on", () => {
+    for (const theme of lightThemes) {
+      const { surfaceRaised, textMuted } = theme.ui;
+      expect(
+        wcagContrast(textMuted, surfaceRaised),
+        `${theme.name}: textMuted vs surfaceRaised`
+      ).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it("keeps borders at >= 3:1 against the background — the exact bug that shipped an invisible Solarized Light border", () => {
+    for (const theme of lightThemes) {
+      const { background, border } = theme.ui;
+      expect(wcagContrast(border, background), `${theme.name}: border vs background`).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it("keeps the accent at >= 4.5:1 against accentText — the primary-button label must stay legible", () => {
+    for (const theme of lightThemes) {
+      const { accent, accentText } = theme.ui;
+      expect(wcagContrast(accent, accentText), `${theme.name}: accent vs accentText`).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it("gives surfaceRaised genuine separation from background — catches the 1.14:1 'cards vanish into the canvas' bug directly", () => {
+    for (const theme of lightThemes) {
+      const { background, surfaceRaised } = theme.ui;
+      expect(
+        wcagContrast(surfaceRaised, background),
+        `${theme.name}: surfaceRaised vs background`
+      ).toBeGreaterThanOrEqual(1.35);
+    }
   });
 });
 

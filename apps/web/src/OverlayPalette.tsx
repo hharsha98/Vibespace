@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { SHADOW_VAR } from "./shell/tokens.js";
 
 /**
  * The shared visual/interaction shell behind every "centered search overlay"
@@ -106,6 +107,7 @@ export default function OverlayPalette<T extends OverlayItem>({
     >
       <div
         onClick={(e) => e.stopPropagation()}
+        className="vd-scale-in"
         style={{
           width: "min(560px, 90vw)",
           maxHeight: "60vh",
@@ -116,7 +118,7 @@ export default function OverlayPalette<T extends OverlayItem>({
           background: "var(--vd-surface-raised)",
           border: "1px solid var(--vd-border)",
           borderRadius: 10,
-          boxShadow: "0 12px 40px rgba(0, 0, 0, 0.5)",
+          boxShadow: SHADOW_VAR.lg,
           overflow: "hidden",
         }}
       >

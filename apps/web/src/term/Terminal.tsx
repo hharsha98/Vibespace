@@ -11,6 +11,7 @@ import { AGENT_SPECS } from "@vibedeck/shared";
 import { isMacPlatform, matchShortcut } from "../keys/keymap.js";
 import type { Theme } from "../themes/themes.js";
 import type { Direction } from "../grid/tree.js";
+import { MOTION, RADIUS, SHADOW_VAR } from "../shell/tokens.js";
 import { BlockTracker, parseOsc133 } from "./blocks.js";
 import { createPendingCommand, type PendingCommand } from "./pendingCommand.js";
 import {
@@ -50,6 +51,19 @@ interface TerminalProps {
    * live, whenever the user switches themes (see the effect below); it's
    * not just used at creation time. */
   theme: Theme;
+  /**
+   * Whether THIS pane is the focused one (PaneView.tsx's own `isFocused`,
+   * threaded straight through) — drives the terminal's OWN chrome (the
+   * Live/Blocks toggle, the bottom prompt bar) dimming slightly when the
+   * pane isn't focused, the same "inactive pane recedes" idiom tiling
+   * terminals (tmux, WezTerm) use for their pane chrome. Deliberately NOT a
+   * glow or an accent recolour — docs/DESIGN.md §5 is explicit that the
+   * pane's 1px accent border (drawn one level up, by PaneView.tsx) is the
+   * ONLY focus AFFORDANCE; this is a secondary, purely-opacity reinforcement
+   * of that same fact on the chrome Terminal.tsx itself owns, not a second
+   * competing cue.
+   */
+  isFocused: boolean;
   /**
    * Called after the user picks "Close" from the right-click menu and the
    * session has actually been killed server-side (DELETE /api/sessions/:id
@@ -184,7 +198,7 @@ function styleGutterBar(el: HTMLElement, color: string): void {
  * (switching sessions, unmounting) only closes the *view* — the pty itself
  * keeps running on the server until explicitly killed (see `onClose`).
  */
-export default function Terminal({ sessionId, agentId, theme, onClose, onSplit }: TerminalProps) {
+export default function Terminal({ sessionId, agentId, theme, isFocused, onClose, onSplit }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -920,7 +934,13 @@ export default function Terminal({ sessionId, agentId, theme, onClose, onSplit }
         {/* Live/Blocks toggle (docs/COLLAPSIBLE-BLOCKS.md) — always shown,
          * even for agent TUI panes, so clicking "Blocks" there surfaces the
          * honest "needs shell integration" message instead of the toggle
-         * itself only existing for shell panes. */}
+         * itself only existing for shell panes. Terminal-chrome pass: this
+         * is real chrome now, not a bare rectangle floating over xterm — a
+         * theme-reactive shadow (SHADOW_VAR, same lift every other floating
+         * control in the app gets) and the same isFocused dim treatment the
+         * prompt bar below gets, so the whole pane's own chrome recedes
+         * together when focus moves elsewhere. Still no glow anywhere —
+         * opacity only. */}
         <div
           style={{
             position: "absolute",
@@ -930,8 +950,11 @@ export default function Terminal({ sessionId, agentId, theme, onClose, onSplit }
             display: "flex",
             background: "var(--vd-surface)",
             border: "1px solid var(--vd-border)",
-            borderRadius: 6,
+            borderRadius: RADIUS.sm,
+            boxShadow: SHADOW_VAR.sm,
             overflow: "hidden",
+            opacity: isFocused ? 1 : 0.7,
+            transition: `opacity ${MOTION.fast} ${MOTION.easing}`,
           }}
         >
           <ViewModeButton label="Live" active={viewMode === "live"} onClick={() => setViewMode("live")} />
@@ -947,6 +970,7 @@ export default function Terminal({ sessionId, agentId, theme, onClose, onSplit }
             type="button"
             onClick={() => termRef.current?.scrollToBottom()}
             title="Scroll to bottom"
+            className="vd-fade-in"
             style={{
               position: "absolute",
               bottom: 12,
@@ -963,7 +987,7 @@ export default function Terminal({ sessionId, agentId, theme, onClose, onSplit }
               padding: "4px 10px",
               fontSize: 11,
               cursor: "pointer",
-              boxShadow: "0 4px 12px rgba(0, 0, 0, 0.35)",
+              boxShadow: SHADOW_VAR.md,
             }}
           >
             <DownArrowIcon />
@@ -973,6 +997,7 @@ export default function Terminal({ sessionId, agentId, theme, onClose, onSplit }
 
         {showSearch && viewMode === "live" && (
           <div
+            className="vd-fade-in"
             style={{
               position: "absolute",
               top: 8,
@@ -981,9 +1006,10 @@ export default function Terminal({ sessionId, agentId, theme, onClose, onSplit }
               gap: 4,
               background: "var(--vd-surface)",
               border: "1px solid var(--vd-border)",
-              borderRadius: 6,
+              borderRadius: RADIUS.sm,
               padding: 6,
               zIndex: 10,
+              boxShadow: SHADOW_VAR.sm,
             }}
           >
             <input
@@ -1018,19 +1044,20 @@ export default function Terminal({ sessionId, agentId, theme, onClose, onSplit }
 
         {contextMenu && (
           <ul
+            className="vd-scale-in"
             style={{
               position: "fixed",
               top: contextMenu.y,
               left: contextMenu.x,
               background: "var(--vd-surface)",
               border: "1px solid var(--vd-border)",
-              borderRadius: 6,
+              borderRadius: RADIUS.md,
               padding: "4px 0",
               margin: 0,
               listStyle: "none",
               minWidth: 140,
               zIndex: 20,
-              boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+              boxShadow: SHADOW_VAR.lg,
             }}
           >
             <ContextMenuItem label="Copy" onClick={handleCopy} />
@@ -1047,6 +1074,7 @@ export default function Terminal({ sessionId, agentId, theme, onClose, onSplit }
         status={queueState.status}
         queuedCount={queueState.queue.length}
         agentDisplayName={AGENT_SPECS[agentId].displayName}
+        isFocused={isFocused}
         onSubmit={handlePromptSubmit}
         onClearQueue={handleClearQueue}
         onEscape={() => termRef.current?.focus()}
@@ -1078,6 +1106,7 @@ function ViewModeButton({ label, active, onClick }: { label: string; active: boo
         cursor: "pointer",
         fontSize: 11,
         padding: "4px 8px",
+        transition: `background-color ${MOTION.fast} ${MOTION.easing}, color ${MOTION.fast} ${MOTION.easing}`,
       }}
     >
       {label}

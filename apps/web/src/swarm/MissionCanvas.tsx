@@ -21,7 +21,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MissionAgent } from "@vibedeck/shared";
 import { EmptyState, IconButton } from "../shell/ui.js";
-import { RADIUS, SHADOW, SPACE } from "../shell/tokens.js";
+import { RADIUS, SHADOW_VAR, SPACE } from "../shell/tokens.js";
 import { agentStatusKind, fitTransform, layoutMissionNodes, roleColorVar, roleGlyph, type ViewTransform } from "./logic.js";
 
 export interface MissionCanvasProps {
@@ -497,7 +497,7 @@ const zoomClusterStyle: React.CSSProperties = {
   background: "var(--vd-surface)",
   border: "1px solid var(--vd-border)",
   borderRadius: RADIUS.sm,
-  boxShadow: SHADOW.sm,
+  boxShadow: SHADOW_VAR.sm,
 };
 
 const zoomPercentStyle: React.CSSProperties = {

@@ -13,7 +13,7 @@
  * into slightly-different-looking copies.
  */
 import type { CSSProperties, ReactNode } from "react";
-import { FONT, RADIUS, SHADOW, SPACE } from "./tokens.js";
+import { FONT, MOTION, RADIUS, SHADOW_VAR, SPACE } from "./tokens.js";
 
 /** The five semantic status colours every theme defines (docs/DESIGN.md
  * §2) — the only "meaningful" colours in the whole app; everything else is
@@ -228,11 +228,19 @@ export function ListRow({
         // Premium-pass (problem #2/#5): an active row now reads as
         // genuinely "raised", not just recoloured — a faint shadow on top
         // of the layering that was already there, same elevation idiom the
-        // rest of this pass applies to panes and cards.
-        boxShadow: active ? SHADOW.sm : undefined,
+        // rest of this pass applies to panes and cards. `SHADOW_VAR` (not
+        // the raw `SHADOW` constant) so this shadow re-tunes itself for
+        // light themes instead of staying tuned only for dark ones.
+        boxShadow: active ? SHADOW_VAR.sm : undefined,
         borderLeft: active
           ? `${accentColor ? 3 : 2}px solid ${accentColor ?? "var(--vd-accent)"}`
           : "2px solid transparent",
+        // Motion pass: an active/selected row now animates INTO that state
+        // (background, shadow, left-edge colour) instead of snapping — the
+        // same `MOTION.fast` + shared easing every other hover/active
+        // transition in this file uses, so a row selection reads as one
+        // consistent "system", not a one-off.
+        transition: `background-color ${MOTION.fast} ${MOTION.easing}, box-shadow ${MOTION.fast} ${MOTION.easing}, border-color ${MOTION.fast} ${MOTION.easing}`,
       }}
     >
       {statusKind && <StatusDot status={statusKind} />}
@@ -333,7 +341,7 @@ export function Button({
         fontWeight: primary ? 500 : 400,
         cursor: disabled ? "default" : "pointer",
         opacity: disabled ? 0.6 : 1,
-        transition: "background-color 120ms ease, border-color 120ms ease, color 120ms ease, filter 120ms ease",
+        transition: `background-color ${MOTION.fast} ${MOTION.easing}, border-color ${MOTION.fast} ${MOTION.easing}, color ${MOTION.fast} ${MOTION.easing}, filter ${MOTION.fast} ${MOTION.easing}`,
       }}
     >
       {children}
@@ -469,24 +477,40 @@ export function EmptyState({ icon, title, description, action, hint, children, m
  * tag in JSX (not a `document.createElement` side effect at module scope)
  * so it stays scoped to React's own render/mount lifecycle and doesn't run
  * at import time under Node/vitest.
+ *
+ * Also the ONE place `prefers-reduced-motion` is handled for the whole app
+ * (motion pass) — see the media-query block below. Every `transition`/
+ * `animation` elsewhere, whether inline (a component's own `style.transition`)
+ * or in this same stylesheet, goes through that single override instead of
+ * each call site adding its own reduced-motion branch.
  */
 export function GlobalShellStyles() {
   return (
     <style>{`
-.vd-icon-btn { color: var(--vd-text-faint); transition: color 120ms ease, background-color 120ms ease; }
+/* Motion pass: every transition/animation in the app reads its duration
+   from MOTION (tokens.ts) and its easing from the same shared curve — see
+   that file's own doc comment for why 120-180ms/one curve, not a per-
+   component choice. This block is interpolated from those constants (not
+   hand-typed durations) for exactly the components below that need a real
+   :hover/:focus-visible selector; every OTHER component sets its own
+   MOTION-derived transition inline (Button, ListRow, PaneView's pane
+   border, the agent-picker cards, ...). */
+.vd-icon-btn { color: var(--vd-text-faint); transition: color ${MOTION.fast} ${MOTION.easing}, background-color ${MOTION.fast} ${MOTION.easing}; }
 .vd-icon-btn:hover, .vd-icon-btn.is-active { color: var(--vd-text); background: var(--vd-surface-raised); }
+.vd-list-row { transition: background-color ${MOTION.fast} ${MOTION.easing}; }
 .vd-list-row:hover { background: var(--vd-surface-raised); }
-.vd-pane-icons { opacity: 0; transition: opacity 120ms ease; }
+.vd-pane-icons { opacity: 0; transition: opacity ${MOTION.fast} ${MOTION.easing}; }
 .vd-pane:hover .vd-pane-icons, .vd-pane.is-focused .vd-pane-icons { opacity: 1; }
-.vd-board-card-actions { opacity: 0; transition: opacity 120ms ease; }
+.vd-board-card-actions { opacity: 0; transition: opacity ${MOTION.fast} ${MOTION.easing}; }
 .vd-board-card:hover .vd-board-card-actions { opacity: 1; }
 /* Round 2 ("card and column treatment generally"): a hovered card now lifts
    the same way a hovered empty-pane agent card already does (border ->
    accent, a soft shadow) — previously hovering a board card revealed its
    action icons but gave zero feedback that the card itself was the drag
-   handle. */
-.vd-board-card { transition: border-color 120ms ease, box-shadow 120ms ease; }
-.vd-board-card:hover { border-color: var(--vd-accent); box-shadow: ${SHADOW.md}; }
+   handle. SHADOW_VAR (not the raw SHADOW constant) so this shadow re-tunes
+   for light themes instead of staying tuned only for dark ones. */
+.vd-board-card { transition: border-color ${MOTION.fast} ${MOTION.easing}, box-shadow ${MOTION.fast} ${MOTION.easing}, transform ${MOTION.fast} ${MOTION.easing}; }
+.vd-board-card:hover { border-color: var(--vd-accent); box-shadow: ${SHADOW_VAR.md}; }
 
 /* Premium-pass additions (problems #2/#4/#5): a hovered, inactive top-bar
    tab gets a raised background so the whole switcher feels responsive, not
@@ -494,20 +518,21 @@ export function GlobalShellStyles() {
    wins over this rule regardless, since inline styles outrank a class
    selector — see shell/ui.tsx's IconButton doc comment for the same
    reasoning applied here). */
+.vd-view-tab { transition: background-color ${MOTION.fast} ${MOTION.easing}, color ${MOTION.fast} ${MOTION.easing}; }
 .vd-view-tab:hover { background: var(--vd-surface-raised); color: var(--vd-text); }
 
 /* A workspace row's rename/delete controls only reveal on hover — the
    colour swatch and running-count badge stay always-visible (they're
    information, not a destructive action), same "hide the controls, not the
    meaning" idiom board cards already use above. */
-.vd-workspace-row-actions { opacity: 0; transition: opacity 120ms ease; }
+.vd-workspace-row-actions { opacity: 0; transition: opacity ${MOTION.fast} ${MOTION.easing}; }
 .vd-workspace-row-wrap:hover .vd-workspace-row-actions,
 .vd-workspace-row-wrap:focus-within .vd-workspace-row-actions { opacity: 1; }
 
 /* The empty-pane agent picker's cards (PaneView.tsx): a soft lift on hover
    for available agents only — unavailable ("not installed") cards opt out
    via .vd-agent-card.is-disabled so they never look interactive. */
-.vd-agent-card:hover:not(.is-disabled) { border-color: var(--vd-accent); transform: translateY(-1px); box-shadow: 0 6px 16px rgba(0, 0, 0, 0.32); }
+.vd-agent-card:hover:not(.is-disabled) { border-color: var(--vd-accent); transform: translateY(-1px); box-shadow: ${SHADOW_VAR.md}; }
 .vd-agent-card:focus-visible:not(.is-disabled) { outline: 2px solid var(--vd-accent); outline-offset: 1px; }
 
 /* Stage B: Button's own hover/focus response (see Button's doc comment) —
@@ -526,6 +551,7 @@ export function GlobalShellStyles() {
    note rows) — same raised-background feedback ListRow's own :hover already
    gives every OTHER list in the app, so these don't sit as the one dead spot
    that doesn't respond to a pointer over it. */
+.vd-row-hover { transition: background-color ${MOTION.fast} ${MOTION.easing}; }
 .vd-row-hover:hover { background: var(--vd-surface-raised); }
 
 /* Stage B: a hover rule for the app's various hand-rolled "destructive
@@ -536,6 +562,45 @@ export function GlobalShellStyles() {
    restyling them into Button. */
 .vd-btn-danger:hover:not(:disabled) { filter: brightness(1.1); }
 .vd-btn-danger:focus-visible { outline: 2px solid var(--vd-danger); outline-offset: 1px; }
+
+/* Terminal-chrome pass: the per-pane prompt bar's own input gets a real
+   form-control focus ring (border-colour only, no outline/glow) — this is
+   ordinary input affordance, independent of the pane-level focus border
+   docs/DESIGN.md §5 owns (that one stays border-only-no-glow too; this rule
+   doesn't touch it). */
+.vd-prompt-input:focus { border-color: var(--vd-accent); outline: none; }
+
+/* Motion pass: two small, reusable "something just appeared" animations —
+   NOT transitions, since a transition needs a live "before" state to
+   animate FROM, which a just-mounted React node (a disclosure panel, an
+   overlay) never has. vd-fade-in is for content unfolding in place
+   (PaneView's "N more not installed" grid, Terminal's search box/context
+   menu); vd-scale-in is for a whole floating panel arriving (ThemePicker,
+   the command palette, CardEditor, the keyboard cheat sheet). Both read
+   their duration/easing from MOTION.base, same shared curve as every
+   transition above. */
+@keyframes vd-fade-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes vd-scale-in { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } }
+.vd-fade-in { animation: vd-fade-in ${MOTION.base} ${MOTION.easing}; }
+.vd-scale-in { animation: vd-scale-in ${MOTION.base} ${MOTION.easing}; }
+
+/* Respect prefers-reduced-motion (docs/DESIGN.md's motion pass: "not
+   optional"). A single !important rule beats every other declaration on
+   the page, including a component's own inline style.transition (inline
+   styles normally outrank a stylesheet, but NOT one marked !important) —
+   so this is the one place that guarantee needs to be written, rather than
+   every component branching on the media query itself. Collapsing to a
+   near-zero, non-zero duration (not literally 0) keeps transitionend /
+   animationend listeners (if any component ever adds one) still firing,
+   which an outright "disable" can silently break. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
 `}</style>
   );
 }

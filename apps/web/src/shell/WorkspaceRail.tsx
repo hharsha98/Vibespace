@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { WORKSPACE_COLORS, type Workspace } from "@vibedeck/shared";
 import { IconButton, ListRow } from "./ui.js";
+import { SHADOW_VAR } from "./tokens.js";
 import FileTree from "../files/FileTree.js";
 
 /**
@@ -443,6 +444,7 @@ function ColorPickerPopover({
   return (
     <div
       onClick={(e) => e.stopPropagation()}
+      className="vd-scale-in"
       style={{
         position: "absolute",
         top: "100%",
@@ -456,7 +458,7 @@ function ColorPickerPopover({
         background: "var(--vd-surface-raised)",
         border: "1px solid var(--vd-border)",
         borderRadius: 6,
-        boxShadow: "0 8px 24px rgba(0, 0, 0, 0.4)",
+        boxShadow: SHADOW_VAR.lg,
       }}
     >
       <button

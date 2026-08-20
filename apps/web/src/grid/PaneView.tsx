@@ -4,7 +4,7 @@ import Terminal from "../term/Terminal.js";
 import type { Theme } from "../themes/themes.js";
 import type { Direction, PaneId } from "./tree.js";
 import { Button, EMPTY_SURFACE_BACKGROUND, IconButton, KeyHint, Pill, StatusDot, sessionStatusKind } from "../shell/ui.js";
-import { FONT, RADIUS, SHADOW, SPACE } from "../shell/tokens.js";
+import { FONT, MOTION, RADIUS, SHADOW_VAR, SPACE } from "../shell/tokens.js";
 import { AgentGlyph, agentAccentVar } from "./agentVisuals.js";
 import { canLaunchMultiple, splitByAvailability, toggleMultiLaunchSelection } from "./agentPicker.js";
 import { useGitBranch } from "./useGitBranch.js";
@@ -221,12 +221,25 @@ export default function PaneView({
         // lifting it off the black canvas — deliberately NOT tied to focus
         // (docs/DESIGN.md §5 is explicit that the focus border is the ONLY
         // focus affordance, no glow), so this is elevation for its own
-        // sake, present on every pane equally.
-        boxShadow: SHADOW.sm,
+        // sake, present on every pane equally. SHADOW_VAR (not the raw
+        // SHADOW constant) so it re-tunes for light themes.
+        boxShadow: SHADOW_VAR.sm,
         background: "var(--vd-bg)",
+        // Motion pass: the focus border swap (the ONLY focus affordance —
+        // still no glow, just this colour change) now animates instead of
+        // snapping, so moving focus between panes reads as a deliberate
+        // handoff rather than a flicker.
+        transition: `border-color ${MOTION.fast} ${MOTION.easing}`,
       }}
     >
       <div
+        // Terminal-chrome pass: the header dims (opacity only — no glow,
+        // no second accent) when this pane isn't focused, the same
+        // treatment Terminal.tsx applies to the Live/Blocks toggle and
+        // PromptBar below it, so the pane's ENTIRE chrome — not just the
+        // 1px outer border — recedes together. The border swap above
+        // remains the one focus AFFORDANCE per docs/DESIGN.md §5; this is a
+        // secondary reinforcement of the same fact, not a competing cue.
         style={{
           display: "flex",
           alignItems: "center",
@@ -239,6 +252,8 @@ export default function PaneView({
           fontSize: FONT.body,
           color: "var(--vd-text-muted)",
           boxSizing: "border-box",
+          opacity: isFocused ? 1 : 0.7,
+          transition: `opacity ${MOTION.fast} ${MOTION.easing}`,
         }}
       >
         <StatusDot status={statusKind} title={session ? session.status : "empty"} />
@@ -354,6 +369,7 @@ export default function PaneView({
             // SAFER of the two busy-detection paths (exact, not heuristic).
             agentId={session?.agent ?? "shell"}
             theme={theme}
+            isFocused={isFocused}
             onClose={() => onClosePane(paneId)}
             // Phase 9.5c, PARITY #9: the right-click menu's "Split right" /
             // "Split down" entries call this SAME handler the header's split
@@ -470,6 +486,13 @@ export default function PaneView({
 
                         {showUnavailable && (
                           <div
+                            // Motion pass: this disclosure can only ever be
+                            // fully mounted or fully absent (React never
+                            // renders it "halfway"), so a `transition` has
+                            // no live "before" state to animate from — a
+                            // `vd-fade-in` animation (GlobalShellStyles)
+                            // is what makes it unfold instead of snap in.
+                            className="vd-fade-in"
                             style={{
                               display: "grid",
                               gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
@@ -668,7 +691,7 @@ function AgentRow({
         padding: "8px 10px",
         cursor: isDisabled && !selected ? "not-allowed" : "pointer",
         opacity: agent.available ? (selectionFull && !selected ? 0.5 : 1) : 0.55,
-        transition: "border-color 120ms ease, transform 120ms ease, box-shadow 120ms ease",
+        transition: `border-color ${MOTION.fast} ${MOTION.easing}, transform ${MOTION.fast} ${MOTION.easing}, box-shadow ${MOTION.fast} ${MOTION.easing}`,
         boxSizing: "border-box",
         width: "100%",
       }}
@@ -762,7 +785,7 @@ function DisclosureChevron({ open }: { open: boolean }) {
       style={{
         flexShrink: 0,
         transform: open ? "rotate(90deg)" : "none",
-        transition: "transform 120ms ease",
+        transition: `transform ${MOTION.fast} ${MOTION.easing}`,
       }}
     >
       <path d="M5 3L9.5 7L5 11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />

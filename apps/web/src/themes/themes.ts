@@ -23,8 +23,13 @@
  *
  * Nothing in this file touches the DOM or `localStorage` at module scope —
  * only inside function bodies — so importing it (as `themes.test.ts` does)
- * is safe under plain Node/vitest with no browser or jsdom involved.
+ * is safe under plain Node/vitest with no browser or jsdom involved. The one
+ * import below (`SHADOW`/`LIGHT_SHADOW` from tokens.ts) keeps that property:
+ * tokens.ts is itself a plain-constants module with no DOM/React dependency
+ * of its own (see its own top comment), so pulling the elevation-shadow
+ * scale in for `applyThemeCssVars` (below) doesn't change that.
  */
+import { LIGHT_SHADOW, SHADOW } from "../shell/tokens.js";
 
 /**
  * vibedeck's own UI chrome colours — applied as CSS custom properties.
@@ -198,7 +203,15 @@ function deriveUi(base: UIBase, terminal: TerminalPalette, isDark: boolean): UIP
     // "Raised" always means "a step closer to the viewer" — for a dark
     // theme that's lighter (closer to white); for a light theme it's
     // darker (closer to black), which is why the mix direction flips.
-    surfaceRaised: mix(base.surface, isDark ? 0.12 : -0.06),
+    // The light-side magnitude (0.12, matching dark's) is deliberately
+    // NOT the original 0.06 — the light-theme audit that produced
+    // LIGHT_SHADOW (tokens.ts) also found 0.06 too subtle to read as a
+    // real second surface once the starting colour is already close to
+    // white: a light theme's `surface` and `background` sit only ~1.1-1.3:1
+    // apart to begin with (that's inherent to a light, low-saturation
+    // palette, not a bug), so `surfaceRaised` needs the bigger step to read
+    // as "a distinct card", not "the same cream with a rounding error".
+    surfaceRaised: mix(base.surface, isDark ? 0.12 : -0.12),
     border: base.border,
     text: base.text,
     textMuted: base.textMuted,
@@ -222,7 +235,10 @@ function deriveUi(base: UIBase, terminal: TerminalPalette, isDark: boolean): UIP
  * The built-in catalogue: "Void" (vibedeck's own original look, carried over
  * unchanged from Phases 0-3), then long-established community editor and
  * terminal palettes — Dracula, Synthwave, Nord, Gruvbox, Tokyo Night,
- * Solarized and friends — plus one light option. 26 total.
+ * Solarized and friends — plus five light options (Solarized Light, and
+ * four more added in the light-theme pass: Gruvbox Light, One Light,
+ * Catppuccin Latte, Ayu Light — each the real light counterpart to a dark
+ * theme already in this list). 30 total.
  *
  * These are widely-used palettes from the wider ecosystem, not any single
  * product's proprietary set; each is our own transcription of a public
@@ -1158,13 +1174,24 @@ const THEME_DEFS: ThemeDef[] = [
     id: "solarized-light",
     name: "Solarized Light",
     isDark: false,
+    // Light-theme audit: the original `base` here reused Solarized's own
+    // `base2`/`base1` (#eee8d5/#93a1a1) verbatim for `surface`/`border` —
+    // faithful to the source palette, but #93a1a1 on #fdf6e3 measures
+    // 2.48:1, well under the ~3:1 a UI boundary needs to actually read as a
+    // boundary (see themes.test.ts's "light themes meet contrast targets"
+    // for the check that would have caught this). `border`/`textMuted`/
+    // `accent` below are darkened just enough to clear AA while keeping
+    // Solarized's recognisable cream/teal/blue identity — `text` and
+    // `background` (the two colours that were already high-contrast) are
+    // untouched, and the `terminal` palette (below) is untouched too, since
+    // its own 16 ANSI slots were never the problem.
     base: {
       background: "#fdf6e3",
-      surface: "#eee8d5",
-      border: "#93a1a1",
+      surface: "#e9e1c9",
+      border: "#4c6363",
       text: "#073642",
-      textMuted: "#657b83",
-      accent: "#268bd2",
+      textMuted: "#5a6e75",
+      accent: "#1a6fa8",
       accentText: "#fdf6e3",
     },
     terminal: {
@@ -1191,14 +1218,182 @@ const THEME_DEFS: ThemeDef[] = [
       brightWhite: "#fdf6e3",
     },
   },
+  // --- Light themes (4 more, added alongside the Solarized Light fix) ----
+  // Each pairs with a dark theme already above (Gruvbox Dark, One Dark,
+  // Catppuccin Mocha, Ayu Dark) — real, established light variants of
+  // schemes this catalogue already carries the dark half of, not an
+  // invented one-off set. Same "our own transcription, not a pixel-exact
+  // copy" spirit as every other entry in this file (see this file's own
+  // top-of-catalogue comment): base hues are drawn from each scheme's real
+  // published palette, but `border`/`textMuted`/`accent` are tuned to clear
+  // AA against a light canvas specifically (a straight port of a published
+  // "light mode" palette does NOT automatically clear WCAG AA — see the
+  // Solarized Light comment above for the same lesson applied there).
+  {
+    id: "gruvbox-light",
+    name: "Gruvbox Light",
+    isDark: false,
+    base: {
+      background: "#fbf1c7",
+      surface: "#e5d5ab",
+      border: "#6b5f54",
+      text: "#282828",
+      textMuted: "#65594e",
+      accent: "#af3a03",
+      accentText: "#fbf1c7",
+    },
+    terminal: {
+      // Gruvbox's ANSI accents (red/green/yellow/blue/magenta/cyan, both
+      // normal and bright) are the same hex in light and dark mode by
+      // design — only background/foreground/black/white/cursor differ.
+      // Same "one 16-colour set, swap which end is background" convention
+      // Solarized Dark/Light already use in this file.
+      background: "#fbf1c7",
+      foreground: "#3c3836",
+      cursor: "#282828",
+      cursorAccent: "#fbf1c7",
+      selectionBackground: "#ebdbb2",
+      black: "#282828",
+      red: "#cc241d",
+      green: "#98971a",
+      yellow: "#d79921",
+      blue: "#458588",
+      magenta: "#b16286",
+      cyan: "#689d6a",
+      white: "#a89984",
+      brightBlack: "#928374",
+      brightRed: "#9d0006",
+      brightGreen: "#79740e",
+      brightYellow: "#b57614",
+      brightBlue: "#076678",
+      brightMagenta: "#8f3f71",
+      brightCyan: "#427b58",
+      brightWhite: "#f9f5d7",
+    },
+  },
+  {
+    id: "one-light",
+    name: "One Light",
+    isDark: false,
+    base: {
+      background: "#fafafa",
+      surface: "#e6e6e8",
+      border: "#6c6f79",
+      text: "#383a42",
+      textMuted: "#696c77",
+      accent: "#2f5fc7",
+      accentText: "#ffffff",
+    },
+    terminal: {
+      background: "#fafafa",
+      foreground: "#383a42",
+      cursor: "#383a42",
+      cursorAccent: "#fafafa",
+      selectionBackground: "#e5e5e6",
+      black: "#383a42",
+      red: "#ca1243",
+      green: "#50a14f",
+      yellow: "#c18401",
+      blue: "#4078f2",
+      magenta: "#a626a4",
+      cyan: "#0184bc",
+      white: "#a0a1a7",
+      brightBlack: "#696c77",
+      brightRed: "#e45649",
+      brightGreen: "#50a14f",
+      brightYellow: "#c18401",
+      brightBlue: "#4078f2",
+      brightMagenta: "#a626a4",
+      brightCyan: "#0184bc",
+      brightWhite: "#f9f9f9",
+    },
+  },
+  {
+    id: "catppuccin-latte",
+    name: "Catppuccin Latte",
+    isDark: false,
+    base: {
+      background: "#eff1f5",
+      surface: "#dfe2ea",
+      border: "#666a82",
+      text: "#4c4f69",
+      textMuted: "#5c5f77",
+      accent: "#1657d1",
+      accentText: "#ffffff",
+    },
+    terminal: {
+      background: "#eff1f5",
+      foreground: "#4c4f69",
+      cursor: "#dc8a78",
+      cursorAccent: "#eff1f5",
+      selectionBackground: "#bcc0cc",
+      black: "#5c5f77",
+      red: "#d20f39",
+      green: "#40a02b",
+      yellow: "#df8e1d",
+      blue: "#1e66f5",
+      magenta: "#ea76cb",
+      cyan: "#179299",
+      white: "#acb0be",
+      brightBlack: "#6c6f85",
+      brightRed: "#d20f39",
+      brightGreen: "#40a02b",
+      brightYellow: "#df8e1d",
+      brightBlue: "#1e66f5",
+      brightMagenta: "#ea76cb",
+      brightCyan: "#179299",
+      brightWhite: "#dce0e8",
+    },
+  },
+  {
+    id: "ayu-light",
+    name: "Ayu Light",
+    isDark: false,
+    base: {
+      background: "#fafafa",
+      surface: "#eeeef0",
+      border: "#666b72",
+      text: "#3c4048",
+      textMuted: "#5f6570",
+      accent: "#b34e05",
+      accentText: "#ffffff",
+    },
+    terminal: {
+      background: "#fafafa",
+      foreground: "#5c6166",
+      // Ayu's signature bright-orange cursor — a flourish that only needs
+      // to read clearly as a cursor block, not clear AA text contrast, so
+      // it stays the vivid `#fa8d3e` rather than the darkened `accent`
+      // above (which exists specifically for UI text/border/fill duty).
+      cursor: "#fa8d3e",
+      cursorAccent: "#fafafa",
+      selectionBackground: "#e3e4e6",
+      black: "#5c6166",
+      red: "#f51818",
+      green: "#86b300",
+      yellow: "#f2ae49",
+      blue: "#399ee6",
+      magenta: "#a37acc",
+      cyan: "#4cbf99",
+      white: "#abb0b6",
+      brightBlack: "#828c99",
+      brightRed: "#ff6666",
+      brightGreen: "#a6cc70",
+      brightYellow: "#ffcc66",
+      brightBlue: "#73b8ff",
+      brightMagenta: "#c2a3e0",
+      brightCyan: "#8cd9c0",
+      brightWhite: "#f0f0f0",
+    },
+  },
 ];
 
 /**
  * The catalogue every other module in the app actually imports: each
  * `ThemeDef`'s hand-picked `base` expanded, via `deriveUi`, into a complete
  * 14-field `UIPalette`. Doing this expansion once here (rather than inline
- * in each `ThemeDef`) is what keeps `THEME_DEFS` above readable — 26 themes
- * × 7 base fields, not 26 × 14.
+ * in each `ThemeDef`) is what keeps `THEME_DEFS` above readable — 30 themes
+ * × 7 base fields, not 30 × 14.
  */
 export const THEMES: Theme[] = THEME_DEFS.map((def) => ({
   id: def.id,
@@ -1287,4 +1482,16 @@ export function applyThemeCssVars(theme: Theme): void {
   // as `var(--vd-role-reviewer)` instead of a hard-coded hex (see
   // `swarm/logic.ts`'s `roleColorVar`).
   root.style.setProperty("--vd-role-reviewer", "#c084fc");
+  // Elevation shadows (tokens.ts's SHADOW/LIGHT_SHADOW): the ONE piece of
+  // this file's CSS-var output that isn't a straight UIPalette field —
+  // every component reads `SHADOW_VAR.sm/md/lg` ("var(--vd-shadow-sm)" etc,
+  // see tokens.ts) instead of choosing between the two constants itself, so
+  // switching themes re-tunes every box-shadow in the app the same way
+  // switching accent colour re-tunes every border. See LIGHT_SHADOW's own
+  // doc comment for why dark and light need genuinely different values, not
+  // just a recolour.
+  const shadow = theme.isDark ? SHADOW : LIGHT_SHADOW;
+  root.style.setProperty("--vd-shadow-sm", shadow.sm);
+  root.style.setProperty("--vd-shadow-md", shadow.md);
+  root.style.setProperty("--vd-shadow-lg", shadow.lg);
 }
