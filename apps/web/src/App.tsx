@@ -539,6 +539,54 @@ export default function App() {
     setRoot((prev) => (prev ? splitPane(prev, paneId, direction) : prev));
   }, []);
 
+  // "Launch more than one..." (BridgeSpace parity, PaneView.tsx's empty-pane
+  // picker). Smallest honest version: exactly 2 agents, side by side — see
+  // grid/agentPicker.ts's MAX_MULTI_LAUNCH comment for why this doesn't
+  // (yet) generalise to arbitrary N. Reuses the SAME split-then-diff-ids
+  // trick handleSessionDispatched/focusSessionInGrid above already use to
+  // find a freshly-created leaf's id: splitPane doesn't hand the new leaf's
+  // id back directly, so it's found by diffing the pane-id sets before and
+  // after the split.
+  const handleLaunchMultiple = useCallback(
+    (paneId: PaneId, agentIds: AgentId[]) => {
+      if (!root || agentIds.length !== 2) return;
+      const [firstAgent, secondAgent] = agentIds;
+      const panesBefore = listPanes(root);
+      const split = splitPane(root, paneId, "row");
+      const beforeIds = new Set(panesBefore.map((p) => p.id));
+      const newLeafId = listPanes(split).find((p) => !beforeIds.has(p.id))?.id;
+      if (!newLeafId) return;
+
+      setRoot(split);
+      setFocusedPaneId(paneId);
+
+      const startOne = (agent: AgentId, targetPaneId: PaneId) =>
+        fetch("/api/sessions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(activeWorkspaceId ? { agent, workspaceId: activeWorkspaceId } : { agent }),
+        })
+          .then((res) => {
+            if (!res.ok) throw new Error(`Server responded with ${res.status}`);
+            return res.json() as Promise<SessionInfo>;
+          })
+          .then((session) => {
+            setSessions((prev) => [...prev, session]);
+            setRoot((prev) => (prev ? attachSession(prev, targetPaneId, session.id) : prev));
+          })
+          .catch((err: unknown) => {
+            // Same "warn, leave that half of the split empty" fallback
+            // PaneView.tsx's own single-agent startSession uses on failure
+            // — the other agent (if it already started) keeps running.
+            console.warn(`vibedeck: failed to start "${agent}" during multi-launch`, err);
+          });
+
+      void startOne(firstAgent, paneId);
+      void startOne(secondAgent, newLeafId);
+    },
+    [root, activeWorkspaceId]
+  );
+
   // A pane's session (if it had one) has already been DELETEd server-side
   // by the time this fires — see PaneView.tsx and Terminal.tsx's own
   // "Close" menu item. This just needs to drop the pane from the tree and
@@ -1452,6 +1500,7 @@ export default function App() {
                     focusedPaneId={focusedPaneId}
                     onFocus={handleFocus}
                     onSessionStarted={handleSessionStarted}
+                    onLaunchMultiple={handleLaunchMultiple}
                     onSplit={handleSplit}
                     onClosePane={handleClosePane}
                     maximizedPaneId={maximizedPaneId}

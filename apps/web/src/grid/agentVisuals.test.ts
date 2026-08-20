@@ -16,9 +16,23 @@ describe("agentAccentVar", () => {
     }
   });
 
-  it("gives every agent a DIFFERENT accent, so cards read as visually distinct", () => {
+  // With 10 agents but only 6 status/accent tokens in the palette
+  // (--vd-accent + the 5 StatusKind tokens), 1:1 distinctness is no longer
+  // possible without inventing a new hex value — see agentAccentVar's own
+  // comment. What must still hold: every one of the 6 tokens gets used
+  // (nothing is wasted/duplicated to the point some tokens go unused), and
+  // the glyph shape (tested only visually, not here) carries distinctness
+  // the wrapper accent alone no longer can.
+  it("uses every one of the palette's 6 accent/status tokens at least once", () => {
     const accents = AGENT_IDS.map((id) => agentAccentVar(id));
-    expect(new Set(accents).size).toBe(AGENT_IDS.length);
+    expect(new Set(accents).size).toBe(6);
+  });
+
+  it("keeps the four original agents' accents exactly as they were before the 10-agent expansion", () => {
+    expect(agentAccentVar("claude")).toBe("var(--vd-accent)");
+    expect(agentAccentVar("cursor-agent")).toBe("var(--vd-info)");
+    expect(agentAccentVar("codex")).toBe("var(--vd-ok)");
+    expect(agentAccentVar("shell")).toBe("var(--vd-idle)");
   });
 
   it("colours claude with the app's primary accent token", () => {

@@ -85,11 +85,58 @@ export async function detectAllAgents(): Promise<Record<AgentId, boolean>> {
  * can show something more useful than "not installed". Lives here (not in
  * `index.ts`, where it originated) so `board/routes.ts` can import it
  * without an `index.ts` <-> `board/routes.ts` import cycle.
+ *
+ * Research notes (BridgeSpace-parity expansion from 4 to 10 agents) — every
+ * binary name in `@vibedeck/shared`'s `AGENT_SPECS` and every install hint
+ * below was checked against a real source before being written down, not
+ * guessed blind. Confidence varies a lot per agent, so it's recorded here
+ * explicitly rather than presented as uniform certainty:
+ *
+ *  - droid (Factory): HIGH confidence. docs.factory.ai's own CLI quickstart
+ *    page documents `npm install -g droid` and the `droid` command.
+ *  - gemini (Google): HIGH confidence. The official google-gemini/gemini-cli
+ *    GitHub repo and the `@google/gemini-cli` npm package both document
+ *    `npm install -g @google/gemini-cli` and the `gemini` command.
+ *  - opencode (sst): MEDIUM-HIGH confidence. `opencode-ai` is a real,
+ *    actively-published npm package; secondary sources agree its binary is
+ *    `opencode`, but the npm package page itself has no README to confirm
+ *    firsthand.
+ *  - grok (xAI "Grok Build"): MEDIUM confidence. x.ai's own announcement
+ *    page (x.ai/news/grok-build-cli) shows `grok-build` as the prompt in
+ *    its terminal screenshots and documents `curl -fsSL
+ *    https://x.ai/cli/install.sh | bash` as the install method — no npm
+ *    package is published by xAI itself. An unofficial `@xai-official/grok`
+ *    npm package with a `grok` binary also turned up in search, but isn't
+ *    xAI's own, so it wasn't used here.
+ *  - deepseek ("DeepSeek Harness" in the picker label, per BridgeSpace's
+ *    photo): LOW confidence. No product literally named "DeepSeek Harness"
+ *    could be confirmed against an authoritative source — search results
+ *    for it (dsh, @deepseek-ai/dsh, a "DSH Plugin Store") read like
+ *    low-quality/SEO content, not documentation. DeepSeek's OWN docs
+ *    (api-docs.deepseek.com) instead document a real, differently-named
+ *    tool, "Deep Code": `npm install -g @vegamo/deepcode-cli`, binary
+ *    `deepcode`. That's used here as the best available stand-in, but it is
+ *    a genuine guess about what BridgeSpace's "DeepSeek Harness" entry
+ *    actually launches, not a confirmed match.
+ *  - antigravity (Google): LOW confidence. Google's own antigravity.google
+ *    marketing page confirms an "Antigravity CLI" product exists ("the
+ *    lightweight, fast, terminal-first surface to work with Antigravity
+ *    agents") but the fetched page carries no code snippets — no concrete
+ *    binary name or install command could be confirmed from it. `null`
+ *    below (no install hint) reflects that; the `antigravity` command name
+ *    in AGENT_SPECS is a guess following the same "binary == short product
+ *    name" pattern the confirmed entries above all follow.
  */
 export const INSTALL_HINTS: Record<AgentId, string | null> = {
   claude: null,
   "cursor-agent": null,
   codex: "npm install -g @openai/codex",
+  droid: "npm install -g droid",
+  deepseek: "npm install -g @vegamo/deepcode-cli",
+  antigravity: null,
+  gemini: "npm install -g @google/gemini-cli",
+  opencode: "npm install -g opencode-ai",
+  grok: "curl -fsSL https://x.ai/cli/install.sh | bash",
   shell: null,
 };
 

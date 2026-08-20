@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AGENT_IDS } from "@vibedeck/shared";
-import { detectAgent, detectAllAgents, resolveAgent } from "./agents.js";
+import { detectAgent, detectAllAgents, INSTALL_HINTS, resolveAgent } from "./agents.js";
 
 describe("resolveAgent", () => {
   it("resolves shell from $SHELL, falling back to /bin/zsh", () => {
@@ -24,6 +24,18 @@ describe("resolveAgent", () => {
     expect(resolveAgent("claude")).toEqual({ command: "claude", args: [] });
     expect(resolveAgent("cursor-agent")).toEqual({ command: "cursor-agent", args: [] });
     expect(resolveAgent("codex")).toEqual({ command: "codex", args: [] });
+  });
+
+  // BridgeSpace-parity agents (Phase: 10-agent picker). Each resolves to a
+  // static command the same way the original three do — see agents.ts's
+  // INSTALL_HINTS comment for how confident we are in each binary name.
+  it("resolves the newly-added agents to their static command/args", () => {
+    expect(resolveAgent("droid")).toEqual({ command: "droid", args: [] });
+    expect(resolveAgent("deepseek")).toEqual({ command: "deepcode", args: [] });
+    expect(resolveAgent("antigravity")).toEqual({ command: "antigravity", args: [] });
+    expect(resolveAgent("gemini")).toEqual({ command: "gemini", args: [] });
+    expect(resolveAgent("opencode")).toEqual({ command: "opencode", args: [] });
+    expect(resolveAgent("grok")).toEqual({ command: "grok-build", args: [] });
   });
 });
 
@@ -58,5 +70,24 @@ describe("detectAllAgents", () => {
     }
     // shell must always be true, as above.
     expect(result.shell).toBe(true);
+  });
+});
+
+describe("INSTALL_HINTS", () => {
+  it("has exactly one entry per known agent id", () => {
+    expect(Object.keys(INSTALL_HINTS).sort()).toEqual([...AGENT_IDS].sort());
+  });
+
+  it("shell never carries an install hint (it's always available)", () => {
+    expect(INSTALL_HINTS.shell).toBeNull();
+  });
+
+  it("every non-null install hint is a non-empty string", () => {
+    for (const id of AGENT_IDS) {
+      const hint = INSTALL_HINTS[id];
+      if (hint !== null) {
+        expect(hint.length).toBeGreaterThan(0);
+      }
+    }
   });
 });

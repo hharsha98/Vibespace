@@ -3,9 +3,10 @@ import type { AgentId, SessionInfo, Workspace } from "@vibedeck/shared";
 import Terminal from "../term/Terminal.js";
 import type { Theme } from "../themes/themes.js";
 import type { Direction, PaneId } from "./tree.js";
-import { EMPTY_SURFACE_BACKGROUND, IconButton, KeyHint, Pill, StatusDot, sessionStatusKind } from "../shell/ui.js";
+import { Button, EMPTY_SURFACE_BACKGROUND, IconButton, KeyHint, Pill, StatusDot, sessionStatusKind } from "../shell/ui.js";
 import { FONT, RADIUS, SHADOW, SPACE } from "../shell/tokens.js";
 import { AgentGlyph, agentAccentVar } from "./agentVisuals.js";
+import { canLaunchMultiple, splitByAvailability, toggleMultiLaunchSelection } from "./agentPicker.js";
 import { useGitBranch } from "./useGitBranch.js";
 import { KEYMAP, formatShortcut, isMacPlatform } from "../keys/keymap.js";
 
@@ -71,6 +72,14 @@ interface PaneViewProps {
   onFocus: () => void;
   /** Fired once `POST /api/sessions` succeeds for this (previously empty) pane. */
   onSessionStarted: (paneId: PaneId, session: SessionInfo) => void;
+  /**
+   * "Launch more than one..." (BridgeSpace parity): fired once the user has
+   * picked 2 agents in the empty-pane picker's multi-select mode and
+   * confirmed. App.tsx's `handleLaunchMultiple` owns the actual split +
+   * dual `POST /api/sessions` — see agentPicker.ts's `MAX_MULTI_LAUNCH`
+   * comment for why this is capped at exactly 2, not arbitrary N.
+   */
+  onLaunchMultiple: (paneId: PaneId, agentIds: AgentId[]) => void;
   onSplit: (paneId: PaneId, direction: Direction) => void;
   /** Fired once this pane should be removed from the tree (session already killed, if it had one). */
   onClosePane: (paneId: PaneId) => void;
@@ -108,6 +117,7 @@ export default function PaneView({
   isFocused,
   onFocus,
   onSessionStarted,
+  onLaunchMultiple,
   onSplit,
   onClosePane,
   isMaximized,
@@ -115,6 +125,13 @@ export default function PaneView({
 }: PaneViewProps) {
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+  // BridgeSpace parity: "N more not installed" starts collapsed, and
+  // "Launch more than one..." starts as a plain link, not a live
+  // multi-select — both are opt-in so the common case (click one available
+  // agent, it starts) looks exactly as simple as it did before this phase.
+  const [showUnavailable, setShowUnavailable] = useState(false);
+  const [multiSelectMode, setMultiSelectMode] = useState(false);
+  const [selectedAgents, setSelectedAgents] = useState<AgentId[]>([]);
   // Phase 9.5c, PARITY #13b — polls independently per pane; see
   // useGitBranch.ts's top comment for why polling (not a filesystem watch)
   // and the resulting staleness window.
@@ -144,6 +161,30 @@ export default function PaneView({
     } finally {
       setStarting(false);
     }
+  };
+
+  /** A single agent row was clicked. Ordinary mode starts it immediately
+   * (unchanged behaviour); multi-select mode toggles it into/out of the
+   * pending selection instead — see agentPicker.ts's
+   * `toggleMultiLaunchSelection` for the actual add/remove/cap logic. */
+  const handleAgentClick = (agent: AgentId) => {
+    if (multiSelectMode) {
+      setSelectedAgents((prev) => toggleMultiLaunchSelection(prev, agent));
+      return;
+    }
+    void startSession(agent);
+  };
+
+  const cancelMultiSelect = () => {
+    setMultiSelectMode(false);
+    setSelectedAgents([]);
+  };
+
+  const confirmMultiLaunch = () => {
+    if (!canLaunchMultiple(selectedAgents)) return;
+    onLaunchMultiple(paneId, selectedAgents);
+    setMultiSelectMode(false);
+    setSelectedAgents([]);
   };
 
   // Used by the header's "close" button. Terminal's own right-click "Close"
@@ -345,7 +386,12 @@ export default function PaneView({
               ...EMPTY_SURFACE_BACKGROUND,
             }}
           >
-            <div style={{ width: "100%", maxWidth: 440 }}>
+            <div style={{ width: "100%", maxWidth: 480 }}>
+              {/* BridgeSpace V3 parity: "Start vibe coding in {workspace}" +
+                  their subtitle, replacing the old generic "Start an agent"
+                  header. Falls back to no "in X" clause on the (should-be-
+                  rare) null-workspace case, same defensive pattern the
+                  workspace chip above already uses. */}
               <div style={{ textAlign: "center", marginBottom: SPACE.lg }}>
                 <h2
                   style={{
@@ -356,114 +402,144 @@ export default function PaneView({
                     letterSpacing: "-0.01em",
                   }}
                 >
-                  Start an agent
+                  Start vibe coding{workspace ? ` in ${workspace.name}` : ""}
                 </h2>
                 <p style={{ margin: "4px 0 0", fontSize: FONT.meta, color: "var(--vd-text-faint)" }}>
-                  Pick one to run in this pane
+                  Launch a coding agent — it runs in a real terminal inside this pane.
                 </p>
               </div>
 
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                  gap: SPACE.sm,
-                }}
-              >
-                {agents.map((agent) => {
-                  const disabled = !agent.available || starting;
-                  const isDefault = agent.id === defaultAgent && agent.available;
-                  return (
-                    <button
-                      key={agent.id}
-                      type="button"
-                      disabled={disabled}
-                      onClick={() => void startSession(agent.id)}
-                      title={
-                        agent.available
-                          ? `Start ${agent.displayName}`
-                          : agent.installHint
-                            ? `Not installed — ${agent.installHint}`
-                            : "Not installed"
-                      }
-                      className={`vd-agent-card${disabled ? " is-disabled" : ""}`}
+              {(() => {
+                const { available, unavailable } = splitByAvailability(agents);
+                return (
+                  <>
+                    <div
                       style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "flex-start",
-                        gap: SPACE.xs + 2,
-                        textAlign: "left",
-                        background: "var(--vd-surface-raised)",
-                        border: `1px solid ${isDefault ? "var(--vd-accent)" : "var(--vd-border)"}`,
-                        borderStyle: agent.available ? "solid" : "dashed",
-                        borderRadius: RADIUS.xl,
-                        padding: SPACE.md,
-                        cursor: agent.available && !starting ? "pointer" : "not-allowed",
-                        opacity: agent.available ? 1 : 0.55,
-                        transition: "border-color 120ms ease, transform 120ms ease, box-shadow 120ms ease",
-                        boxSizing: "border-box",
-                        width: "100%",
+                        display: "grid",
+                        gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                        gap: SPACE.sm,
                       }}
                     >
-                      <div style={{ display: "flex", alignItems: "center", gap: SPACE.xs, width: "100%" }}>
-                        <span
-                          aria-hidden
+                      {available.map((agent) => (
+                        <AgentRow
+                          key={agent.id}
+                          agent={agent}
+                          isDefault={agent.id === defaultAgent}
+                          disabled={starting}
+                          selectable={multiSelectMode}
+                          selected={selectedAgents.includes(agent.id)}
+                          selectionFull={
+                            multiSelectMode &&
+                            !selectedAgents.includes(agent.id) &&
+                            !canLaunchMultiple([...selectedAgents, agent.id]) &&
+                            selectedAgents.length >= 2
+                          }
+                          onClick={() => handleAgentClick(agent.id)}
+                        />
+                      ))}
+                    </div>
+
+                    {/* Collapsed disclosure row (BridgeSpace parity): agents
+                        missing their binary don't clutter the main grid —
+                        they sit behind "N more not installed" until opened,
+                        each still showing its install hint once expanded. */}
+                    {unavailable.length > 0 && (
+                      <div style={{ marginTop: SPACE.sm }}>
+                        <button
+                          type="button"
+                          onClick={() => setShowUnavailable((v) => !v)}
+                          className="vd-row-hover"
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: SPACE.xs,
+                            width: "100%",
+                            background: "transparent",
+                            border: "none",
+                            borderRadius: RADIUS.sm,
+                            padding: "6px 8px",
+                            cursor: "pointer",
+                            color: "var(--vd-text-faint)",
+                            fontSize: FONT.meta,
+                            boxSizing: "border-box",
+                          }}
+                        >
+                          <DisclosureChevron open={showUnavailable} />
+                          <span>{unavailable.length} more not installed</span>
+                        </button>
+
+                        {showUnavailable && (
+                          <div
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                              gap: SPACE.sm,
+                              marginTop: SPACE.xs,
+                            }}
+                          >
+                            {unavailable.map((agent) => (
+                              <AgentRow key={agent.id} agent={agent} disabled selectable={false} selected={false} selectionFull={false} />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* "Launch more than one..." (BridgeSpace parity):
+                        smallest honest version — picks exactly 2 agents and
+                        opens them in a side-by-side split. See
+                        agentPicker.ts's MAX_MULTI_LAUNCH comment. */}
+                    <div style={{ textAlign: "center", marginTop: SPACE.md }}>
+                      {multiSelectMode ? (
+                        <div
                           style={{
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
-                            width: 30,
-                            height: 30,
-                            borderRadius: "50%",
-                            flexShrink: 0,
-                            background: agent.available
-                              ? `color-mix(in srgb, ${agentAccentVar(agent.id)} 16%, transparent)`
-                              : "var(--vd-surface)",
+                            gap: SPACE.sm,
+                            flexWrap: "wrap",
                           }}
                         >
-                          <AgentGlyph
-                            id={agent.id}
-                            size={17}
-                            color={agent.available ? undefined : "var(--vd-text-faint)"}
-                          />
-                        </span>
-                        {isDefault && <Pill status="info">Default</Pill>}
-                      </div>
-
-                      <span
-                        style={{
-                          fontSize: FONT.body,
-                          fontWeight: 600,
-                          color: agent.available ? "var(--vd-text)" : "var(--vd-text-muted)",
-                        }}
-                      >
-                        {agent.displayName}
-                      </span>
-
-                      {agent.available ? (
-                        <span style={{ fontSize: FONT.meta, color: "var(--vd-text-faint)" }}>Ready</span>
-                      ) : (
-                        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                          <Pill status="idle">Not installed</Pill>
-                          {agent.installHint && (
-                            <code
-                              style={{
-                                fontSize: FONT.meta - 1,
-                                color: "var(--vd-text-faint)",
-                                fontFamily:
-                                  "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-                                overflowWrap: "anywhere",
-                              }}
-                            >
-                              {agent.installHint}
-                            </code>
-                          )}
+                          <span style={{ fontSize: FONT.meta, color: "var(--vd-text-faint)" }}>
+                            {selectedAgents.length === 0
+                              ? "Pick 2 agents to launch together"
+                              : `${selectedAgents.length} of 2 selected`}
+                          </span>
+                          <Button
+                            variant="primary"
+                            disabled={!canLaunchMultiple(selectedAgents)}
+                            onClick={confirmMultiLaunch}
+                          >
+                            Launch {selectedAgents.length || ""}
+                          </Button>
+                          <Button variant="secondary" onClick={cancelMultiSelect}>
+                            Cancel
+                          </Button>
                         </div>
+                      ) : (
+                        available.length >= 2 && (
+                          <button
+                            type="button"
+                            onClick={() => setMultiSelectMode(true)}
+                            style={{
+                              background: "none",
+                              border: "none",
+                              padding: 0,
+                              color: "var(--vd-text-faint)",
+                              fontSize: FONT.meta,
+                              cursor: "pointer",
+                              textDecoration: "underline",
+                              textUnderlineOffset: 2,
+                            }}
+                          >
+                            Launch more than one…
+                          </button>
+                        )
                       )}
-                    </button>
-                  );
-                })}
-              </div>
+                    </div>
+                  </>
+                );
+              })()}
 
               {startError && (
                 <p
@@ -521,6 +597,176 @@ export default function PaneView({
         )}
       </div>
     </div>
+  );
+}
+
+// --- Empty-pane picker rows (BridgeSpace parity) ------------------------
+
+/**
+ * One row in the empty-pane picker's two-column grid — a rounded, full-width
+ * button with the agent's glyph + name, replacing the old 2x2 card grid.
+ * Handles four states: plain (click to start), the current default agent
+ * (accent border + "Default" pill), not-installed (dashed border, muted,
+ * shows its install hint), and multi-select (a checkbox-style indicator
+ * instead of starting immediately on click — see PaneView's own
+ * `multiSelectMode`/`handleAgentClick`).
+ */
+function AgentRow({
+  agent,
+  isDefault = false,
+  disabled = false,
+  selectable,
+  selected,
+  selectionFull,
+  onClick,
+}: {
+  agent: AgentOption;
+  isDefault?: boolean;
+  /** True while a start is already in flight, or (unavailable rows) always. */
+  disabled?: boolean;
+  /** True while the picker is in multi-select mode — swaps "click to start"
+   * for "click to check/uncheck". Always false for unavailable rows (you
+   * can't multi-launch something that isn't installed). */
+  selectable: boolean;
+  selected: boolean;
+  /** True when multi-select is at its cap AND this row isn't one of the
+   * already-selected ones — greys it out so it's clear clicking it won't do
+   * anything (agentPicker.ts's `toggleMultiLaunchSelection` already no-ops
+   * this case; this is just the matching visual). */
+  selectionFull: boolean;
+  onClick?: () => void;
+}) {
+  const isDisabled = !agent.available || disabled || selectionFull;
+  return (
+    <button
+      type="button"
+      disabled={isDisabled && !selected}
+      onClick={onClick}
+      title={
+        agent.available
+          ? selectable
+            ? `${selected ? "Remove" : "Add"} ${agent.displayName}`
+            : `Start ${agent.displayName}`
+          : agent.installHint
+            ? `Not installed — ${agent.installHint}`
+            : "Not installed"
+      }
+      className={`vd-agent-card${isDisabled && !selected ? " is-disabled" : ""}`}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: SPACE.sm,
+        textAlign: "left",
+        background: "var(--vd-surface-raised)",
+        // Non-shorthand border properties (not the `border: "1px solid ..."`
+        // shorthand) so setting `borderStyle` separately never triggers
+        // React's "mixing shorthand and non-shorthand" dev warning.
+        borderWidth: 1,
+        borderColor: selected || isDefault ? "var(--vd-accent)" : "var(--vd-border)",
+        borderStyle: agent.available ? "solid" : "dashed",
+        borderRadius: RADIUS.lg,
+        padding: "8px 10px",
+        cursor: isDisabled && !selected ? "not-allowed" : "pointer",
+        opacity: agent.available ? (selectionFull && !selected ? 0.5 : 1) : 0.55,
+        transition: "border-color 120ms ease, transform 120ms ease, box-shadow 120ms ease",
+        boxSizing: "border-box",
+        width: "100%",
+      }}
+    >
+      <span
+        aria-hidden
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: 26,
+          height: 26,
+          borderRadius: "50%",
+          flexShrink: 0,
+          background: agent.available
+            ? `color-mix(in srgb, ${agentAccentVar(agent.id)} 16%, transparent)`
+            : "var(--vd-surface)",
+        }}
+      >
+        <AgentGlyph id={agent.id} size={15} color={agent.available ? undefined : "var(--vd-text-faint)"} />
+      </span>
+
+      {/* A column, not a single line: an unavailable row's install hint
+          needs its own full-width line to stay legible instead of fighting
+          the name for space on one cramped line — verified against a real
+          browser render (docs/DESIGN.md-style visual check), where a single
+          line truncated names like "DeepSeek Harness" down to "DeepS…". */}
+      <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 1 }}>
+        <span
+          style={{
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            fontSize: FONT.body,
+            fontWeight: 500,
+            color: agent.available ? "var(--vd-text)" : "var(--vd-text-muted)",
+          }}
+        >
+          {agent.displayName}
+        </span>
+        {!agent.available && agent.installHint && (
+          <code
+            style={{
+              fontSize: FONT.meta - 1,
+              color: "var(--vd-text-faint)",
+              fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {agent.installHint}
+          </code>
+        )}
+      </span>
+
+      {selectable ? (
+        // A minimal checkbox-style indicator — a filled dot in a ring once
+        // selected, an empty ring otherwise. Deliberately not a real
+        // <input type="checkbox"> (this whole row is already the click
+        // target, same as e.g. Gmail's row-click-to-select convention).
+        <span
+          aria-hidden
+          style={{
+            width: 14,
+            height: 14,
+            borderRadius: "50%",
+            flexShrink: 0,
+            border: `1.5px solid ${selected ? "var(--vd-accent)" : "var(--vd-border)"}`,
+            background: selected ? "var(--vd-accent)" : "transparent",
+          }}
+        />
+      ) : isDefault ? (
+        <Pill status="info">Default</Pill>
+      ) : null}
+    </button>
+  );
+}
+
+/** A small chevron that rotates 90° when `open` — the disclosure row's
+ * "N more not installed" affordance. Inline SVG, `currentColor`, matching
+ * every other icon in this file. */
+function DisclosureChevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      width="10"
+      height="10"
+      viewBox="0 0 14 14"
+      fill="none"
+      aria-hidden
+      style={{
+        flexShrink: 0,
+        transform: open ? "rotate(90deg)" : "none",
+        transition: "transform 120ms ease",
+      }}
+    >
+      <path d="M5 3L9.5 7L5 11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 

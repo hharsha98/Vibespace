@@ -5,15 +5,55 @@
  * to compile the other side until it's updated too.
  */
 
-/** The set of coding agents vibedeck knows how to run in a terminal session. */
-export type AgentId = "claude" | "cursor-agent" | "codex" | "shell";
+/**
+ * The set of coding agents vibedeck knows how to run in a terminal session.
+ *
+ * Expanded from the original four (`claude`/`cursor-agent`/`codex`/`shell`)
+ * to match BridgeSpace V3's agent picker (10 entries: 9 named CLIs +
+ * `shell`, displayed as "Terminal" — see AGENT_SPECS below). Every binary
+ * name here was checked against a real source (official docs/GitHub/npm
+ * where one exists) before being picked — see `apps/server/src/pty/
+ * agents.ts`'s `INSTALL_HINTS` comment for the confidence level and sources
+ * behind each one, especially `deepseek` and `antigravity`, which could NOT
+ * be confirmed against an authoritative source and are best-effort guesses.
+ */
+export type AgentId =
+  | "claude"
+  | "cursor-agent"
+  | "codex"
+  | "droid"
+  | "deepseek"
+  | "antigravity"
+  | "gemini"
+  | "opencode"
+  | "grok"
+  | "shell";
 
 /**
  * Runtime array of every `AgentId`, kept in sync with the type above by
  * hand. Useful anywhere we need to iterate over or validate agent ids at
  * runtime (types alone don't exist after compilation).
+ *
+ * Order matters here: `GET /api/agents` returns agents in this exact order,
+ * and the empty-pane picker (PaneView.tsx) renders them into a two-column
+ * grid by filling left-to-right, top-to-bottom — so this order IS the
+ * left-column/right-column layout. It's deliberately arranged to match
+ * BridgeSpace V3's photographed picker:
+ *   left column:  claude, cursor-agent, droid,  deepseek, antigravity
+ *   right column: codex,  gemini,       opencode, grok,    shell (Terminal)
  */
-export const AGENT_IDS: readonly AgentId[] = ["claude", "cursor-agent", "codex", "shell"];
+export const AGENT_IDS: readonly AgentId[] = [
+  "claude",
+  "codex",
+  "cursor-agent",
+  "gemini",
+  "droid",
+  "opencode",
+  "deepseek",
+  "grok",
+  "antigravity",
+  "shell",
+];
 
 /** A message sent from the browser client to the server. */
 export type ClientMessage =
@@ -84,7 +124,45 @@ export const AGENT_SPECS: Record<AgentId, AgentSpec> = {
     args: [],
   },
   codex: { id: "codex", displayName: "Codex", command: "codex", args: [] },
-  shell: { id: "shell", displayName: "Shell", command: "/bin/zsh", args: ["-l"] },
+  // Factory's CLI. HIGH confidence — confirmed against docs.factory.ai's
+  // own quickstart page, which documents `npm install -g droid` and shows
+  // the `droid` command being run directly.
+  droid: { id: "droid", displayName: "Droid", command: "droid", args: [] },
+  // Labelled "DeepSeek Harness" to match BridgeSpace's photographed picker,
+  // but no product by that exact name could be confirmed against an
+  // authoritative source — see agents.ts's INSTALL_HINTS comment for what
+  // WAS confirmed (DeepSeek's own docs describe a different, differently-
+  // named tool, "Deep Code", binary `deepcode`) and why that's the best
+  // available guess here. LOW confidence.
+  deepseek: { id: "deepseek", displayName: "DeepSeek Harness", command: "deepcode", args: [] },
+  // Google's agentic editor/CLI. Its official marketing site confirms an
+  // "Antigravity CLI" product exists but publishes no concrete binary name
+  // or install command anywhere fetchable. `antigravity` is a guess
+  // following the same "binary == short product name" convention every
+  // other confirmed entry here follows (droid, gemini, opencode). LOW
+  // confidence — see agents.ts for detail.
+  antigravity: { id: "antigravity", displayName: "Antigravity", command: "antigravity", args: [] },
+  // Google's Gemini CLI. HIGH confidence — confirmed against the official
+  // google-gemini/gemini-cli GitHub repo and npm's `@google/gemini-cli`,
+  // both of which document the `gemini` command.
+  gemini: { id: "gemini", displayName: "Gemini CLI", command: "gemini", args: [] },
+  // sst/opencode. MEDIUM-HIGH confidence — the `opencode-ai` npm package
+  // exists and is actively published; multiple secondary sources agree the
+  // installed binary is `opencode`, but npm's own package page carries no
+  // README to confirm firsthand.
+  opencode: { id: "opencode", displayName: "OpenCode", command: "opencode", args: [] },
+  // xAI's terminal coding agent. MEDIUM confidence — x.ai's own
+  // announcement page (x.ai/news/grok-build-cli) shows `grok-build` as the
+  // interactive prompt in its terminal screenshots and documents a curl
+  // installer, not an npm package; a `grok` binary via an unofficial/
+  // third-party npm package also turned up in search but isn't the
+  // x.ai-published one, so `grok-build` (matching the official source) was
+  // chosen over it.
+  grok: { id: "grok", displayName: "Grok Build", command: "grok-build", args: [] },
+  // Renamed from "Shell" to "Terminal" to match BridgeSpace's picker label
+  // — same command/args (resolved from $SHELL at request time; see
+  // agents.ts's resolveAgent), purely a display-name change.
+  shell: { id: "shell", displayName: "Terminal", command: "/bin/zsh", args: ["-l"] },
 };
 
 /**

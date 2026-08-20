@@ -19,6 +19,8 @@ interface GridProps {
   focusedPaneId: PaneId | null;
   onFocus: (paneId: PaneId) => void;
   onSessionStarted: (paneId: PaneId, session: SessionInfo) => void;
+  /** "Launch more than one..." — see PaneView.tsx's own prop doc comment. */
+  onLaunchMultiple: (paneId: PaneId, agentIds: AgentId[]) => void;
   onSplit: (paneId: PaneId, direction: Direction) => void;
   onClosePane: (paneId: PaneId) => void;
   /** The pane currently filling the whole grid (docs/DESIGN.md §5
@@ -72,6 +74,7 @@ function GridNodeView({ node, ...rest }: GridProps & { node: GridNode }) {
     focusedPaneId,
     onFocus,
     onSessionStarted,
+    onLaunchMultiple,
     onSplit,
     onClosePane,
     maximizedPaneId,
@@ -93,6 +96,7 @@ function GridNodeView({ node, ...rest }: GridProps & { node: GridNode }) {
         isFocused={focusedPaneId === node.id}
         onFocus={() => onFocus(node.id)}
         onSessionStarted={onSessionStarted}
+        onLaunchMultiple={onLaunchMultiple}
         onSplit={onSplit}
         onClosePane={onClosePane}
         isMaximized={maximizedPaneId === node.id}

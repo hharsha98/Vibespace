@@ -43,7 +43,18 @@ describe("GET /api/health", () => {
     expect(body).toEqual({
       status: "ok",
       version: expect.any(String),
-      agents: ["claude", "cursor-agent", "codex", "shell"],
+      agents: [
+        "claude",
+        "codex",
+        "cursor-agent",
+        "gemini",
+        "droid",
+        "opencode",
+        "deepseek",
+        "grok",
+        "antigravity",
+        "shell",
+      ],
       // The server's own cwd — only used by the web UI to pre-fill the
       // first-run "create a workspace" form's directory field.
       cwd: expect.any(String),
@@ -62,10 +73,10 @@ describe("GET /api/agents", () => {
     const body = response.json() as {
       agents: { id: string; displayName: string; available: boolean; installHint: string | null }[];
     };
-    expect(body.agents).toHaveLength(4);
+    expect(body.agents).toHaveLength(10);
     const shell = body.agents.find((a) => a.id === "shell");
     expect(shell?.available).toBe(true);
-    expect(shell?.displayName).toBe("Shell");
+    expect(shell?.displayName).toBe("Terminal");
     // Shell needs no separate install, and is always available, so it
     // should never carry an install hint.
     expect(shell?.installHint).toBeNull();

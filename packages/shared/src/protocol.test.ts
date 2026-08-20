@@ -10,8 +10,19 @@ import {
 } from "./protocol.js";
 
 describe("AGENT_IDS", () => {
-  it("contains exactly the four expected agent ids, in a stable order", () => {
-    expect(AGENT_IDS).toEqual(["claude", "cursor-agent", "codex", "shell"]);
+  it("contains exactly the ten expected agent ids, in a stable order", () => {
+    expect(AGENT_IDS).toEqual([
+      "claude",
+      "codex",
+      "cursor-agent",
+      "gemini",
+      "droid",
+      "opencode",
+      "deepseek",
+      "grok",
+      "antigravity",
+      "shell",
+    ]);
   });
 
   it("has no duplicates", () => {
@@ -149,10 +160,22 @@ describe("AGENT_SPECS", () => {
     expect(AGENT_SPECS.claude.args).toEqual([]);
     expect(AGENT_SPECS["cursor-agent"].args).toEqual([]);
     expect(AGENT_SPECS.codex.args).toEqual([]);
+    expect(AGENT_SPECS.droid.args).toEqual([]);
+    expect(AGENT_SPECS.deepseek.args).toEqual([]);
+    expect(AGENT_SPECS.antigravity.args).toEqual([]);
+    expect(AGENT_SPECS.gemini.args).toEqual([]);
+    expect(AGENT_SPECS.opencode.args).toEqual([]);
+    expect(AGENT_SPECS.grok.args).toEqual([]);
   });
 
   it("shell is spawned as a login shell (-l), so it picks up the user's PATH and profile", () => {
     expect(AGENT_SPECS.shell.args).toEqual(["-l"]);
+  });
+
+  // BridgeSpace V3 parity: the plain shell agent is labelled "Terminal" in
+  // the picker, not "Shell" — see protocol.ts's AGENT_SPECS comment.
+  it("labels the shell agent 'Terminal', matching BridgeSpace's picker", () => {
+    expect(AGENT_SPECS.shell.displayName).toBe("Terminal");
   });
 });
 
