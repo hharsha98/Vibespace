@@ -3,7 +3,7 @@
  * no filesystem, no temp dirs (unlike store.test.ts/routes.test.ts).
  */
 import { describe, expect, it } from "vitest";
-import { buildGraph, extractLinks } from "./links.js";
+import { buildGraph, extractLinks, suggestConnections } from "./links.js";
 
 describe("extractLinks", () => {
   it("extracts multiple links from one body", () => {
@@ -108,5 +108,97 @@ describe("buildGraph", () => {
 
   it("returns empty nodes/edges/backlinks for an empty note list", () => {
     expect(buildGraph([])).toEqual({ nodes: [], edges: [], backlinks: {} });
+  });
+});
+
+describe("suggestConnections", () => {
+  // Every fixture body below is hand-picked so the expected token overlap
+  // can be counted by eye (see links.ts's suggestConnections doc comment
+  // for the exact tokenize/stopword/length rules being exercised) —
+  // deliberately NOT realistic prose, so there's no ambiguity about what
+  // "the correct answer" is.
+
+  it("flags a pair sharing >= 3 significant terms, with the example terms named in the reason", () => {
+    // Titles are single letters (below the 4-char minimum), so only body
+    // tokens participate — isolates the "shared terms" path from "title
+    // mention" entirely.
+    const a = { slug: "a", title: "A", body: "alpha bravo charlie delta echo" };
+    const b = { slug: "b", title: "B", body: "alpha bravo charlie foxtrot golf" };
+
+    const result = suggestConnections([a, b]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].a).toBe("a");
+    expect(result[0].b).toBe("b");
+    expect(result[0].reasons).toHaveLength(1);
+    expect(result[0].reasons[0]).toContain("shares 3 significant terms");
+    expect(result[0].reasons[0]).toContain("alpha");
+    expect(result[0].reasons[0]).toContain("bravo");
+    expect(result[0].reasons[0]).toContain("charlie");
+  });
+
+  it("does NOT flag a pair sharing only 2 significant terms (below the threshold)", () => {
+    const a = { slug: "a", title: "A", body: "alpha bravo cat dog" }; // cat/dog are 3 chars, filtered
+    const b = { slug: "b", title: "B", body: "alpha bravo fox owl" }; // fox/owl are 3 chars, filtered
+    expect(suggestConnections([a, b])).toEqual([]);
+  });
+
+  it("flags a note's exact title appearing as plain text in another note's body, not yet wikilinked", () => {
+    const releaseChecklist = { slug: "release-checklist", title: "Release checklist", body: "Steps for shipping." };
+    const shippingNotes = {
+      slug: "shipping-notes",
+      title: "Ship notes",
+      body: "See the release checklist before shipping.",
+    };
+
+    const result = suggestConnections([releaseChecklist, shippingNotes]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].reasons.some((r) => r.includes('mentions "Release checklist"'))).toBe(true);
+  });
+
+  it("does not match a title mention inside a fenced code block", () => {
+    const target = { slug: "target-note", title: "Target note", body: "Body text." };
+    const other = {
+      slug: "other-note",
+      title: "Other note",
+      body: "```\nThis mentions Target note only inside a code fence.\n```",
+    };
+    expect(suggestConnections([target, other])).toEqual([]);
+  });
+
+  it("skips a pair that's already linked (in either direction), even if it would otherwise match", () => {
+    const a = { slug: "a", title: "A", body: "alpha bravo charlie delta [[b]]" };
+    const b = { slug: "b", title: "B", body: "alpha bravo charlie foxtrot" };
+    // Same shared-term overlap as the first test above, but this time `a`
+    // already links to `b` — nothing to suggest.
+    expect(suggestConnections([a, b])).toEqual([]);
+  });
+
+  it("returns an empty array for zero or one notes", () => {
+    expect(suggestConnections([])).toEqual([]);
+    expect(suggestConnections([{ slug: "a", title: "A", body: "alpha bravo charlie" }])).toEqual([]);
+  });
+
+  it("sorts multiple suggestions by number of corroborating reasons, most first", () => {
+    const a = { slug: "a", title: "A", body: "alpha bravo charlie delta echo" };
+    const b = { slug: "b", title: "B", body: "alpha bravo charlie foxtrot golf" };
+    const releaseChecklist = { slug: "release-checklist", title: "Release checklist", body: "Steps for shipping." };
+    const shippingNotes = {
+      slug: "shipping-notes",
+      title: "Ship notes",
+      body: "See the release checklist before shipping.",
+    };
+
+    const result = suggestConnections([a, b, releaseChecklist, shippingNotes]);
+
+    expect(result).toHaveLength(2);
+    // release-checklist/shipping-notes corroborates via BOTH shared terms
+    // (release/checklist/shipping all appear in both bodies) AND the
+    // title-mention rule, so it has more reasons than the a/b pair (shared
+    // terms only) and must sort first.
+    expect(result[0].reasons.length).toBeGreaterThan(result[1].reasons.length);
+    expect([result[0].a, result[0].b].sort()).toEqual(["release-checklist", "shipping-notes"]);
+    expect([result[1].a, result[1].b].sort()).toEqual(["a", "b"]);
   });
 });

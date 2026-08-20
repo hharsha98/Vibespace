@@ -87,22 +87,62 @@ tools, plus a `vibedeck_developer_guide` MCP *prompt* that onboards a
 connected agent into the whole workflow. See `apps/server/src/mcp/build-server.ts`'s
 top comment for why board/agents/prompts share this one process rather
 than a second server, and [docs/AGENT-API.md](./AGENT-API.md#board-agents-and-prompts-over-mcp-phase-95b)
-for the full ten-tool reference. This section covers the original four
-memory tools and how to connect; the setup below is identical either way —
-one server process gives you all of it.
+for the full board/agents/prompts reference. This section covers the
+memory tools (eleven of them, as of the pass that closed the gap against
+BridgeMemory's own ~12-tool MCP surface — see [docs/PARITY.md](./PARITY.md)
+rows 28-30 for the shared-memory parity items this builds on) and how to
+connect; the setup below is identical either way — one server
+process gives you all of it.
 
 | Tool | What |
 |---|---|
 | `memory_list` | List every note (slug, title, tags, `updatedAt` — not the full body) |
 | `memory_read` | Read one note by slug: full body + backlinks |
 | `memory_write` | Create a note (omit `slug`, give a `title`) or update one (give `slug`) |
-| `memory_search` | Case-insensitive search over title, body, and tags |
+| `memory_search` | Case-insensitive substring search over title, body, and tags |
+| `memory_delete` | Permanently delete a note by slug — no undo |
+| `memory_list_by_tag` | Notes carrying an EXACT tag (case-insensitive, not a substring search) |
+| `memory_list_tags` | Every distinct tag in use, with a count, most-used first |
+| `find_backlinks` | Which notes link IN to a given slug (works even for a dangling slug) |
+| `find_links` | The `[[wikilink]]` targets a given note links OUT to, flagged dangling or not |
+| `memory_graph` | The whole workspace's link graph at once — every note/dangling-target node, every edge |
+| `suggest_connections` | Proposes unlinked notes that probably should link — see below, **not semantic/AI** |
 
 A **tool** is something an agent calls; a **prompt** is boilerplate text an
 MCP client can insert into the conversation on request (e.g. Claude Code's
 `/mcp` prompt picker) — `vibedeck_developer_guide` is the latter, not
 something you `callTool` on. See `apps/server/src/mcp/developer-guide.ts`
 for its exact text.
+
+### `suggest_connections`: exactly what the heuristic does and doesn't catch
+
+This tool does **not** use embeddings, semantic search, or an LLM call of
+any kind — every response it returns says so explicitly, not just this
+doc. It's two plain lexical checks, run over every pair of notes that
+isn't already linked (in either direction):
+
+1. **Shared significant terms** — both notes' title + body, lowercased and
+   split on non-alphanumeric characters, with short words (under 4
+   characters) and a small fixed stopword list removed, share at least 3
+   tokens in common.
+2. **Title mention** — one note's body contains the OTHER note's exact
+   title as plain text (case-insensitive, whole-word/phrase boundaries),
+   but doesn't already `[[link]]` to it. Text inside fenced code blocks or
+   inline code spans is ignored, same as real `[[wikilinks]]`.
+
+**What it will catch:** a note whose title got typed out in another note's
+prose and never turned into a link, and pairs of notes that both use the
+same handful of distinctive words.
+
+**What it will miss, on purpose:** paraphrases and synonyms ("auth" vs
+"authentication" won't match), a title referenced by abbreviation or
+reworded text, and any conceptual relationship with no shared vocabulary
+at all. It can also produce false positives — two unrelated notes that
+happen to both use generic-but-not-stopword words will still surface.
+Every suggestion is a prompt to go look, not a confirmed relationship.
+See `apps/server/src/memory/links.ts`'s `suggestConnections` function for
+the exact implementation and `links.test.ts` for a fixture with hand-
+verified expected output.
 
 ### Running it
 

@@ -17,7 +17,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as memoryStore from "./store.js";
-import { createMemoryMcpServer, handleMemoryList, handleMemoryRead, handleMemorySearch, handleMemoryWrite } from "./mcp.js";
+import {
+  createMemoryMcpServer,
+  handleFindBacklinks,
+  handleFindLinks,
+  handleMemoryDelete,
+  handleMemoryGraph,
+  handleMemoryList,
+  handleMemoryListByTag,
+  handleMemoryListTags,
+  handleMemoryRead,
+  handleMemorySearch,
+  handleMemoryWrite,
+  handleSuggestConnections,
+} from "./mcp.js";
 
 let root: string;
 
@@ -39,7 +52,7 @@ function parseResult(result: Awaited<ReturnType<typeof handleMemoryList>>): unkn
 }
 
 describe("createMemoryMcpServer", () => {
-  it("builds an McpServer without throwing, with the four memory tools registered", () => {
+  it("builds an McpServer without throwing, with all eleven memory tools registered", () => {
     expect(() => createMemoryMcpServer(root)).not.toThrow();
     const server = createMemoryMcpServer(root);
     expect(server).toBeInstanceOf(McpServer);
@@ -125,5 +138,165 @@ describe("handleMemorySearch", () => {
     memoryStore.create(root, { title: "Something" });
     const result = parseResult(await handleMemorySearch(root, "zzz-no-match")) as { matches: unknown[] };
     expect(result.matches).toEqual([]);
+  });
+});
+
+describe("handleMemoryDelete", () => {
+  it("deletes an existing note and it no longer appears in memory_list", async () => {
+    memoryStore.create(root, { title: "Temporary" });
+    const result = await handleMemoryDelete(root, "temporary");
+    expect(parseResult(result)).toEqual({ deleted: "temporary" });
+
+    const listed = parseResult(await handleMemoryList(root)) as { notes: unknown[] };
+    expect(listed.notes).toEqual([]);
+  });
+
+  it("errors for an unknown slug", async () => {
+    const result = await handleMemoryDelete(root, "does-not-exist");
+    expect(result.isError).toBe(true);
+  });
+});
+
+describe("handleMemoryListByTag", () => {
+  it("returns only notes carrying the exact tag, case-insensitively", async () => {
+    memoryStore.create(root, { title: "One", tags: ["Design"] });
+    memoryStore.create(root, { title: "Two", tags: ["design", "backend"] });
+    memoryStore.create(root, { title: "Three", tags: ["backend"] });
+
+    const result = parseResult(await handleMemoryListByTag(root, "design")) as {
+      notes: Array<{ slug: string }>;
+    };
+    expect(result.notes.map((n) => n.slug).sort()).toEqual(["one", "two"]);
+  });
+
+  it("does NOT substring-match a tag (exact match only, unlike memory_search)", async () => {
+    memoryStore.create(root, { title: "One", tags: ["design-system"] });
+    const result = parseResult(await handleMemoryListByTag(root, "design")) as { notes: unknown[] };
+    expect(result.notes).toEqual([]);
+  });
+});
+
+describe("handleMemoryListTags", () => {
+  it("returns empty for a fresh workspace", async () => {
+    expect(parseResult(await handleMemoryListTags(root))).toEqual({ tags: [] });
+  });
+
+  it("counts every distinct tag, most-used first, ties alphabetical", async () => {
+    memoryStore.create(root, { title: "A", tags: ["backend", "design"] });
+    memoryStore.create(root, { title: "B", tags: ["backend"] });
+    memoryStore.create(root, { title: "C", tags: ["frontend"] });
+
+    const result = parseResult(await handleMemoryListTags(root)) as {
+      tags: Array<{ tag: string; count: number }>;
+    };
+    expect(result.tags).toEqual([
+      { tag: "backend", count: 2 },
+      { tag: "design", count: 1 },
+      { tag: "frontend", count: 1 },
+    ]);
+  });
+});
+
+describe("handleFindBacklinks", () => {
+  it("lists notes linking to a given slug", async () => {
+    memoryStore.create(root, { title: "Target" });
+    memoryStore.create(root, { title: "Linker one", body: "See [[target]]." });
+    memoryStore.create(root, { title: "Linker two", body: "Also [[target]]." });
+    memoryStore.create(root, { title: "Unrelated" });
+
+    const result = parseResult(await handleFindBacklinks(root, "target")) as { backlinks: string[] };
+    expect(result.backlinks.sort()).toEqual(["linker-one", "linker-two"]);
+  });
+
+  it("returns an empty array (not an error) for a slug with no note and no backlinks", async () => {
+    const result = parseResult(await handleFindBacklinks(root, "nothing-here")) as { backlinks: string[] };
+    expect(result.backlinks).toEqual([]);
+  });
+
+  it("still finds backlinks pointing at a DANGLING slug (no note written for it yet)", async () => {
+    memoryStore.create(root, { title: "Wants a note", body: "We should write [[future-note]] someday." });
+    const result = parseResult(await handleFindBacklinks(root, "future-note")) as { backlinks: string[] };
+    expect(result.backlinks).toEqual(["wants-a-note"]);
+  });
+});
+
+describe("handleFindLinks", () => {
+  it("lists a note's outgoing links, flagging dangling targets", async () => {
+    memoryStore.create(root, { title: "Real target" });
+    memoryStore.create(root, {
+      title: "Source",
+      body: "Links to [[real-target]] and also [[missing-note]].",
+    });
+
+    const result = parseResult(await handleFindLinks(root, "source")) as {
+      links: Array<{ slug: string; dangling: boolean }>;
+    };
+    expect(result.links).toEqual([
+      { slug: "real-target", title: "Real target", dangling: false },
+      { slug: "missing-note", title: "missing-note", dangling: true },
+    ]);
+  });
+
+  it("errors for an unknown slug", async () => {
+    const result = await handleFindLinks(root, "does-not-exist");
+    expect(result.isError).toBe(true);
+  });
+});
+
+describe("handleMemoryGraph", () => {
+  it("returns the whole workspace's nodes and edges", async () => {
+    memoryStore.create(root, { title: "A", body: "[[b]]" });
+    memoryStore.create(root, { title: "B" });
+
+    const result = parseResult(await handleMemoryGraph(root)) as {
+      nodes: Array<{ slug: string }>;
+      edges: Array<{ source: string; target: string }>;
+    };
+    expect(result.nodes.map((n) => n.slug).sort()).toEqual(["a", "b"]);
+    expect(result.edges).toEqual([{ source: "a", target: "b", dangling: false }]);
+  });
+});
+
+describe("handleSuggestConnections", () => {
+  it("includes an explicit non-AI/non-semantic disclaimer in every response", async () => {
+    const result = parseResult(await handleSuggestConnections(root, {})) as { heuristic: string };
+    expect(result.heuristic.toLowerCase()).toContain("not semantic");
+    expect(result.heuristic.toLowerCase()).toContain("not");
+  });
+
+  it("suggests a pair sharing significant keywords, on a fixture with a known right answer", async () => {
+    memoryStore.create(root, { title: "A", body: "alpha bravo charlie delta echo" });
+    memoryStore.create(root, { title: "B", body: "alpha bravo charlie foxtrot golf" });
+    memoryStore.create(root, { title: "C", body: "totally unrelated content about kittens" });
+
+    const result = parseResult(await handleSuggestConnections(root, {})) as {
+      suggestions: Array<{ a: string; b: string; reasons: string[] }>;
+    };
+    expect(result.suggestions).toHaveLength(1);
+    expect([result.suggestions[0].a, result.suggestions[0].b].sort()).toEqual(["a", "b"]);
+    expect(result.suggestions[0].reasons[0]).toContain("shares 3 significant terms");
+  });
+
+  it("does not suggest a pair that's already linked", async () => {
+    memoryStore.create(root, { title: "A", body: "alpha bravo charlie delta [[b]]" });
+    memoryStore.create(root, { title: "B", body: "alpha bravo charlie foxtrot" });
+
+    const result = parseResult(await handleSuggestConnections(root, {})) as { suggestions: unknown[] };
+    expect(result.suggestions).toEqual([]);
+  });
+
+  it("scopes results to one note and reshapes each suggestion around it, when slug is given", async () => {
+    memoryStore.create(root, { title: "A", body: "alpha bravo charlie delta echo" });
+    memoryStore.create(root, { title: "B", body: "alpha bravo charlie foxtrot golf" });
+
+    const result = parseResult(await handleSuggestConnections(root, { slug: "a" })) as {
+      suggestions: Array<{ suggestedLink: string; reasons: string[] }>;
+    };
+    expect(result.suggestions).toEqual([{ suggestedLink: "b", reasons: expect.any(Array) }]);
+  });
+
+  it("errors when scoped to an unknown slug", async () => {
+    const result = await handleSuggestConnections(root, { slug: "does-not-exist" });
+    expect(result.isError).toBe(true);
   });
 });

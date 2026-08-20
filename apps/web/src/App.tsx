@@ -167,6 +167,30 @@ function saveDefaultAgent(id: string): void {
   }
 }
 
+// --- `?workspace=<id>` deep link (the `vibedeck` CLI, apps/server/src/cli) -
+// `vibedeck [path]` ensures a workspace exists for that path, then opens the
+// browser at `/?workspace=<id>` so the RIGHT workspace is selected instead
+// of whichever one happens to be first (see `tryInitRoot` below) — without
+// this, the CLI would open the app but the user would still have to click
+// the right row in the rail by hand, defeating half the point of a
+// `bridgespace .`-style entry point. Read once, on the initial mount only
+// (not synced afterward — this is a one-shot "open at" hint, not a
+// persistent URL<->state binding like some SPAs use); the param is stripped
+// from the URL immediately after use via `history.replaceState` so
+// reloading the page, or copying the URL to share it, doesn't keep forcing
+// the same workspace.
+function readAndConsumeWorkspaceIdFromUrl(): string | null {
+  if (typeof window === "undefined") return null;
+  const params = new URLSearchParams(window.location.search);
+  const id = params.get("workspace");
+  if (!id) return null;
+  params.delete("workspace");
+  const nextSearch = params.toString();
+  const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}${window.location.hash}`;
+  window.history.replaceState(null, "", nextUrl);
+  return id;
+}
+
 export default function App() {
   const [health, setHealth] = useState<HealthState>({ kind: "loading" });
   const [agents, setAgents] = useState<AgentOption[]>([]);
@@ -379,9 +403,17 @@ export default function App() {
       setWorkspaces(loadedWorkspaces);
       setWorkspacesLoaded(true);
       if (loadedWorkspaces.length > 0) {
-        const first = loadedWorkspaces[0];
-        setActiveWorkspaceId(first.id);
-        setRoot(layoutToTree(first.layout, loadedSessions));
+        // A `?workspace=<id>` param (see readAndConsumeWorkspaceIdFromUrl's
+        // doc comment) wins over "first workspace" when it names one that
+        // actually exists in what we just loaded — a stale/unknown id
+        // (workspace deleted since the link was made, or just a typo) falls
+        // back to the original "first" behaviour rather than showing
+        // nothing.
+        const deepLinkId = readAndConsumeWorkspaceIdFromUrl();
+        const deepLinked = deepLinkId ? loadedWorkspaces.find((w) => w.id === deepLinkId) : undefined;
+        const initial = deepLinked ?? loadedWorkspaces[0];
+        setActiveWorkspaceId(initial.id);
+        setRoot(layoutToTree(initial.layout, loadedSessions));
       }
       // If there are zero workspaces, `root` stays null and `workspacesLoaded`
       // (now true) drives the first-run prompt instead of "Loading…".

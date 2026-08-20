@@ -161,6 +161,59 @@ already — vibedeck launches `claude`, `cursor-agent` and `codex`, it does not
 bundle them. Anything missing is shown as "not installed" rather than
 failing when you click it.
 
+## The `vibedeck` CLI
+
+Once you have a build, `vibedeck [path]` opens any directory as a workspace
+straight from the terminal — the equivalent of `cd`-ing into a project and
+running `bridgespace .` — instead of opening the app and adding it by hand.
+
+```bash
+pnpm --filter @vibedeck/server build   # the CLI runs the built server, not TS source
+pnpm --filter @vibedeck/server exec vibedeck .          # this directory
+pnpm --filter @vibedeck/server exec vibedeck ~/code/foo # any other directory
+```
+
+What it does, in order:
+
+1. Resolves the path (defaults to `.`), expanding `~` and requiring it to
+   exist and be a directory — the same rule `apps/server/src/workspace-path.ts`
+   applies when you add a workspace through the app itself, so an error here
+   ("does not exist", "exists but is not a directory") is the same message
+   you'd have gotten from the UI.
+2. Checks whether a server is already listening — either the normal
+   dev/prod one (port 4317 by default) or, if you already have the desktop
+   app open, its sidecar (a fixed port, 45317 — see
+   `apps/server/src/runtime-config.ts`'s `DESKTOP_SIDECAR_PORT`). If either
+   is up, it's reused; nothing new is spawned.
+3. If neither is up, starts `node dist/index.js` itself, detached, and waits
+   up to 15s for it to answer `/api/health`.
+4. Finds an existing workspace whose `rootPath` exactly matches the resolved
+   path and reuses it, or creates one — never a duplicate for a path you've
+   already opened before.
+5. Opens your default browser at that server, with a `?workspace=<id>`
+   query param the web app reads once (then strips from the URL) to select
+   that workspace instead of whichever one happened to be first.
+
+It deliberately does NOT try to launch the desktop `.app` fresh: the Tauri
+wrapper (`apps/desktop/src-tauri/src/main.rs`) takes no CLI arguments and
+registers no URL scheme today, so there'd be nothing for it to open *at* —
+launching it would just show whatever workspace it last had selected, not
+necessarily the one you asked for. If you already have it open, step 2
+above finds and reuses its sidecar; vibedeck just doesn't know how to start
+it pointed at a specific workspace yet.
+
+**Putting it on your PATH** is up to you — nothing in this repo does it
+automatically. Two common ways:
+
+```bash
+# Option A: pnpm link, so `vibedeck` resolves globally
+cd apps/server && pnpm link --global
+
+# Option B: add pnpm's per-project bin dir to PATH yourself, e.g. in
+# ~/.zshrc (only if you already know you want this):
+export PATH="/absolute/path/to/vibedeck/apps/server/node_modules/.bin:$PATH"
+```
+
 ## Releasing
 
 Desktop installers (DMG / NSIS / DEB+RPM+AppImage) are built and

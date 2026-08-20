@@ -5,7 +5,8 @@
   "type": "module",
   "main": "./dist/index.js",
   "bin": {
-    "vibedeck-memory-mcp": "./dist/memory/mcp-server.js"
+    "vibedeck-memory-mcp": "./dist/memory/mcp-server.js",
+    "vibedeck": "./dist/cli/bin.js"
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",

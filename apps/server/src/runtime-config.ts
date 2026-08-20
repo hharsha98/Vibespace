@@ -34,6 +34,22 @@ import { resolve } from "node:path";
 export const DEFAULT_PORT = 4317;
 
 /**
+ * The fixed port the desktop app's Tauri sidecar always sets `VIBEDECK_PORT`
+ * to (`apps/desktop/src-tauri/src/main.rs`'s `DESKTOP_PORT` constant — kept
+ * in sync with this value by hand, since Rust and TypeScript can't share a
+ * literal across the process boundary; grep both if you ever change either
+ * one). The `vibedeck` CLI (`./cli/vibedeck.ts`) checks this port, in
+ * addition to `resolveServerPort`'s result, when deciding whether a server
+ * is already running — a user with the desktop app open already has a
+ * perfectly good server + database to reuse, and starting a second one on
+ * `DEFAULT_PORT` would be redundant (both would share the same
+ * `~/.vibedeck/vibedeck.db`, since the desktop sidecar never overrides
+ * `VIBEDECK_DATA_DIR`, but would mean two Fastify processes and two
+ * `node-pty` session managers alive at once for no reason).
+ */
+export const DESKTOP_SIDECAR_PORT = 45317;
+
+/**
  * Resolves the port to listen on: `VIBEDECK_PORT` if it's set to a valid
  * positive integer, otherwise `DEFAULT_PORT`. `pnpm dev`/tests never set
  * this variable, so they get the exact same 4317 as before this phase —

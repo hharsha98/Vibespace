@@ -83,12 +83,29 @@ Every workspace has a small shared knowledge base — plain markdown notes,
 readable/writable by every agent working in it, not just the one that
 wrote them:
 
-- \`memory_list\` / \`memory_search\` to find a note.
-- \`memory_read\` to read one, including its backlinks.
+- \`memory_list\` / \`memory_search\` to find a note. \`memory_list_by_tag\`
+  to filter by an EXACT tag (case-insensitive, not a substring match);
+  \`memory_list_tags\` to see what tags this workspace already uses before
+  you invent a new one.
+- \`memory_read\` to read one note in full, including its backlinks.
+  \`memory_delete\` removes one permanently — there is no undo.
 - \`memory_write\` to create (omit \`slug\`) or update (give \`slug\`) one.
   Use \`[[other-slug]]\` in a note's body to link another note — including
   one that doesn't exist yet, a deliberate way to flag "this is worth
   writing."
+- \`find_backlinks\` / \`find_links\` walk the link graph one note at a
+  time — who links IN to a slug, and what a note links OUT to,
+  respectively. \`memory_graph\` returns the whole workspace's graph at
+  once (every note, every link) if you need more than one note's
+  neighborhood.
+- \`suggest_connections\` proposes notes that probably should link to each
+  other but don't yet. Read this carefully: it is a **plain keyword
+  heuristic** (shared significant words, a note's exact title appearing as
+  plain text in another note's body) — **not semantic search, not AI**.
+  It will miss paraphrases and synonyms, and can suggest unrelated notes
+  that happen to share generic vocabulary. Treat every suggestion as "go
+  look," never as a confirmed relationship — the tool's own response
+  repeats this same caveat every time you call it.
 
 Use memory for anything the NEXT agent working in this workspace should
 already know — a design decision, a gotcha, a "why" that isn't obvious
