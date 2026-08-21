@@ -111,13 +111,26 @@ young project moving quickly; expect rough edges.
       linked into a graph and shared with every agent over MCP, so what one
       agent learns the next one starts with — see
       [docs/MEMORY.md](./docs/MEMORY.md).
-- [ ] **Phase 9 — Swarm**: multiple agents on one mission with defined roles,
-      a shared mailbox, file ownership so two agents never edit the same file,
-      and quality gates.
-- [ ] **Phase 10 — Skills**: reusable prompt packs you drag onto a running
-      pane to change what that agent is doing. Server done (discovery, the
-      open `agentskills.io` format, REST/MCP, and pane injection) — see
-      [docs/SKILLS.md](./docs/SKILLS.md). Drag-and-drop web UI not built yet.
+- [x] **Phase 9 — Swarm**: multiple agents on one mission with defined roles,
+      a shared mailbox, file ownership so two agents never edit the same
+      file, and quality gates — plus a live mission tree and a command bar
+      that can @-target one agent or all of them. One caveat worth knowing
+      before you rely on it: file ownership is **cooperative**, not
+      OS-enforced. It is three layers (task sequencing, database-arbitrated
+      claims, and a conflict-detecting watcher), and
+      [docs/SWARM.md](./docs/SWARM.md) has a table of exactly what each
+      layer can and cannot guarantee.
+- [x] **Phase 10 — Skills**: reusable prompt packs you drag onto a running
+      pane to change what that agent is doing, on the open
+      [agentskills.io](https://agentskills.io) format — so skills you
+      already have installed for other tools are picked up as-is. Skills
+      appear in the right dock, and you drag one onto any running agent
+      pane; panes that can't take a skill (an empty pane, a plain shell)
+      simply aren't drop targets. There's a keyboard route too, since
+      dragging needs a mouse. One thing to be clear about: "sent" means the
+      skill was **typed into that pane** — whether the agent then acts on
+      it is up to the agent, and not something vibedeck can see. See
+      [docs/SKILLS.md](./docs/SKILLS.md).
 - [x] **Phase 11a — Desktop app shell**: a real native macOS window (Tauri
       2) wrapping the same web app, spawning the Node server as a sidecar —
       see [docs/DESKTOP.md](./docs/DESKTOP.md).

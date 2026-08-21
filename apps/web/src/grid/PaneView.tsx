@@ -27,6 +27,12 @@ import { canLaunchMultiple, splitByAvailability, toggleMultiLaunchSelection } fr
 import { useGitBranch } from "./useGitBranch.js";
 import { KEYMAP, formatShortcut, isMacPlatform } from "../keys/keymap.js";
 import { formatSshDestination } from "../ssh/logic.js";
+import {
+  SKILL_DRAG_MIME_TYPE,
+  canPaneAcceptSkill,
+  parseSkillDragPayload,
+} from "../skills/dragDrop.js";
+import { sendSkillToPane } from "../skills/sendToPane.js";
 
 /**
  * The empty-pane picker's footer hint row (premium-pass round 2): three
@@ -213,6 +219,45 @@ export default function PaneView({
   // simply doesn't render — for every other agent, an empty pane, or a
   // codex session that hasn't reached its composer footer yet.
   const [contextLeft, setContextLeft] = useState<number | null>(null);
+
+  // Skill drag-and-drop (PARITY #37). `skillDropActive` drives the drop
+  // highlight and is only ever set for a pane that can genuinely receive a
+  // skill — see `canPaneAcceptSkill`, which refuses empty panes, exited
+  // sessions AND shell panes, matching the server's own 400 rather than a
+  // looser guess of its own. Highlighting a pane the server would reject
+  // would be a lie the user only discovers after dropping.
+  const [skillDropActive, setSkillDropActive] = useState(false);
+  const [skillDropNotice, setSkillDropNotice] = useState<string | null>(null);
+  const canAcceptSkill = canPaneAcceptSkill(session);
+
+  /** Whether the drag currently over this pane is carrying one of OUR
+   * skills. During `dragover` the browser deliberately withholds
+   * `getData()` — the payload is only readable on drop — so `types` is the
+   * only thing available to decide droppability. Which is exactly why the
+   * payload uses a private MIME type rather than `text/plain`: arbitrary
+   * text dragged in from another application can never be mistaken for a
+   * skill. */
+  const dragCarriesSkill = (dataTransfer: DataTransfer): boolean =>
+    Array.from(dataTransfer.types).includes(SKILL_DRAG_MIME_TYPE);
+
+  const handleSkillDrop = async (raw: string | null): Promise<void> => {
+    setSkillDropActive(false);
+    const payload = parseSkillDragPayload(raw);
+    if (!payload || !session || !workspaceId) return;
+    try {
+      const result = await sendSkillToPane(payload.name, session.id, workspaceId);
+      // "Sent" is the strongest honest word available: this typed the
+      // skill's body into the pty. Whether the agent then ACTS on it is
+      // the agent's business, and something we genuinely cannot observe —
+      // see docs/SKILLS.md and PARITY #37's second caveat.
+      setSkillDropNotice(
+        result.truncated ? `Sent "${payload.name}" (truncated to fit)` : `Sent "${payload.name}"`
+      );
+    } catch (err) {
+      setSkillDropNotice(err instanceof Error ? err.message : "Could not send that skill.");
+    }
+    window.setTimeout(() => setSkillDropNotice(null), 4000);
+  };
   // Terminal.tsx resets this to null on every one of ITS OWN mounts (a new
   // session starting), but when a session ENDS and this pane goes back to
   // empty/deferred, `<Terminal>` unmounts without ever calling
@@ -393,6 +438,29 @@ export default function PaneView({
       // this event bubbles up before Terminal handles its own clicks)
       // focuses it — that's what drives the accent border below.
       onMouseDown={onFocus}
+      // Only panes that can actually take a skill react to the drag at
+      // all. Without `preventDefault()` on dragover the browser refuses
+      // the drop outright, so a pane that never calls it — an empty pane,
+      // a dead session, a shell — is silently and correctly not a drop
+      // target, with no highlight and no misleading "you can drop here".
+      onDragOver={(e) => {
+        if (!canAcceptSkill || !dragCarriesSkill(e.dataTransfer)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+        if (!skillDropActive) setSkillDropActive(true);
+      }}
+      onDragLeave={(e) => {
+        // Fires when crossing into a CHILD element too, which would flicker
+        // the highlight the whole way across the pane. Ignore those: only a
+        // move genuinely outside this pane's subtree counts as leaving.
+        if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+        setSkillDropActive(false);
+      }}
+      onDrop={(e) => {
+        if (!canAcceptSkill || !dragCarriesSkill(e.dataTransfer)) return;
+        e.preventDefault();
+        void handleSkillDrop(e.dataTransfer.getData(SKILL_DRAG_MIME_TYPE));
+      }}
       className={`vd-pane${isFocused ? " is-focused" : ""}`}
       style={{
         display: "flex",
@@ -408,7 +476,18 @@ export default function PaneView({
         // focus affordance, no glow), so this is elevation for its own
         // sake, present on every pane equally. SHADOW_VAR (not the raw
         // SHADOW constant) so it re-tunes for light themes.
-        boxShadow: SHADOW_VAR.sm,
+        // An INSET ring for "you can drop a skill here", deliberately not
+        // the border. The first attempt tinted the border accent, which
+        // was invisible on the focused pane — that pane's border is
+        // already accent — and the focused pane is the very one you are
+        // most likely to drop onto. docs/DESIGN.md §5 reserves the border
+        // as the single FOCUS affordance; this is a different question
+        // ("would this pane take the thing in your hand?"), it is
+        // transient, and it has to stay legible on top of focus rather
+        // than competing with it.
+        boxShadow: skillDropActive
+          ? `inset 0 0 0 2px var(--vd-accent), ${SHADOW_VAR.sm}`
+          : SHADOW_VAR.sm,
         background: "var(--vd-bg)",
         // Motion pass: the focus border swap (the ONLY focus affordance —
         // still no glow, just this colour change) now animates instead of
@@ -553,6 +632,26 @@ export default function PaneView({
           </IconButton>
         </div>
       </div>
+
+      {/* Result of a dropped skill. Shown here rather than as a toast so it
+          is unambiguously attached to the pane it happened to — with 16
+          panes open, a floating notice saying "Sent" would not say WHERE.
+          Clears itself after a few seconds; a failure carries the server's
+          own wording rather than a re-invented one. */}
+      {skillDropNotice && (
+        <div
+          style={{
+            padding: "3px 8px",
+            fontSize: FONT.meta,
+            color: "var(--vd-text-muted)",
+            background: "var(--vd-surface)",
+            borderBottom: "1px solid var(--vd-border)",
+            flexShrink: 0,
+          }}
+        >
+          {skillDropNotice}
+        </div>
+      )}
 
       <div style={{ flex: 1, minHeight: 0 }}>
         {sessionId ? (

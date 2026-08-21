@@ -15,28 +15,33 @@
  * count, per this phase's own spec) would defeat the point of the catalog
  * endpoint existing at all.
  *
- * --- Why there is no drag-and-drop here, despite `@dnd-kit` already
- *     being a dependency and `files/FileTree.tsx` already using it ---
- * PARITY #37 was written as "drag a skill onto a running pane". But a
- * pane only EXISTS on screen while `centerView === "terminals"` — every
- * other centre view (including this one) is mounted with `display: none`
- * on the Terminals `<div>` the whole time it's not active (see App.tsx's
- * top comment on `CenterView`). A `display: none` element has no layout
- * box at all, so it can never be a real drop target — there is nothing to
- * drop ONTO, because the user cannot see it and dnd-kit cannot compute a
- * hit-test against it. Dragging a skill row therefore cannot reach a pane
- * without either (a) making Terminals and Skills visible at the same
- * time, which the whole app's "one centre view at a time" layout doesn't
- * support anywhere else, or (b) a persistent pane strip visible from every
- * view, which does not exist and would be new UI surface well past this
- * phase's brief. Rather than ship a `useDraggable` row that silently does
- * nothing the moment you switch tabs to actually see a pane to drop it
- * on, this view uses the alternative PARITY #37's own text explicitly
- * allows: a "Send to pane…" control on the selected skill, listing every
- * pane with a live session in the CURRENT workspace's grid (passed down
- * from App.tsx as `panes`), each with its own send button. This reaches
- * the exact same endpoint (`POST /api/skills/:name/inject`) with the
- * exact same outcome, just via a click instead of a drop.
+ * --- Why THIS view still has no drag-and-drop, now that dragging a skill
+ *     genuinely works elsewhere ---
+ * PARITY #37 was written as "drag a skill onto a running pane". A pane only
+ * EXISTS on screen while `centerView === "terminals"` — every other centre
+ * view (including this one) is mounted with `display: none` on the
+ * Terminals `<div>` the whole time it's not active (see App.tsx's top
+ * comment on `CenterView`). A `display: none` element has no layout box at
+ * all, so it can never be a real drop target — there is nothing to drop
+ * ONTO from here, because the user cannot see a pane while looking at this
+ * view. That's still true, and always will be, for as long as this app
+ * shows one centre view at a time.
+ *
+ * The fix wasn't to change that layout — it was to put a SECOND way to
+ * reach skills somewhere that doesn't have this problem: `shell/
+ * RightDock.tsx`'s "Skills" section, a persistent side panel rendered
+ * alongside the pane grid no matter which centre view is active. Its rows
+ * are real HTML5 drag sources; `grid/PaneView.tsx`'s pane is the real drop
+ * target. See `skills/dragDrop.ts`'s top comment for the full reasoning and
+ * the payload/predicate both sides share.
+ *
+ * This view's own "Send to pane…" control below (`PaneSendSection`) stays
+ * exactly as it was, not as a workaround anymore but as the DELIBERATE
+ * keyboard-accessible path — dragging is inherently pointer-only, and this
+ * app is explicitly keyboard-first, so removing this in favour of drag
+ * would be a regression, not a simplification. Both paths call the exact
+ * same `sendSkillToPane` (`skills/sendToPane.ts`) and land on the exact
+ * same `POST /api/skills/:name/inject`; only the input method differs.
  */
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { Button, EmptyState, ListRow, Pill } from "../shell/ui.js";
@@ -50,6 +55,7 @@ import {
   type SkillDetail,
   type SkillDiagnostic,
 } from "./logic.js";
+import { sendSkillToPane } from "./sendToPane.js";
 
 export interface SkillsProps {
   workspaceId: string | null;
@@ -175,20 +181,14 @@ export default function Skills({ workspaceId, visible, panes, onFocusSession }: 
     (skillName: string, paneId: string, sessionId: string) => {
       if (!workspaceId) return;
       setInjectOutcomes((prev) => ({ ...prev, [paneId]: { kind: "sending" } }));
-      fetch(`/api/skills/${encodeURIComponent(skillName)}/inject`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId, workspaceId }),
-      })
-        .then(async (res) => {
-          const body = (await res.json().catch(() => ({}))) as { error?: string; truncated?: boolean };
-          if (!res.ok) throw new Error(body.error ?? `Server responded with ${res.status}`);
-          return body;
-        })
-        .then((body) => {
+      // See skills/sendToPane.ts's top comment: this is the SAME call
+      // RightDock.tsx's drag-and-drop path makes, not a parallel one — the
+      // two are only allowed to differ in how the user triggered them.
+      sendSkillToPane(skillName, sessionId, workspaceId)
+        .then((result) => {
           setInjectOutcomes((prev) => ({
             ...prev,
-            [paneId]: { kind: "success", truncated: Boolean(body.truncated) },
+            [paneId]: { kind: "success", truncated: result.truncated },
           }));
         })
         .catch((err: unknown) => {

@@ -1,10 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import type { SessionInfo, Workspace } from "@vibedeck/shared";
 import type { AgentOption } from "../grid/PaneView.js";
 import { formatBlockDuration, type CommandBlock } from "../term/blocks.js";
 import { scrollSessionToLine, useSessionBlocks } from "../term/blockStore.js";
 import MemoryPanel, { type OpenNoteRequest } from "../memory/MemoryPanel.js";
+import { groupSkillsByScope, type SkillCatalogEntry } from "../skills/logic.js";
+import { SKILL_DRAG_MIME_TYPE, serializeSkillDragPayload } from "../skills/dragDrop.js";
 import { ListRow, Pill, type StatusKind } from "./ui.js";
+import { RADIUS } from "./tokens.js";
 
 export const DOCK_WIDTH = 320;
 
@@ -59,6 +62,62 @@ export default function RightDock({
   useEffect(() => {
     if (openNoteRequest) setActiveTab("memory");
   }, [openNoteRequest]);
+
+  // The "Skills" section's own catalog fetch (PARITY #37's drag — see
+  // skills/dragDrop.ts's top comment for why this section exists at all).
+  // A SECOND `GET /api/skills` caller alongside skills/Skills.tsx's own is
+  // fine: it's a read-only catalog fetch (name/description/scope, never a
+  // body — same progressive-disclosure shape docs/SKILLS.md describes),
+  // not the send-to-pane call this phase is strict about never forking
+  // (see skills/sendToPane.ts's top comment for THAT rule). Unlike
+  // Skills.tsx, this component doesn't need the "hidden via `display:
+  // none`, so fetch on becoming visible" dance — RightDock is only ever
+  // mounted at all while the dock is expanded (App.tsx conditionally
+  // renders it, it doesn't just hide it), so a plain mount/workspace-change
+  // effect is enough.
+  const [skillsCatalog, setSkillsCatalog] = useState<SkillCatalogEntry[]>([]);
+  const [skillsLoadState, setSkillsLoadState] = useState<"loading" | "loaded" | "error">("loading");
+  const [skillsLoadError, setSkillsLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!workspaceId) {
+      setSkillsCatalog([]);
+      setSkillsLoadState("loaded");
+      return;
+    }
+    let cancelled = false;
+    setSkillsLoadState("loading");
+    setSkillsLoadError(null);
+    fetch(`/api/skills?workspaceId=${encodeURIComponent(workspaceId)}`)
+      .then(async (res) => {
+        const body = (await res.json().catch(() => ({}))) as { skills?: SkillCatalogEntry[]; error?: string };
+        if (!res.ok) throw new Error(body.error ?? `Server responded with ${res.status}`);
+        return body.skills ?? [];
+      })
+      .then((skills) => {
+        if (cancelled) return;
+        setSkillsCatalog(skills);
+        setSkillsLoadState("loaded");
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setSkillsLoadError(err instanceof Error ? err.message : "Failed to load skills");
+        setSkillsLoadState("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [workspaceId]);
+
+  // Project-scoped skills first (per skills/logic.ts's groupSkillsByScope —
+  // same ordering skills/Skills.tsx uses), so a skill that came from THIS
+  // repo (untrusted per docs/SKILLS.md's trust-boundary section) is what a
+  // user sees at the top, not buried under every user-scope skill on the
+  // machine.
+  const { project: projectSkills, user: userSkills } = useMemo(
+    () => groupSkillsByScope(skillsCatalog),
+    [skillsCatalog]
+  );
 
   return (
     <div
@@ -143,6 +202,58 @@ export default function RightDock({
                   }
                 />
               ))}
+            </div>
+          </Section>
+
+          {/* Skills live HERE, in the dock, specifically so that dragging
+              one is possible at all (PARITY #37). The full Skills view is a
+              centre view, and centre views are `display: none` while
+              inactive — so while you browse skills there, the pane grid is
+              not on screen and there is nothing to drop onto. The dock is
+              visible AT THE SAME TIME as the panes, which is the whole
+              point. The centre view stays; this is a second way in, not a
+              replacement, and the keyboard path there is still the one
+              that works without a mouse. */}
+          <Section title="Skills">
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              {skillsLoadState === "loading" && (
+                <p style={{ fontSize: 12, color: "var(--vd-text-faint)", margin: 0 }}>Loading…</p>
+              )}
+              {skillsLoadState === "error" && (
+                <p style={{ fontSize: 12, color: "var(--vd-danger)", margin: 0 }}>
+                  {skillsLoadError ?? "Could not load skills."}
+                </p>
+              )}
+              {skillsLoadState === "loaded" && skillsCatalog.length === 0 && (
+                <p style={{ fontSize: 12, color: "var(--vd-text-faint)", margin: 0 }}>
+                  No skills found — see docs/SKILLS.md for where they live.
+                </p>
+              )}
+              {skillsLoadState === "loaded" && skillsCatalog.length > 0 && (
+                <>
+                  <p style={{ fontSize: 10, color: "var(--vd-text-faint)", margin: "0 0 4px" }}>
+                    Drag onto a running agent pane.
+                  </p>
+                  {[...projectSkills, ...userSkills].map((skill) => (
+                    <div
+                      key={`${skill.scope.kind}:${skill.name}`}
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData(SKILL_DRAG_MIME_TYPE, serializeSkillDragPayload(skill));
+                        // "copy", not "move": the drop doesn't consume the
+                        // skill — it stays in the catalog and the same one
+                        // can be dropped onto several panes.
+                        e.dataTransfer.effectAllowed = "copy";
+                      }}
+                      title={skill.description || skill.name}
+                      style={skillRowStyle}
+                    >
+                      <span style={{ fontSize: 12, color: "var(--vd-text)" }}>{skill.name}</span>
+                      <span style={{ fontSize: 10, color: "var(--vd-text-faint)" }}>{skill.scope.kind}</span>
+                    </div>
+                  ))}
+                </>
+              )}
             </div>
           </Section>
         </div>
@@ -268,6 +379,21 @@ function BlocksPanel({ session }: { session: SessionInfo | null }) {
 function EmptyNote({ children }: { children: React.ReactNode }) {
   return <p style={{ fontSize: 12, color: "var(--vd-text-faint)", margin: 0, lineHeight: 1.5 }}>{children}</p>;
 }
+
+/** A draggable skill row. `cursor: grab` is the only affordance that says
+ * "this one is draggable" before you try — the dock's other rows aren't. */
+const skillRowStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 8,
+  padding: "3px 6px",
+  borderRadius: RADIUS.sm,
+  border: "1px solid var(--vd-border)",
+  background: "var(--vd-surface)",
+  cursor: "grab",
+  userSelect: "none",
+};
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
