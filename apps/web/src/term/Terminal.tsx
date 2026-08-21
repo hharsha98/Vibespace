@@ -262,6 +262,19 @@ function styleGutterBar(el: HTMLElement, color: string): void {
   el.style.pointerEvents = "none";
 }
 
+/** Where the floating Live/Blocks toggle is pinned inside the pane, and how
+ * tall it measures. Both are used twice — to position the toggle, and to
+ * reserve exactly that much room above the terminal so it never covers
+ * output — so they live here rather than being written out separately in
+ * each place and silently drifting apart. */
+const TOGGLE_INSET = 8;
+const TOGGLE_HEIGHT = 23;
+
+/** Vertical space the terminal gives up so the toggle has somewhere to sit.
+ * A little breathing room below it so the first row of output isn't jammed
+ * against the control. */
+const TOGGLE_STRIP_HEIGHT = TOGGLE_INSET + TOGGLE_HEIGHT + 4;
+
 
 /**
  * A real, server-backed terminal. Renders one xterm.js instance wired up to
@@ -1294,7 +1307,24 @@ export default function Terminal({
         <div
           ref={containerRef}
           tabIndex={0}
-          style={{ width: "100%", height: "100%", display: viewMode === "live" ? "block" : "none" }}
+          style={{
+            width: "100%",
+            height: "100%",
+            display: viewMode === "live" ? "block" : "none",
+            // Reserve the strip the floating Live/Blocks toggle occupies,
+            // instead of letting it sit on top of the output. The toggle is
+            // absolutely positioned at top:8 left:8 and was covering the
+            // first ~31px of the terminal's text area — measured in a real
+            // browser — which for a terminal means hiding the first line or
+            // two, and the first line is very often the one that matters: a
+            // command's error, or the prompt itself. Padding here rather
+            // than moving the toggle keeps the control where the design
+            // puts it, while making the overlap impossible at any pane size:
+            // FitAddon measures this element, so it simply computes fewer
+            // rows and the pty is told about them through the usual resize.
+            paddingTop: TOGGLE_STRIP_HEIGHT,
+            boxSizing: "border-box",
+          }}
         />
 
         {viewMode === "blocks" && termRef.current && (
@@ -1320,8 +1350,8 @@ export default function Terminal({
         <div
           style={{
             position: "absolute",
-            top: 8,
-            left: 8,
+            top: TOGGLE_INSET,
+            left: TOGGLE_INSET,
             zIndex: 10,
             display: "flex",
             background: "var(--vd-surface)",

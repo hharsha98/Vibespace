@@ -25,12 +25,12 @@ just answering questions.
 
 ## Download
 
-**[Get v0.1.0 →](https://github.com/hharsha98/vibedeck/releases/latest)**
+**[Get v0.1.1 →](https://github.com/hharsha98/vibedeck/releases/latest)**
 
 | Platform | File |
 |---|---|
-| macOS (Apple Silicon) | `vibedeck_0.1.0_aarch64.dmg` |
-| Windows | `vibedeck_0.1.0_x64-setup.exe` |
+| macOS (Apple Silicon) | `vibedeck_0.1.1_aarch64.dmg` |
+| Windows | `vibedeck_0.1.1_x64-setup.exe` |
 | Linux | `.deb`, `.rpm`, or `.AppImage` |
 
 Two things to know before you install:
@@ -41,8 +41,40 @@ Two things to know before you install:
 - **The app is not code-signed**, so the first launch is blocked. On macOS,
   right-click the app → **Open** → **Open**. On Windows, SmartScreen shows
   "More info" → **Run anyway**. Once, then never again. This is a
-  deliberate trade-off (signing certificates cost money annually), not a
-  sign anything is wrong.
+  deliberate trade-off, not a sign anything is wrong — see below for
+  exactly why, since "just sign it for free" is a reasonable thing to
+  expect and isn't actually possible on macOS.
+
+### Why it isn't signed, and what is actually free
+
+Being straight about this, because the two platforms are genuinely
+different:
+
+**macOS has no free option.** Getting rid of the Gatekeeper prompt requires
+*notarization*, and notarization requires a paid Apple Developer account
+(currently $99/year). There is no free tier, no open-source exemption, and
+no trick that removes the warning — anything claiming otherwise is either
+out of date or wrong. The usual workaround, shipping through Homebrew with
+quarantine disabled, is closing too: Homebrew is
+[removing every cask that fails Gatekeeper on 1 September 2026](https://github.com/orgs/Homebrew/discussions/6482)
+and deprecating `--no-quarantine`.
+
+What we *do* get for free is **ad-hoc signing** (`signingIdentity: "-"` in
+the Tauri config). That does not remove the prompt, but it does keep the
+bundle's signature internally consistent, which matters on Apple Silicon —
+without it macOS can report the app as *"damaged and can't be opened"*,
+which looks like a corrupt download rather than an unsigned one.
+
+**Windows has a real free option, and it's the plan.**
+[SignPath Foundation](https://signpath.org/) issues free code-signing
+certificates to open-source projects — MIT licence, public repository,
+which describes this project. That is genuine Authenticode signing, not a
+workaround, and it removes the SmartScreen warning. It needs an
+application by the repository owner and takes days to weeks to approve, so
+it is not something this build could do for itself.
+
+Until then: the "More info → Run anyway" path on Windows and
+"right-click → Open" on macOS are the honest answer.
 
 Honest about testing: **macOS is verified end-to-end** — the released DMG
 was downloaded, installed, launched, and used to spawn real terminals. The

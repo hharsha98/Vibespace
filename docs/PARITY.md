@@ -7,6 +7,47 @@ auditable question rather than an opinion.
 Sources, read 2026-08-12: `docs.bridgemind.ai/docs/bridgespace` (their own
 documentation) and the BridgeSpace / BridgeSwarm product pages.
 
+## Re-sync against BridgeSpace v3.4.18 (their changelog, read 2026-08-21)
+
+Their latest desktop release is **v3.4.18, 4 August 2026**. Every entry from
+v3.2.1 through v3.4.18 was read and checked against this codebase. What that
+found, honestly:
+
+**Already shipped here, no work needed.** Their v3.4.17 "drag-highlights
+inside mouse-tracking TUIs are copyable" is our parity item 3, shipped —
+`macOptionClickForcesSelection` plus a Cmd/Ctrl+C handler (see
+`term/copyShortcut.ts`). Their v3.4.17 "terminal renderer addons are
+disposed before the terminal core" is a bug we independently hit and fixed.
+Their v3.4.13 deferred panes, bounded cold-start restore budget and circuit
+breaker are all in our session-recovery work.
+
+**Deliberately not ours.** Most of v3.2.2, v3.4.15 and much of v3.4.17 is
+account, subscription, billing and multi-account-profile machinery —
+"paid sessions stay verified", "the right plan follows the right account",
+OAuth account confirmation. vibedeck has no accounts and nothing to bill,
+so none of it applies. Notably they *removed* their own AI account-profiles
+experiment in v3.4.17. Their v3.4.17 "Bridge" orchestration workspace is
+built around a voice orb and their voice product, which the scope note
+below already excludes.
+
+**Real, but unverifiable from here.** Three items are Windows- or
+Linux-specific: the v3.4.18 Windows clipboard-image paste fix, the v3.4.13
+Windows shell fallback for blocked WindowsApps aliases, and the v3.4.17
+Linux Ctrl+V image hand-off. This project is developed on macOS and those
+paths cannot be exercised here, so implementing them would mean writing
+code nobody can test. Left undone deliberately rather than shipped blind.
+
+Worth noting on the first of those: our clipboard-image handling always
+saves the image and types its path (`files/paste-image.ts`). That is
+exactly the behaviour BridgeSpace settled on for Windows in v3.4.18, after
+their v3.4.17 attempt at agent-native paste regressed it. We do it on every
+platform — simpler, and the failure mode they hit is unreachable for us.
+
+**Refinement we cannot observe.** Their v3.4.17 aligned the Codex context
+pill with Codex's own `/status` math. Ours relays Codex's printed footer
+verbatim and has never been seen rendering on this machine (Codex hangs on
+its own MCP servers here), so there is no measurable gap to close yet.
+
 Scope note: this tracks **BridgeSpace**, the workroom. Their separate
 products — an autonomous server-resident agent, a voice dictation tool, a
 screenshot utility — are not in scope; they are different applications that
