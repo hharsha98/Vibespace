@@ -19,7 +19,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { join, relative, sep } from "node:path";
 import type { FastifyInstance } from "fastify";
-import type { FileEntry, FileWatchEvent } from "@vibedeck/shared";
+import type { FileChangeEventType, FileEntry, FileWatchEvent } from "@vibedeck/shared";
 import type { WorkspaceStore } from "../db/workspaces.js";
 import { isInside, isProbablyBinary, safeResolve } from "./safe-path.js";
 import { PASTE_IMAGE_DIR_NAME, pickPasteImagePath } from "./paste-image.js";
@@ -367,7 +367,7 @@ export function registerFileRoutes(app: FastifyInstance, workspaceStore: Workspa
       // several raw fs events for one logical "the file changed" moment —
       // collapse those into a single emitted event per path.
       const pending = new Map<string, ReturnType<typeof setTimeout>>();
-      const emit = (type: FileWatchEvent["type"], absPath: string) => {
+      const emit = (type: FileChangeEventType, absPath: string) => {
         const relPath = relative(root, absPath);
         const existingTimer = pending.get(relPath);
         if (existingTimer) clearTimeout(existingTimer);
@@ -379,6 +379,19 @@ export function registerFileRoutes(app: FastifyInstance, workspaceStore: Workspa
         }, 100);
         pending.set(relPath, timer);
       };
+
+      // Announce readiness once chokidar's initial scan is done, NOT
+      // debounced — it carries no path, and it's the one message whose
+      // whole value is arriving promptly. Before this, a client had no way
+      // to know when the watcher went live, and anything created during
+      // the scan window was silently folded into the initial listing by
+      // `ignoreInitial` and never reported at all. See `FileWatchEvent`'s
+      // own comment, and `swarm/watch.ts`, which solved this first.
+      watcher.on("ready", () => {
+        if (socket.readyState === socket.OPEN) {
+          socket.send(JSON.stringify({ type: "ready" } satisfies FileWatchEvent));
+        }
+      });
 
       watcher.on("add", (p: string) => emit("add", p));
       watcher.on("change", (p: string) => emit("change", p));

@@ -416,6 +416,11 @@ export default function Editor({ workspaceId, theme, openRequest }: EditorProps)
         return;
       }
 
+      // "ready" carries no path and means only "the watcher is live now".
+      // The editor has nothing to do about it — it reacts to changes, and
+      // no change has happened yet.
+      if (message.type === "ready") return;
+
       const openTabState = tabsRef.current.find((t) => t.path === message.path);
       if (!openTabState) return; // Not an open tab — nothing for the editor to do.
 

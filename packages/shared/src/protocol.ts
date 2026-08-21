@@ -376,9 +376,31 @@ export interface FileContentResponse {
  * same file (e.g. a formatter running) collapses into a single event.
  */
 export type FileWatchEvent =
+  /**
+   * Sent once, when the watcher has finished its initial scan and is
+   * genuinely watching — chokidar's own `"ready"` event.
+   *
+   * Until this arrives there is a window where the watcher is attached but
+   * still scanning, and a file created during it is indistinguishable from
+   * one that was always there: `ignoreInitial: true` folds it into the
+   * initial listing, so chokidar NEVER emits `add` for it. A change made
+   * in that window is not reported late — it is not reported at all.
+   *
+   * `swarm/watch.ts` already exposes this same signal as an `onReady`
+   * callback, for the same reason and with the same reasoning written out.
+   * This is that idea reaching WebSocket clients, which have no callback
+   * to be handed.
+   */
+  | { type: "ready" }
   | { type: "add"; path: string }
   | { type: "change"; path: string }
   | { type: "unlink"; path: string };
+
+/** The `FileWatchEvent` variants that carry a path — i.e. everything except
+ * `ready`. Lets the watcher's debounced emitter accept exactly the event
+ * kinds that HAVE a path, instead of `FileWatchEvent["type"]`, which since
+ * `ready` joined the union no longer implies one. */
+export type FileChangeEventType = Exclude<FileWatchEvent, { type: "ready" }>["type"];
 
 /**
  * Phase 7 (the board) types. A `BoardCard` is a task that lives in one of

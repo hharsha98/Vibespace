@@ -611,32 +611,79 @@ describe("GET /api/files/watch (WebSocket)", () => {
         ws.on("error", reject);
       });
 
+      // Every event received so far, plus a nudge fired on each arrival.
+      // `waitForEvent` scans what has ALREADY landed before it sleeps, so
+      // an event arriving between two awaits can't be missed.
       const events: FileWatchEvent[] = [];
-      const gotAdd = new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error("timed out waiting for add event")), 8_000);
-        ws.on("message", (raw: Buffer) => {
-          const event = JSON.parse(raw.toString()) as FileWatchEvent;
-          events.push(event);
-          if (event.type === "add" && event.path === "new-file.txt") {
-            clearTimeout(timeout);
-            resolve();
-          }
-        });
-        ws.on("error", reject);
+      let nudge = (): void => {};
+      ws.on("message", (raw: Buffer) => {
+        events.push(JSON.parse(raw.toString()) as FileWatchEvent);
+        nudge();
       });
 
-      // Give chokidar a moment to finish its initial scan before writing —
-      // ignoreInitial:true means it shouldn't emit for pre-existing files,
-      // but the watcher needs to actually be ready first.
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      writeFileSync(join(projectDir, "new-file.txt"), "hello");
+      // Each wait gets its OWN fresh budget, deliberately. One shared
+      // deadline started at socket-open lets a slow `ready` eat the `add`
+      // budget too — under parallel load `ready` can take seconds, leaving
+      // `add` almost none and failing for entirely the wrong reason.
+      const waitForEvent = async (
+        matches: (e: FileWatchEvent) => boolean,
+        label: string,
+        timeoutMs = 10_000
+      ): Promise<void> => {
+        const deadline = Date.now() + timeoutMs;
+        while (!events.some(matches)) {
+          if (Date.now() >= deadline) throw new Error(`timed out waiting for ${label}`);
+          await new Promise<void>((resolve) => {
+            nudge = resolve;
+            setTimeout(resolve, 100);
+          });
+        }
+      };
 
-      await gotAdd;
+      // Wait for the watcher to SAY it is watching, rather than sleeping a
+      // guessed 300ms and hoping. That guess was the entire flake: under
+      // parallel load chokidar's initial scan outlasted it, so
+      // "new-file.txt" was created DURING the scan and `ignoreInitial`
+      // folded it into the initial listing — the "add" event was never
+      // emitted at all. The test then waited the full 8s for an event that
+      // could not arrive, which is why raising that timeout would never
+      // have helped.
+      await waitForEvent((e) => e.type === "ready", "watcher ready");
+
+      // Keep creating files until the watcher reports one, rather than
+      // creating exactly one and demanding that specific notification
+      // survive. macOS fsevents genuinely drops notifications under load —
+      // measured here, with the suite running 50+ files in parallel, each
+      // spawning ptys and watchers: `ready` had arrived and a full 10s
+      // budget still expired with no `add`, repeatably, a few runs in ten.
+      // That is the platform's behaviour, not this route's, and no timeout
+      // can fix a notification that was never delivered.
+      //
+      // A fresh NAME each attempt on purpose: rewriting the same path
+      // yields `change`, not `add`, so retrying the identical write could
+      // never produce the event being waited for.
+      //
+      // This still fails loudly if the watcher is actually broken — no
+      // `add` for ANY of the files, across the whole 20s. It only tolerates
+      // losing individual notifications, which is the one thing the route
+      // has no control over.
+      const addSeen = () => events.some((e) => e.type === "add" && e.path.startsWith("new-file-"));
+      const addDeadline = Date.now() + 20_000;
+      let attempt = 0;
+      while (!addSeen()) {
+        if (Date.now() >= addDeadline) {
+          throw new Error(`no add event after creating ${attempt} files; watcher is not reporting creations`);
+        }
+        attempt += 1;
+        writeFileSync(join(projectDir, `new-file-${attempt}.txt`), "hello");
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+
       ws.close();
       await app.close();
       closeServer = undefined;
     },
-    15_000
+    30_000
   );
 
   it(

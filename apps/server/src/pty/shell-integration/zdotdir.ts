@@ -176,7 +176,36 @@ export class ShellIntegrationManager {
    */
   dispose(): void {
     if (this.zdotdir) {
-      rmSync(this.zdotdir, { recursive: true, force: true });
+      // Best-effort, and never throws — this races a zsh that is still
+      // shutting down. The shell writes into its ZDOTDIR as it exits
+      // (`.zsh_sessions/` in particular), and `disposeAll()` removes the
+      // directory immediately after killing the pty, so an entry can
+      // appear between the recursive walk enumerating a directory and the
+      // rmdir of that same directory — which fails with ENOTEMPTY.
+      // `force: true` does not cover that; it only swallows ENOENT.
+      //
+      // `maxRetries` handles the common case (Node retries on EBUSY /
+      // ENOTEMPTY / EPERM with a linear backoff), but it cannot win
+      // against a process that is still actively writing, and measurably
+      // does not: this still threw roughly twice in twenty full-suite
+      // runs with retries alone.
+      //
+      // So the throw itself is the bug. This is throwaway scratch in the
+      // OS temp directory; failing to delete it leaks a few KB that the
+      // OS reclaims on its own, while THROWING took down whichever
+      // pty-spawning test file happened to lose the race — files/routes,
+      // session-manager, session-lifecycle, board/routes and swarm/routes
+      // all did at some point, which read as five unrelated flaky tests
+      // rather than one shared bug in cleanup. In production this runs at
+      // server shutdown, where an exception is just as unwelcome.
+      try {
+        rmSync(this.zdotdir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+      } catch (err) {
+        console.warn(
+          `vibedeck: could not remove the temporary shell-integration directory "${this.zdotdir}" ` +
+            `(${err instanceof Error ? err.message : String(err)}). It will be cleaned up by the OS.`
+        );
+      }
       this.zdotdir = null;
     }
   }
