@@ -149,6 +149,28 @@ export function closePane(root: GridNode, targetPaneId: PaneId): GridNode | null
   return closeWithin(root, targetPaneId);
 }
 
+/**
+ * `closePane`, but never returns null — closing the last pane leaves one
+ * fresh empty pane instead of an empty tree.
+ *
+ * This exists because "no grid left" and "no grid YET" are the same value
+ * (`null`) in `App.tsx`, whose `root` state starts null while the layout
+ * loads and renders "Loading…" for it. Closing your last pane fed a
+ * legitimate null into that state and parked the entire app on a spinner
+ * that could never resolve, since nothing was actually loading — only a
+ * page reload escaped, and a reload lands on exactly this: one empty
+ * pane, ready for an agent.
+ *
+ * `closePane` keeps returning null on purpose: as a pure tree operation,
+ * "the tree is now empty" is the truthful answer, and a caller that needs
+ * to distinguish that case can still ask. This wrapper is where the UI's
+ * policy about it lives, so that policy can be tested — `App.tsx` cannot
+ * be, as this package has no jsdom.
+ */
+export function closePaneOrEmpty(root: GridNode, targetPaneId: PaneId): GridNode {
+  return closeWithin(root, targetPaneId) ?? createLeaf();
+}
+
 function closeWithin(node: GridNode, targetPaneId: PaneId): GridNode | null {
   if (node.kind === "leaf") {
     return node.id === targetPaneId ? null : node;

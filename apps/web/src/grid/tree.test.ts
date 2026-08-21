@@ -3,6 +3,7 @@ import {
   attachSession,
   buildTemplate,
   closePane,
+  closePaneOrEmpty,
   countPanes,
   createLeaf,
   findPane,
@@ -10,6 +11,7 @@ import {
   pruneDeadSessions,
   splitPane,
   type GridNode,
+  type LeafNode,
 } from "./tree.js";
 
 describe("createLeaf", () => {
@@ -107,6 +109,39 @@ describe("attachSession", () => {
     attachSession(leaf, leaf.id, "session-xyz");
 
     expect(leaf).toEqual(before);
+  });
+});
+
+describe("closePaneOrEmpty", () => {
+  // The regression: App.tsx's `root` is null BOTH while the layout is
+  // loading and after closePane empties the tree, and it renders "Loading…"
+  // for null — so closing your last pane parked the app on a spinner that
+  // could never resolve. Only a reload escaped, and a reload lands on one
+  // empty pane, which is what this returns.
+  it("leaves one fresh EMPTY pane when the last pane is closed, never null", () => {
+    const root = createLeaf("only-session");
+
+    const result = closePaneOrEmpty(root, root.id);
+
+    expect(result).not.toBeNull();
+    expect(result.kind).toBe("leaf");
+    // Empty: the closed pane's session must not be carried onto it.
+    expect((result as LeafNode).sessionId).toBeNull();
+    expect(result.id).not.toBe(root.id);
+  });
+
+  it("behaves exactly like closePane whenever panes remain", () => {
+    const left = createLeaf("left-session");
+    const right = createLeaf("right-session");
+    const root: GridNode = { kind: "split", id: "root", direction: "row", children: [left, right] };
+
+    expect(closePaneOrEmpty(root, left.id)).toEqual(closePane(root, left.id));
+    expect(closePaneOrEmpty(root, left.id)).toEqual(right);
+  });
+
+  it("returns a tree with exactly one pane after the last close, so the grid can render", () => {
+    const root = createLeaf(null);
+    expect(countPanes(closePaneOrEmpty(root, root.id))).toBe(1);
   });
 });
 

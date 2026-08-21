@@ -13,7 +13,7 @@ import {
   attachSession,
   buildTemplate,
   clearDeferredPane,
-  closePane,
+  closePaneOrEmpty,
   createLeaf,
   findPane,
   listPanes,
@@ -743,7 +743,14 @@ export default function App() {
         const sessionId = pane.sessionId;
         setSessions((prev) => prev.filter((s) => s.id !== sessionId));
       }
-      setRoot(closePane(root, paneId));
+      // ...OrEmpty, because a plain `closePane` returns null once the last
+      // pane goes, and null is ALSO this component's "layout hasn't loaded
+      // yet" state (`useState<GridNode | null>(null)` above) — which the
+      // render below shows as "Loading…". Closing your last pane therefore
+      // parked the whole app on a spinner that could never resolve,
+      // because nothing was loading; only a page reload escaped it. See
+      // closePaneOrEmpty's own comment in grid/tree.ts.
+      setRoot(closePaneOrEmpty(root, paneId));
       setFocusedPaneId((prev) => (prev === paneId ? null : prev));
       setMaximizedPaneId((prev) => (prev === paneId ? null : prev));
     },
