@@ -28,6 +28,11 @@ import { CommandHistoryStore } from "./db/command-history.js";
 import { registerHistoryRoutes } from "./history/routes.js";
 import { SshProfileStore } from "./ssh/store.js";
 import { registerSshRoutes } from "./ssh/routes.js";
+import { SessionRecordsStore } from "./db/session-records.js";
+import { spawnExtrasFor } from "./pty/resume.js";
+import { trackSessionForRecovery } from "./pty/session-lifecycle.js";
+import { attemptResume, restoreWorkspaceSessions } from "./pty/restore.js";
+import { EAGER_RESTORE_BUDGET } from "./pty/restore-budget.js";
 
 const VERSION = "0.0.0";
 // Phase 11a (PARITY #50): resolveServerPort defaults to 4317 — identical to
@@ -59,6 +64,8 @@ export interface BuildAppOptions {
   commandHistoryStore?: CommandHistoryStore;
   /** Inject an SshProfileStore (mainly for tests). Defaults to a fresh one. */
   sshProfileStore?: SshProfileStore;
+  /** Inject a SessionRecordsStore (mainly for tests). Defaults to a fresh one. */
+  sessionRecordsStore?: SessionRecordsStore;
   /**
    * Phase 11a (PARITY #50): absolute path to a built `apps/web/dist` to
    * serve as static files, turning this server into the single origin for
@@ -104,6 +111,16 @@ export function buildApp(options: BuildAppOptions = {}) {
   const savedPromptStore = options.savedPromptStore ?? new SavedPromptStore();
   const commandHistoryStore = options.commandHistoryStore ?? new CommandHistoryStore();
   const sshProfileStore = options.sshProfileStore ?? new SshProfileStore();
+  const sessionRecordsStore = options.sessionRecordsStore ?? new SessionRecordsStore();
+
+  // Session recovery: every record still marked 'running' belongs to a
+  // PREVIOUS process — this one's `sessionManager` starts with an empty
+  // session map, so nothing is left to check any of them against. Doing
+  // this once, right here at boot (not lazily, not per-workspace), is what
+  // turns "sessions die if the server restarts" into "sessions are offered
+  // for resume after a restart" — see `SessionRecordsStore.
+  // markServerRestartOrphans`'s own doc comment.
+  sessionRecordsStore.markServerRestartOrphans();
 
   // Make the manager/store reachable from outside (tests call
   // app.sessionManager/app.workspaceStore/app.boardStore/etc directly to
@@ -119,6 +136,7 @@ export function buildApp(options: BuildAppOptions = {}) {
   app.decorate("savedPromptStore", savedPromptStore);
   app.decorate("commandHistoryStore", commandHistoryStore);
   app.decorate("sshProfileStore", sshProfileStore);
+  app.decorate("sessionRecordsStore", sessionRecordsStore);
 
   // Kill every pty and close the database when the Fastify instance closes,
   // so `app.close()` in tests (and a real process shutdown) doesn't leave
@@ -136,6 +154,7 @@ export function buildApp(options: BuildAppOptions = {}) {
     savedPromptStore.close();
     commandHistoryStore.close();
     sshProfileStore.close();
+    sessionRecordsStore.close();
     done();
   });
 
@@ -328,7 +347,18 @@ export function buildApp(options: BuildAppOptions = {}) {
       // SessionInfo.sshProfileId's doc comment (packages/shared/src/
       // protocol.ts) for why this doesn't reuse the `agent` field itself.
       sshProfileId?: unknown;
+      // Session recovery: the web app's own GridNode leaf id this session
+      // is being started in (see grid/tree.ts). Optional — a session
+      // started outside any pane (board/swarm dispatch) simply omits it —
+      // but every pane-originated spawn sends it, since it's what lets a
+      // later resume land back in the SAME pane instead of "any empty
+      // one". Stored verbatim on the SessionRecord below; never validated
+      // against the live grid (the server has no notion of "panes", only
+      // the client does).
+      paneId?: unknown;
     };
+    const paneId = typeof body.paneId === "string" ? body.paneId : null;
+    const workspaceIdForRecord = typeof body.workspaceId === "string" ? body.workspaceId : null;
 
     if (body.sshProfileId !== undefined && body.agent !== undefined) {
       return reply.status(400).send({ error: 'Provide either "agent" or "sshProfileId", not both' });
@@ -406,6 +436,20 @@ export function buildApp(options: BuildAppOptions = {}) {
           startupCommand: profile.startupCommand,
         },
       });
+      // Session recovery: recorded immediately, with no `await` in
+      // between — see SessionRecordsStore.create's own doc comment for why
+      // that ordering (SPAWN time, not first output) matters.
+      const record = sessionRecordsStore.create({
+        workspaceId: workspaceIdForRecord,
+        paneId,
+        sessionId: info.id,
+        agent: info.agent,
+        sshProfileId: info.sshProfileId ?? null,
+        agentSessionRef: null,
+        cwd: info.cwd,
+        title: info.title,
+      });
+      trackSessionForRecovery(sessionManager, sessionRecordsStore, info.id, record.id, false);
       return reply.status(201).send(info);
     }
 
@@ -427,7 +471,28 @@ export function buildApp(options: BuildAppOptions = {}) {
       });
     }
 
-    const info = sessionManager.create({ agent: body.agent, cwd, cols, rows });
+    // Session recovery: decides whether this agent gets a stable
+    // per-CLI session ref captured up front (today: only `claude`'s
+    // `--session-id <uuid>`) — see pty/resume.ts's research notes.
+    const spawnExtras = spawnExtrasFor(body.agent);
+    const info = sessionManager.create({
+      agent: body.agent,
+      cwd,
+      cols,
+      rows,
+      extraArgs: spawnExtras.args,
+    });
+    const record = sessionRecordsStore.create({
+      workspaceId: workspaceIdForRecord,
+      paneId,
+      sessionId: info.id,
+      agent: info.agent,
+      sshProfileId: null,
+      agentSessionRef: spawnExtras.agentSessionRef,
+      cwd: info.cwd,
+      title: info.title,
+    });
+    trackSessionForRecovery(sessionManager, sessionRecordsStore, info.id, record.id, false);
     return reply.status(201).send(info);
   });
 
@@ -437,7 +502,88 @@ export function buildApp(options: BuildAppOptions = {}) {
       return reply.status(404).send({ error: `No session with id "${id}"` });
     }
     sessionManager.kill(id);
+    // Session recovery: an explicit close is a deliberate end, not a
+    // crash/restart — mark the associated record 'discarded' rather than
+    // leaving it stranded at 'running' forever (see
+    // SessionRecordsStore.findByLiveSessionId's own doc comment for why
+    // the ordinary exit-tracking listener never catches this case).
+    const record = sessionRecordsStore.findByLiveSessionId(id);
+    if (record) sessionRecordsStore.markDiscarded(record.id);
     return reply.status(204).send();
+  });
+
+  // --- Session recovery (BridgeSpace v3.2.2 + v3.4.13 parity) -------------
+  // See db/session-records.ts, pty/resume.ts, and pty/restore.ts's top
+  // comments for the full design. `GET /api/session-records` is the raw
+  // feed a History screen renders from; the two POST routes below are its
+  // two actions (Resume / Discard); the workspace route is what a
+  // newly-activated workspace calls to auto-restore up to
+  // EAGER_RESTORE_BUDGET panes and learn which ones it should render as
+  // "deferred" instead.
+
+  app.get("/api/session-records", async (request) => {
+    const { workspaceId } = request.query as { workspaceId?: string };
+    return { records: sessionRecordsStore.list(workspaceId) };
+  });
+
+  app.post("/api/session-records/:id/discard", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const record = sessionRecordsStore.get(id);
+    if (!record) {
+      return reply.status(404).send({ error: `No session record with id "${id}"` });
+    }
+    if (record.status !== "recoverable") {
+      return reply
+        .status(409)
+        .send({ error: `Session record is not recoverable (status: "${record.status}")` });
+    }
+    return sessionRecordsStore.markDiscarded(id)!;
+  });
+
+  app.post("/api/session-records/:id/resume", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const record = sessionRecordsStore.get(id);
+    if (!record) {
+      return reply.status(404).send({ error: `No session record with id "${id}"` });
+    }
+    if (record.status !== "recoverable") {
+      return reply
+        .status(409)
+        .send({ error: `Session record is not recoverable (status: "${record.status}")` });
+    }
+
+    const body = (request.body ?? {}) as { cols?: unknown; rows?: unknown };
+    const cols = typeof body.cols === "number" ? body.cols : 80;
+    const rows = typeof body.rows === "number" ? body.rows : 24;
+
+    const result = await attemptResume(sessionManager, sessionRecordsStore, sshProfileStore, record, cols, rows);
+    if (!result.ok) {
+      // Failure never mutated the store — the record is still exactly
+      // 'recoverable' (see attemptResume's own doc comment). Nothing to
+      // revert; there is simply nothing new to report except why.
+      return reply.status(409).send({ error: result.error, installHint: result.installHint ?? null });
+    }
+    return { session: result.session, record: result.record, note: result.note };
+  });
+
+  app.post("/api/workspaces/:id/restore-sessions", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    if (!workspaceStore.get(id)) {
+      return reply.status(404).send({ error: `No workspace with id "${id}"` });
+    }
+    const body = (request.body ?? {}) as { cols?: unknown; rows?: unknown };
+    const cols = typeof body.cols === "number" ? body.cols : 80;
+    const rows = typeof body.rows === "number" ? body.rows : 24;
+
+    return restoreWorkspaceSessions(
+      sessionManager,
+      sessionRecordsStore,
+      sshProfileStore,
+      id,
+      EAGER_RESTORE_BUDGET,
+      cols,
+      rows
+    );
   });
 
   // @fastify/websocket's `onRoute` hook (which is what upgrades `socket`
@@ -543,6 +689,7 @@ declare module "fastify" {
     savedPromptStore: SavedPromptStore;
     commandHistoryStore: CommandHistoryStore;
     sshProfileStore: SshProfileStore;
+    sessionRecordsStore: SessionRecordsStore;
   }
 }
 

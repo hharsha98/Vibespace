@@ -28,11 +28,12 @@
  * "preferences" table), so this screen doesn't invent a second one.
  */
 import type { CSSProperties } from "react";
-import type { AgentId } from "@vibedeck/shared";
+import type { AgentId, SessionInfo, Workspace } from "@vibedeck/shared";
 import { KEYMAP, formatShortcut, isMacPlatform } from "../keys/keymap.js";
 import { THEMES } from "../themes/themes.js";
 import { ThemeSection } from "../themes/ThemePicker.js";
 import type { AgentOption } from "../grid/PaneView.js";
+import HistorySection from "./History.js";
 import { FONT, RADIUS, SPACE } from "../shell/tokens.js";
 
 export interface SettingsProps {
@@ -41,9 +42,24 @@ export interface SettingsProps {
   defaultAgent: AgentId | "";
   onDefaultAgentChange: (id: AgentId) => void;
   agents: AgentOption[];
+  /** Session recovery: every known workspace, so History can resolve a
+   * record's `workspaceId` to a human-readable name. */
+  workspaces: Workspace[];
+  /** Session recovery: fired once a History "Resume" action succeeds — see
+   * History.tsx's own top comment for why App.tsx (not History itself)
+   * decides where the resumed session lands. */
+  onSessionResumed: (session: SessionInfo) => void;
 }
 
-export default function Settings({ themeId, onThemeChange, defaultAgent, onDefaultAgentChange, agents }: SettingsProps) {
+export default function Settings({
+  themeId,
+  onThemeChange,
+  defaultAgent,
+  onDefaultAgentChange,
+  agents,
+  workspaces,
+  onSessionResumed,
+}: SettingsProps) {
   const isMac = isMacPlatform();
   const darkThemes = THEMES.filter((t) => t.isDark);
   const lightThemes = THEMES.filter((t) => !t.isDark);
@@ -87,6 +103,10 @@ export default function Settings({ themeId, onThemeChange, defaultAgent, onDefau
             Highlighted by default whenever an empty pane's agent picker opens, and used automatically
             when a board card is dropped into In Progress before it's ever been dispatched.
           </p>
+        </Section>
+
+        <Section title="History">
+          <HistorySection workspaces={workspaces} onSessionResumed={onSessionResumed} />
         </Section>
 
         <Section title="Keyboard shortcuts">

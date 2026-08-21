@@ -230,6 +230,315 @@ describe("session REST endpoints", () => {
   });
 });
 
+describe("session recovery REST endpoints", () => {
+  it(
+    "POST /api/sessions records a durable session record AT SPAWN TIME",
+    async () => {
+      const app = buildApp();
+      const workspaceResponse = await app.inject({
+        method: "POST",
+        url: "/api/workspaces",
+        payload: { name: "recovery-test", rootPath: mkdtempSync(join(tmpdir(), "vibedeck-recovery-")) },
+      });
+      const workspace = workspaceResponse.json() as { id: string; rootPath: string };
+
+      const sessionResponse = await app.inject({
+        method: "POST",
+        url: "/api/sessions",
+        payload: { agent: "shell", workspaceId: workspace.id, paneId: "pane-abc" },
+      });
+      expect(sessionResponse.statusCode).toBe(201);
+      const info = sessionResponse.json() as { id: string };
+
+      const recordsResponse = await app.inject({
+        method: "GET",
+        url: `/api/session-records?workspaceId=${workspace.id}`,
+      });
+      const { records } = recordsResponse.json() as { records: { sessionId: string; paneId: string; status: string; agent: string; cwd: string }[] };
+      expect(records).toHaveLength(1);
+      expect(records[0].sessionId).toBe(info.id);
+      expect(records[0].paneId).toBe("pane-abc");
+      expect(records[0].status).toBe("running");
+      expect(records[0].agent).toBe("shell");
+      expect(records[0].cwd).toBe(workspace.rootPath);
+
+      await app.close();
+    },
+    10_000
+  );
+
+  it(
+    "DELETE /api/sessions/:id marks its record 'discarded', never leaving it stranded at 'running'",
+    async () => {
+      const app = buildApp();
+      const sessionResponse = await app.inject({
+        method: "POST",
+        url: "/api/sessions",
+        payload: { agent: "shell", paneId: "pane-1" },
+      });
+      const info = sessionResponse.json() as { id: string };
+
+      await app.inject({ method: "DELETE", url: `/api/sessions/${info.id}` });
+
+      const recordsResponse = await app.inject({ method: "GET", url: "/api/session-records" });
+      const { records } = recordsResponse.json() as { records: { sessionId: string; status: string }[] };
+      const record = records.find((r) => r.sessionId === info.id || true); // sessionId cleared on discard too
+      expect(record?.status).toBe("discarded");
+
+      await app.close();
+    },
+    10_000
+  );
+
+  it(
+    "a session record SURVIVES a simulated server restart, becoming recoverable",
+    async () => {
+      const dataDirForRestart = mkdtempSync(join(tmpdir(), "vibedeck-restart-test-"));
+      process.env.VIBEDECK_DATA_DIR = dataDirForRestart;
+
+      // "Process 1": spawn a shell session, then close the app the way a
+      // crash would look from the database's point of view — disposeAll()
+      // kills the pty WITHOUT notifying trackSessionForRecovery's listener
+      // (see session-manager.ts's disposeAll doc comment), so the record
+      // is left exactly as a real crash would leave it: still 'running'.
+      const app1 = buildApp();
+      const sessionResponse = await app1.inject({
+        method: "POST",
+        url: "/api/sessions",
+        payload: { agent: "shell", paneId: "pane-restart" },
+      });
+      expect(sessionResponse.statusCode).toBe(201);
+
+      const beforeClose = await app1.inject({ method: "GET", url: "/api/session-records" });
+      expect((beforeClose.json() as { records: { status: string }[] }).records[0].status).toBe("running");
+
+      await app1.close();
+
+      // "Process 2": a brand-new buildApp() against the SAME on-disk
+      // database — this is exactly what happens when the real server
+      // process restarts. Its constructor calls
+      // sessionRecordsStore.markServerRestartOrphans() once, at boot.
+      const app2 = buildApp();
+      const afterRestart = await app2.inject({ method: "GET", url: "/api/session-records" });
+      const records = (afterRestart.json() as {
+        records: { sessionId: string | null; status: string; endedReason: string | null; paneId: string }[];
+      }).records;
+      expect(records).toHaveLength(1);
+      expect(records[0].status).toBe("recoverable");
+      expect(records[0].endedReason).toBe("server_restart");
+      expect(records[0].sessionId).toBeNull();
+      expect(records[0].paneId).toBe("pane-restart");
+
+      await app2.close();
+      delete process.env.VIBEDECK_DATA_DIR;
+      rmSync(dataDirForRestart, { recursive: true, force: true });
+    },
+    10_000
+  );
+
+  it(
+    "POST /api/session-records/:id/resume resumes a recoverable record into a fresh session, in the SAME pane",
+    async () => {
+      const app = buildApp();
+      const sessionResponse = await app.inject({
+        method: "POST",
+        url: "/api/sessions",
+        payload: { agent: "shell", paneId: "pane-resume" },
+      });
+      const info = sessionResponse.json() as { id: string };
+      const before = (await app.inject({ method: "GET", url: "/api/session-records" })).json() as {
+        records: { id: string }[];
+      };
+      const recordId = before.records[0].id;
+
+      // Simulate the pty having exited (a real crash/exit, not a DELETE) —
+      // same shell-only approach every pty test in this repo uses.
+      app.sessionManager.kill(info.id); // clears listeners, mirrors a controlled test setup
+      app.sessionRecordsStore.markExited(recordId, 0, "exited");
+
+      const resumeResponse = await app.inject({
+        method: "POST",
+        url: `/api/session-records/${recordId}/resume`,
+      });
+      expect(resumeResponse.statusCode).toBe(200);
+      const body = resumeResponse.json() as {
+        session: { id: string; status: string };
+        record: { id: string; status: string; paneId: string };
+        note: string;
+      };
+      expect(body.session.status).toBe("running");
+      expect(body.session.id).not.toBe(info.id); // a brand-new pty, never the old id
+      expect(body.record.status).toBe("running");
+      expect(body.record.paneId).toBe("pane-resume");
+      expect(body.note).toContain("fresh shell");
+
+      await app.close();
+    },
+    10_000
+  );
+
+  it(
+    "POST /api/session-records/:id/resume: a FAILED resume returns the record to 'recoverable' with a reason, never silently loses it",
+    async () => {
+      const app = buildApp();
+      // Directly craft a recoverable record for an agent that will never
+      // resolve as installed — forces attemptResume's failure branch
+      // without spawning anything (see restore.test.ts for the same
+      // technique at the unit level).
+      const record = app.sessionRecordsStore.create({
+        workspaceId: null,
+        paneId: "pane-broken",
+        sessionId: "already-gone",
+        agent: "not-a-real-agent" as never,
+        sshProfileId: null,
+        agentSessionRef: null,
+        cwd: "/tmp",
+        title: "bogus",
+      });
+      app.sessionRecordsStore.markExited(record.id, 1, "exited");
+
+      const resumeResponse = await app.inject({
+        method: "POST",
+        url: `/api/session-records/${record.id}/resume`,
+      });
+      expect(resumeResponse.statusCode).toBe(409);
+      expect((resumeResponse.json() as { error: string }).error).toContain("not-a-real-agent");
+
+      // The critical assertion for this whole feature: recoverability
+      // SURVIVED the failed resume.
+      const afterFailure = await app.inject({ method: "GET", url: "/api/session-records" });
+      const records = (afterFailure.json() as { records: { id: string; status: string }[] }).records;
+      expect(records.find((r) => r.id === record.id)?.status).toBe("recoverable");
+
+      await app.close();
+    },
+    10_000
+  );
+
+  it("POST /api/session-records/:id/resume 404s for an unknown id", async () => {
+    const app = buildApp();
+    const response = await app.inject({ method: "POST", url: "/api/session-records/does-not-exist/resume" });
+    expect(response.statusCode).toBe(404);
+    await app.close();
+  });
+
+  it("POST /api/session-records/:id/resume 409s for a record that isn't recoverable (still running)", async () => {
+    const app = buildApp();
+    const sessionResponse = await app.inject({
+      method: "POST",
+      url: "/api/sessions",
+      payload: { agent: "shell", paneId: "pane-1" },
+    });
+    const info = sessionResponse.json() as { id: string };
+    const { records } = (await app.inject({ method: "GET", url: "/api/session-records" })).json() as {
+      records: { id: string }[];
+    };
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/session-records/${records[0].id}/resume`,
+    });
+    expect(response.statusCode).toBe(409);
+    await app.inject({ method: "DELETE", url: `/api/sessions/${info.id}` });
+    await app.close();
+  });
+
+  it(
+    "POST /api/session-records/:id/discard marks it discarded; a discarded record can no longer be resumed",
+    async () => {
+      const app = buildApp();
+      const sessionResponse = await app.inject({
+        method: "POST",
+        url: "/api/sessions",
+        payload: { agent: "shell", paneId: "pane-1" },
+      });
+      const info = sessionResponse.json() as { id: string };
+      const { records } = (await app.inject({ method: "GET", url: "/api/session-records" })).json() as {
+        records: { id: string }[];
+      };
+      const recordId = records[0].id;
+      app.sessionManager.kill(info.id);
+      app.sessionRecordsStore.markExited(recordId, 0, "exited");
+
+      const discardResponse = await app.inject({
+        method: "POST",
+        url: `/api/session-records/${recordId}/discard`,
+      });
+      expect(discardResponse.statusCode).toBe(200);
+      expect((discardResponse.json() as { status: string }).status).toBe("discarded");
+
+      const resumeAfterDiscard = await app.inject({
+        method: "POST",
+        url: `/api/session-records/${recordId}/resume`,
+      });
+      expect(resumeAfterDiscard.statusCode).toBe(409);
+
+      await app.close();
+    },
+    10_000
+  );
+
+  it(
+    "POST /api/workspaces/:id/restore-sessions restores up to the eager budget and defers the rest",
+    async () => {
+      const app = buildApp();
+      const workspaceResponse = await app.inject({
+        method: "POST",
+        url: "/api/workspaces",
+        payload: { name: "restore-test", rootPath: mkdtempSync(join(tmpdir(), "vibedeck-restore-")) },
+      });
+      const workspace = workspaceResponse.json() as { id: string };
+
+      // 5 recoverable shell records for this workspace — more than the
+      // default budget (4) — via the decorated stores directly, mirroring
+      // how a REAL cold start would find them (this app's own history from
+      // earlier "running" sessions).
+      for (let i = 0; i < 5; i++) {
+        const seed = app.sessionManager.create({ agent: "shell" });
+        const record = app.sessionRecordsStore.create({
+          workspaceId: workspace.id,
+          paneId: `pane-${i}`,
+          sessionId: seed.id,
+          agent: "shell",
+          sshProfileId: null,
+          agentSessionRef: null,
+          cwd: seed.cwd,
+          title: seed.title,
+        });
+        app.sessionManager.kill(seed.id);
+        app.sessionRecordsStore.markExited(record.id, 0, "exited");
+      }
+
+      const response = await app.inject({
+        method: "POST",
+        url: `/api/workspaces/${workspace.id}/restore-sessions`,
+      });
+      expect(response.statusCode).toBe(200);
+      const body = response.json() as {
+        restored: { paneId: string }[];
+        deferred: { paneId: string }[];
+        circuitBreakerTripped: boolean;
+      };
+      expect(body.restored).toHaveLength(4); // EAGER_RESTORE_BUDGET
+      expect(body.deferred).toHaveLength(1);
+      expect(body.circuitBreakerTripped).toBe(false);
+
+      await app.close();
+    },
+    20_000
+  );
+
+  it("POST /api/workspaces/:id/restore-sessions 404s for an unknown workspace", async () => {
+    const app = buildApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/workspaces/does-not-exist/restore-sessions",
+    });
+    expect(response.statusCode).toBe(404);
+    await app.close();
+  });
+});
+
 describe("workspace REST endpoints", () => {
   it("GET /api/workspaces starts empty", async () => {
     const app = buildApp();

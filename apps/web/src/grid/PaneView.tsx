@@ -1,9 +1,25 @@
 import { useMemo, useState } from "react";
-import type { AgentId, SessionInfo, SshProfile, Workspace } from "@vibedeck/shared";
+import type {
+  AgentId,
+  DeferredPane,
+  ResumeSessionResponse,
+  SessionInfo,
+  SshProfile,
+  Workspace,
+} from "@vibedeck/shared";
 import Terminal from "../term/Terminal.js";
 import type { Theme } from "../themes/themes.js";
 import type { Direction, PaneId } from "./tree.js";
-import { Button, EMPTY_SURFACE_BACKGROUND, IconButton, KeyHint, Pill, StatusDot, sessionStatusKind } from "../shell/ui.js";
+import {
+  Button,
+  EMPTY_SURFACE_BACKGROUND,
+  EmptyState,
+  IconButton,
+  KeyHint,
+  Pill,
+  StatusDot,
+  sessionStatusKind,
+} from "../shell/ui.js";
 import { FONT, MOTION, RADIUS, SHADOW_VAR, SPACE } from "../shell/tokens.js";
 import { AgentGlyph, agentAccentVar } from "./agentVisuals.js";
 import { canLaunchMultiple, splitByAvailability, toggleMultiLaunchSelection } from "./agentPicker.js";
@@ -54,6 +70,16 @@ interface PaneViewProps {
   sessionId: string | null;
   /** Looked-up SessionInfo for `sessionId` (title/status), or null if empty/not found yet. */
   session: SessionInfo | null;
+  /**
+   * Session recovery, deferred cold-start restore (`apps/server/src/pty/
+   * restore.ts`): set when this pane's PREVIOUS session is recoverable but
+   * wasn't eagerly resumed (the server's bounded budget, or its circuit
+   * breaker, chose not to) — always `null` for an ordinary empty pane.
+   * When set (and `sessionId` is null), this pane shows a "restore this
+   * pane" affordance instead of the normal agent picker, keeping its split
+   * position/cwd/intended agent until a person explicitly decides.
+   */
+  deferred: DeferredPane | null;
   agents: AgentOption[];
   /**
    * SSH connection profiles (see `SshProfile`'s doc comment in
@@ -82,6 +108,12 @@ interface PaneViewProps {
   onFocus: () => void;
   /** Fired once `POST /api/sessions` succeeds for this (previously empty) pane. */
   onSessionStarted: (paneId: PaneId, session: SessionInfo) => void;
+  /** Session recovery: fired once this pane's `deferred` record has been
+   * explicitly discarded (the "Discard" action below) — App.tsx clears
+   * `deferred` from the tree so the pane goes back to a plain empty state.
+   * A successful RESTORE reuses `onSessionStarted` above instead — see
+   * that prop's own note in Grid.tsx. */
+  onDeferredDiscarded: (paneId: PaneId) => void;
   /**
    * "Launch more than one..." (BridgeSpace parity): fired once the user has
    * picked 2 agents in the empty-pane picker's multi-select mode and
@@ -119,6 +151,7 @@ export default function PaneView({
   paneId,
   sessionId,
   session,
+  deferred,
   agents,
   sshProfiles,
   defaultAgent,
@@ -128,6 +161,7 @@ export default function PaneView({
   isFocused,
   onFocus,
   onSessionStarted,
+  onDeferredDiscarded,
   onLaunchMultiple,
   onSplit,
   onClosePane,
@@ -136,6 +170,14 @@ export default function PaneView({
 }: PaneViewProps) {
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+  // Session recovery: separate in-flight/error state from the ordinary
+  // picker's `starting`/`startError` above — a deferred pane's Restore
+  // button and the empty-pane agent picker are mutually exclusive (never
+  // rendered at the same time; see the render branch below), but keeping
+  // them as distinct state avoids any accidental cross-talk if that ever
+  // changes.
+  const [restoring, setRestoring] = useState(false);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
   // BridgeSpace parity: "N more not installed" starts collapsed, and
   // "Launch more than one..." starts as a plain link, not a live
   // multi-select — both are opt-in so the common case (click one available
@@ -159,7 +201,12 @@ export default function PaneView({
       const res = await fetch("/api/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(workspaceId ? { agent, workspaceId } : { agent }),
+        // `paneId` (session recovery): lets the server's durable
+        // SessionRecord remember which pane this session belongs to, so a
+        // later resume (or a deferred cold-start restore) can land back in
+        // the SAME pane instead of "any empty one" — see
+        // apps/server/src/db/migrations.ts's migration 8.
+        body: JSON.stringify({ ...(workspaceId ? { agent, workspaceId } : { agent }), paneId }),
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -192,7 +239,10 @@ export default function PaneView({
       const res = await fetch("/api/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(workspaceId ? { sshProfileId: profileId, workspaceId } : { sshProfileId: profileId }),
+        body: JSON.stringify({
+          ...(workspaceId ? { sshProfileId: profileId, workspaceId } : { sshProfileId: profileId }),
+          paneId,
+        }),
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -204,6 +254,63 @@ export default function PaneView({
       setStartError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setStarting(false);
+    }
+  };
+
+  /**
+   * Session recovery: resumes THIS pane's deferred record — `POST
+   * /api/session-records/:id/resume` decides, server-side, what "resume"
+   * actually means for that record's agent (Claude's `--resume <uuid>`,
+   * codex's `resume --last`, cursor-agent's `--continue`, or a plain fresh
+   * session for anything without a resume concept — see
+   * `apps/server/src/pty/resume.ts`). On success this reuses
+   * `onSessionStarted`, the exact same "a session now fills this pane"
+   * event the ordinary picker fires — `attachSession` (grid/tree.ts) also
+   * clears `deferred` itself, so there's nothing extra to do here for that
+   * case. On FAILURE the server has already left the record exactly as
+   * 'recoverable' as it was (see `attemptResume`'s own doc comment) — this
+   * pane simply shows why and keeps the Restore button available to try
+   * again.
+   */
+  const restoreDeferredSession = async () => {
+    if (!deferred) return;
+    setRestoreError(null);
+    setRestoring(true);
+    try {
+      const res = await fetch(`/api/session-records/${deferred.recordId}/resume`, { method: "POST" });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? `Server responded with ${res.status}`);
+      }
+      const body = (await res.json()) as ResumeSessionResponse;
+      onSessionStarted(paneId, body.session);
+    } catch (err) {
+      setRestoreError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setRestoring(false);
+    }
+  };
+
+  /** Explicitly dismisses this pane's deferred record — `POST
+   * /api/session-records/:id/discard` marks it 'discarded' server-side (it
+   * will never be offered for resume again, here or in History), and
+   * `onDeferredDiscarded` clears the pane's `deferred` marker so it falls
+   * back to the ordinary empty-pane picker. */
+  const discardDeferredSession = async () => {
+    if (!deferred) return;
+    setRestoreError(null);
+    setRestoring(true);
+    try {
+      const res = await fetch(`/api/session-records/${deferred.recordId}/discard`, { method: "POST" });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? `Server responded with ${res.status}`);
+      }
+      onDeferredDiscarded(paneId);
+    } catch (err) {
+      setRestoreError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setRestoring(false);
     }
   };
 
@@ -422,6 +529,90 @@ export default function PaneView({
             // split logic lives in Terminal.tsx.
             onSplit={(direction) => onSplit(paneId, direction)}
           />
+        ) : deferred ? (
+          // Session recovery, deferred cold-start restore: this pane's
+          // OLD session is recoverable but wasn't eagerly restored (bounded
+          // budget or circuit breaker — see restore-budget.ts). Keeps the
+          // pane's split position/cwd/intended agent visible and offers an
+          // explicit Restore/Discard choice instead of either silently
+          // vanishing or auto-spawning a process nobody asked for yet.
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              height: "100%",
+              padding: SPACE.lg,
+              boxSizing: "border-box",
+              background: "var(--vd-bg)",
+              ...EMPTY_SURFACE_BACKGROUND,
+            }}
+          >
+            <EmptyState
+              icon={
+                <span
+                  aria-hidden
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    width: 40,
+                    height: 40,
+                    borderRadius: "50%",
+                    background: deferred.sshProfileId
+                      ? "color-mix(in srgb, var(--vd-info) 16%, transparent)"
+                      : `color-mix(in srgb, ${agentAccentVar(deferred.agent)} 16%, transparent)`,
+                  }}
+                >
+                  {deferred.sshProfileId ? (
+                    <RemoteGlyph size={20} />
+                  ) : (
+                    <AgentGlyph id={deferred.agent} size={20} />
+                  )}
+                </span>
+              }
+              title="This pane's session can be restored"
+              description={
+                <>
+                  Was running <strong style={{ color: "var(--vd-text)" }}>{deferred.title}</strong> in{" "}
+                  <code
+                    style={{
+                      fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+                      fontSize: FONT.meta,
+                    }}
+                  >
+                    {deferred.cwd}
+                  </code>
+                  . Not restored automatically — the workspace had more recoverable panes than vibedeck
+                  eagerly restores at once.
+                </>
+              }
+              action={
+                <div style={{ display: "flex", gap: SPACE.sm, justifyContent: "center" }}>
+                  <Button variant="primary" disabled={restoring} onClick={() => void restoreDeferredSession()}>
+                    {restoring ? "Restoring…" : "Restore"}
+                  </Button>
+                  <Button variant="secondary" disabled={restoring} onClick={() => void discardDeferredSession()}>
+                    Discard
+                  </Button>
+                </div>
+              }
+            >
+              {restoreError && (
+                <p
+                  style={{
+                    color: "var(--vd-danger)",
+                    fontSize: FONT.meta,
+                    marginTop: SPACE.sm,
+                    marginBottom: 0,
+                    textAlign: "center",
+                  }}
+                >
+                  {restoreError}
+                </p>
+              )}
+            </EmptyState>
+          </div>
         ) : (
           // Premium-pass round 1 (problem #1) gave every agent its own
           // glyph/colour on a real card instead of four identical grey

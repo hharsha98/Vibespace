@@ -824,3 +824,106 @@ export interface GitBranchResponse {
    * commits yet, or whenever `isRepo` is false. */
   branch: string | null;
 }
+
+/**
+ * Session recovery / deferred restore (BridgeSpace v3.2.2 + v3.4.13
+ * parity): a `SessionRecord` is a DURABLE row, independent of
+ * `SessionManager`'s in-memory `SessionInfo`, written at the moment a
+ * session is SPAWNED (not on first output — see
+ * `apps/server/src/index.ts`'s `POST /api/sessions` handler) so a session
+ * closed before it ever produced a line of output is still offered for
+ * resume. See `apps/server/src/db/migrations.ts`'s migration 8 for the full
+ * design rationale on every field below.
+ */
+export type SessionRecordStatus = "running" | "recoverable" | "discarded";
+
+/** Why a record left 'running' — null while it still is. */
+export type SessionRecordEndedReason = "exited" | "server_restart" | "resume_failed" | null;
+
+export interface SessionRecord {
+  id: string;
+  /** Null for a session spawned with no active workspace (should be rare —
+   * every pane-originated spawn sends one). */
+  workspaceId: string | null;
+  /** The web app's own GridNode leaf id (`apps/web/src/grid/tree.ts`) this
+   * session ran in, or null for a session with no pane of origin (e.g. one
+   * dispatched by the board/swarm rather than clicked from an empty pane).
+   * This is what lets a resume land back in the SAME pane instead of just
+   * "some empty pane, whichever's free". */
+  paneId: string | null;
+  /** The CURRENT live `SessionManager` session id, or null once no pty
+   * backs this record (recoverable/discarded) — resuming always gets a
+   * brand-new id, since the original OS process can never be revived. */
+  sessionId: string | null;
+  agent: AgentId;
+  sshProfileId: string | null;
+  /** A stable per-agent-CLI session handle vibedeck controls itself at
+   * spawn time (today: Claude's `--session-id <uuid>` — see
+   * `apps/server/src/pty/resume.ts`'s research notes for why codex/
+   * cursor-agent don't get one). Survives every resume, unlike `sessionId`. */
+  agentSessionRef: string | null;
+  cwd: string;
+  /** Display title, mirrors `SessionInfo.title` at spawn time (e.g. the
+   * agent name, or an SSH profile's name). */
+  title: string;
+  status: SessionRecordStatus;
+  /** ISO 8601 UTC timestamp of the CURRENT life's start (spawn or most
+   * recent successful resume). */
+  startedAt: string;
+  /** ISO 8601 UTC timestamp of when the current life ended, or null while running. */
+  endedAt: string | null;
+  endedReason: SessionRecordEndedReason;
+  exitCode: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** `GET /api/session-records` response. */
+export interface SessionRecordsResponse {
+  records: SessionRecord[];
+}
+
+/** `POST /api/session-records/:id/resume` success response. */
+export interface ResumeSessionResponse {
+  session: SessionInfo;
+  record: SessionRecord;
+  /** Short, human-readable note on what actually happened — e.g. "Resumed
+   * with claude --resume (same conversation)" or "droid has no known resume
+   * flag — started a fresh session in the same directory" — see
+   * `apps/server/src/pty/resume.ts`'s `planResume`. Surfaced in the UI so a
+   * "fresh session" fallback never silently pretends to be a real resume. */
+  note: string;
+}
+
+/** One pane restored eagerly during a workspace's cold-start restore
+ * (`POST /api/workspaces/:id/restore-sessions`) — see
+ * `apps/server/src/pty/restore.ts`. */
+export interface RestoredPane {
+  paneId: string;
+  recordId: string;
+  session: SessionInfo;
+  note: string;
+}
+
+/** One pane left DEFERRED by a cold-start restore — either the bounded
+ * eager-restore budget was exceeded, or the circuit breaker tripped after
+ * repeated spawn failures. Carries everything `PaneView.tsx` needs to show
+ * a "this pane was running X — restore it?" affordance without having
+ * spawned anything yet. */
+export interface DeferredPane {
+  paneId: string;
+  recordId: string;
+  agent: AgentId;
+  cwd: string;
+  title: string;
+  sshProfileId: string | null;
+}
+
+/** `POST /api/workspaces/:id/restore-sessions` response. */
+export interface WorkspaceRestoreResponse {
+  restored: RestoredPane[];
+  deferred: DeferredPane[];
+  /** True if the circuit breaker tripped partway through this batch — see
+   * `apps/server/src/pty/restore-budget.ts`'s `RestoreCircuitBreaker`. */
+  circuitBreakerTripped: boolean;
+}

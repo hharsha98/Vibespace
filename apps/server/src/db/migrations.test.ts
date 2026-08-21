@@ -88,6 +88,37 @@ const EXPECTED_SCHEMA: Record<string, string[]> = {
   saved_prompts: ["id", "workspace_id", "title", "body", "created_at", "updated_at"],
   // BridgeSpace parity item 4 (migration 6): per-workspace command history.
   command_history: ["id", "workspace_id", "command", "created_at"],
+  // SSH connection profiles (migration 7).
+  ssh_profiles: [
+    "id",
+    "name",
+    "host",
+    "user",
+    "port",
+    "default_directory",
+    "startup_command",
+    "created_at",
+    "updated_at",
+  ],
+  // Session recovery / deferred restore (migration 8).
+  session_records: [
+    "id",
+    "workspace_id",
+    "pane_id",
+    "session_id",
+    "agent",
+    "ssh_profile_id",
+    "agent_session_ref",
+    "cwd",
+    "title",
+    "status",
+    "started_at",
+    "ended_at",
+    "ended_reason",
+    "exit_code",
+    "created_at",
+    "updated_at",
+  ],
 };
 
 function columnsOf(db: Database.Database, table: string): string[] {

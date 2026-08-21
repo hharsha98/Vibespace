@@ -391,6 +391,96 @@ function up007SshProfiles(db: Database): void {
 }
 
 /**
+ * Migration 8 (session recovery / deferred restore — BridgeSpace v3.2.2 +
+ * v3.4.13 parity): `session_records`, a brand-new table, so no existing
+ * database has anything to repair here — same "fresh CREATE TABLE, not a
+ * repair" shape as migration 6's `command_history` / migration 7's
+ * `ssh_profiles`.
+ *
+ * A `session_record` is written at SPAWN time (see `apps/server/src/
+ * index.ts`'s `POST /api/sessions` handler) and is deliberately a SEPARATE
+ * row from anything `SessionManager` tracks in memory — that separation is
+ * the entire point: `SessionManager`'s state is gone the instant the server
+ * process dies, but this row survives (it's on disk), which is what makes a
+ * session offered for resume after a restart instead of just vanishing (the
+ * exact weakness — "sessions currently die if the server restarts" — this
+ * migration exists to close).
+ *
+ *   - `pane_id` is the web app's own GridNode leaf id
+ *     (`apps/web/src/grid/tree.ts`) — nullable (a board/swarm-dispatched
+ *     session has no pane of origin) but set for every ordinary
+ *     pane-originated spawn, and it's what lets a resume target the SAME
+ *     pane rather than "any empty one".
+ *   - `session_id` is the CURRENT live `SessionManager` id, cleared to NULL
+ *     the moment the pty backing it is gone (see the sibling store,
+ *     `db/session-records.ts`'s `markExited`/`markServerRestartOrphans`) —
+ *     resuming always gets a brand-new id, since an OS process, once gone,
+ *     can never be revived; this column just tracks "whichever one is
+ *     currently live, if any".
+ *   - `agent_session_ref` is a stable per-agent-CLI handle vibedeck controls
+ *     itself at spawn time (Claude's `--session-id <uuid>` today — see
+ *     `apps/server/src/pty/resume.ts`'s research notes) that survives every
+ *     resume, unlike `session_id` — `claude --resume <ref>` needs the SAME
+ *     uuid every time, not a fresh one per attempt.
+ *   - `status` is the one actionable field: 'running' while a live pty backs
+ *     it, 'recoverable' once that pty is gone for ANY reason (exited on its
+ *     own, or orphaned by a server restart — `ended_reason` distinguishes
+ *     which), 'discarded' once dismissed from History. There is no
+ *     'exited'-as-a-dead-end status distinct from 'recoverable' — from a
+ *     user's point of view "this pane isn't running anymore" is the same
+ *     actionable fact whether the process quit or the server did, so both
+ *     land in the one status a History screen/resume action cares about.
+ *   - `ended_reason` additionally carries `'resume_failed'`: when a RESUME
+ *     attempt's freshly-spawned pty exits again within a few seconds (see
+ *     `apps/server/src/pty/session-lifecycle.ts`'s `RESUME_FAILURE_WINDOW_MS`),
+ *     that's treated as the resume itself failing (wrong flag rejected,
+ *     binary missing, immediate crash), and the record goes straight back
+ *     to 'recoverable' rather than being silently lost — the specific bug
+ *     BridgeSpace's own v3.4.13 note calls out ("a failed resume silently
+ *     consumed the session's recoverability").
+ *
+ * No column here is NOT NULL where the corresponding real-world fact can be
+ * legitimately absent (`workspace_id`, `pane_id`, `session_id`,
+ * `ssh_profile_id`, `agent_session_ref`, `ended_at`, `ended_reason`,
+ * `exit_code`) — same "NULL means a real, honest state, not a placeholder"
+ * rule `workspaces.color` (migration 5) and `saved_prompts.workspace_id`
+ * (migration 4) already follow.
+ */
+function up008SessionRecords(db: Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS session_records (
+      id TEXT PRIMARY KEY,
+      workspace_id TEXT,
+      pane_id TEXT,
+      session_id TEXT,
+      agent TEXT NOT NULL,
+      ssh_profile_id TEXT,
+      agent_session_ref TEXT,
+      cwd TEXT NOT NULL,
+      title TEXT NOT NULL,
+      status TEXT NOT NULL,          -- 'running' | 'recoverable' | 'discarded'
+      started_at TEXT NOT NULL,
+      ended_at TEXT,
+      ended_reason TEXT,             -- 'exited' | 'server_restart' | 'resume_failed' | NULL
+      exit_code INTEGER,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+  // Backs both `SessionRecordsStore.list(workspaceId)` (the History
+  // screen's per-workspace feed) and `listRecoverable` (cold-start
+  // restore's input) — both filter on workspace_id, the latter also on
+  // status, so status rides along in the same index rather than needing a
+  // second one.
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_session_records_workspace ON session_records(workspace_id, status)`
+  );
+  // Supports "does THIS pane already have a session record" lookups
+  // (deferred-pane rendering, resume-into-same-pane) without a table scan.
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_session_records_pane ON session_records(pane_id)`);
+}
+
+/**
  * Every migration, in ascending version order. Audited against the live
  * `~/.vibedeck/vibedeck.db` on this machine by comparing each `CREATE
  * TABLE` above to `PRAGMA table_info` on every table that db actually had:
@@ -414,6 +504,7 @@ export const MIGRATIONS: Migration[] = [
   { version: 5, name: "add workspaces.color", up: up005WorkspacesColor },
   { version: 6, name: "add command_history", up: up006CommandHistory },
   { version: 7, name: "add ssh_profiles", up: up007SshProfiles },
+  { version: 8, name: "add session_records", up: up008SessionRecords },
 ];
 
 /** Copies the database file to `<dbPath>.backup-v<version>`. Flushes WAL

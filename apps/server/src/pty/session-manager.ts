@@ -51,6 +51,16 @@ export interface CreateSessionOptions {
    * `resolveAgent()`.
    */
   ssh?: CreateSessionSshOptions;
+  /**
+   * Session recovery (`../pty/resume.ts`): extra argv appended AFTER the
+   * agent's normal args — e.g. Claude's `--session-id <uuid>` on a brand
+   * new spawn, or `--resume <uuid>` / `codex resume --last` /
+   * `cursor-agent --continue` when resuming a recoverable session. Ignored
+   * when `ssh` is set — an SSH session's entire argv is built by
+   * `../ssh/spawn.ts`'s `buildSshArgv`, which has no notion of "extra
+   * agent flags" to append to.
+   */
+  extraArgs?: string[];
 }
 
 /** A message broadcast to attached listeners: raw output, or the exit event. */
@@ -119,6 +129,9 @@ export class SessionManager {
     const { command, args } = options.ssh
       ? { command: "ssh", args: buildSshArgv(options.ssh) }
       : resolveAgent(agent);
+    // `extraArgs` only ever makes sense for a local agent spawn (see this
+    // option's own doc comment on why SSH ignores it entirely).
+    const finalArgs = options.ssh ? args : [...args, ...(options.extraArgs ?? [])];
 
     // Only ask for shell-integration env when we're actually spawning a
     // LOCAL shell — asking unconditionally would create the throwaway
@@ -131,7 +144,7 @@ export class SessionManager {
       agent === "shell" && !options.ssh ? this.shellIntegration.getEnvForShell() : null;
 
     const id = randomUUID();
-    const ptyProcess = pty.spawn(command, args, {
+    const ptyProcess = pty.spawn(command, finalArgs, {
       name: "xterm-256color",
       cols,
       rows,
@@ -259,9 +272,26 @@ export class SessionManager {
     this.sessions.delete(id);
   }
 
-  /** Kill every session's pty. Call this on server shutdown so tests/processes don't leak. */
+  /**
+   * Kill every session's pty. Call this on server shutdown so
+   * tests/processes don't leak.
+   *
+   * Clears each session's `listeners` set BEFORE killing it — the same
+   * thing `kill()` above already does for a single session, and for the
+   * same reason: a pty's `onExit` fires asynchronously (the OS signal is
+   * sent by `.kill()`, but the actual exit event lands on a later tick),
+   * so without this, a listener attached via `attach()` (e.g.
+   * `pty/session-lifecycle.ts`'s `trackSessionForRecovery`, which writes to
+   * a database on exit) can still fire AFTER this function returns —
+   * possibly after whatever called `disposeAll()` has already closed that
+   * same database (see `index.ts`'s `onClose` hook, which calls
+   * `sessionManager.disposeAll()` and then closes every store in the same
+   * synchronous pass). A server shutdown is an intentional stop, not a
+   * session's own lifecycle event — nothing should be notified about it.
+   */
   disposeAll(): void {
     for (const session of this.sessions.values()) {
+      session.listeners.clear();
       try {
         session.pty.kill();
       } catch {

@@ -22,6 +22,12 @@ interface GridProps {
   focusedPaneId: PaneId | null;
   onFocus: (paneId: PaneId) => void;
   onSessionStarted: (paneId: PaneId, session: SessionInfo) => void;
+  /** Session recovery: fired once a deferred pane's record has been
+   * explicitly discarded (never restored) — see PaneView.tsx's own prop
+   * doc comment. A successful RESTORE reuses `onSessionStarted` above
+   * (it's the exact same "a session now fills this pane" event either
+   * way), so there's no separate "restored" callback. */
+  onDeferredDiscarded: (paneId: PaneId) => void;
   /** "Launch more than one..." — see PaneView.tsx's own prop doc comment. */
   onLaunchMultiple: (paneId: PaneId, agentIds: AgentId[]) => void;
   onSplit: (paneId: PaneId, direction: Direction) => void;
@@ -78,6 +84,7 @@ function GridNodeView({ node, ...rest }: GridProps & { node: GridNode }) {
     focusedPaneId,
     onFocus,
     onSessionStarted,
+    onDeferredDiscarded,
     onLaunchMultiple,
     onSplit,
     onClosePane,
@@ -92,6 +99,7 @@ function GridNodeView({ node, ...rest }: GridProps & { node: GridNode }) {
         paneId={node.id}
         sessionId={node.sessionId}
         session={session}
+        deferred={node.deferred ?? null}
         agents={agents}
         sshProfiles={sshProfiles}
         defaultAgent={defaultAgent}
@@ -101,6 +109,7 @@ function GridNodeView({ node, ...rest }: GridProps & { node: GridNode }) {
         isFocused={focusedPaneId === node.id}
         onFocus={() => onFocus(node.id)}
         onSessionStarted={onSessionStarted}
+        onDeferredDiscarded={onDeferredDiscarded}
         onLaunchMultiple={onLaunchMultiple}
         onSplit={onSplit}
         onClosePane={onClosePane}

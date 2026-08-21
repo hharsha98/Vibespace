@@ -13,7 +13,19 @@
  * one terminal session) or a `split` (two children divided either
  * side-by-side ("row") or stacked ("column")). Nesting these two node kinds
  * is enough to represent any arrangement of resizable panes.
+ *
+ * --- Deferred panes (session recovery, cold-start restore) ---
+ * A leaf's `deferred` field is the client-side half of
+ * `apps/server/src/pty/restore.ts`'s bounded-budget cold-start restore: a
+ * pane whose OLD session is recoverable, but which the server's eager
+ * budget (or circuit breaker) chose NOT to auto-resume right now. It keeps
+ * its split position, its intended cwd/agent, and a `recordId` to act on —
+ * `PaneView.tsx` renders this as a "this pane was running X — restore it?"
+ * affordance instead of either the ordinary empty-pane picker or silently
+ * vanishing. `attachSession`/`clearDeferredPane` both clear it once it's no
+ * longer relevant (a real session attached, or the record was discarded).
  */
+import type { DeferredPane } from "@vibedeck/shared";
 
 /** Opaque id for a single pane (a `leaf` node). Just a UUID string. */
 export type PaneId = string;
@@ -22,7 +34,7 @@ export type PaneId = string;
 export type Direction = "row" | "column";
 
 export type GridNode =
-  | { kind: "leaf"; id: PaneId; sessionId: string | null }
+  | { kind: "leaf"; id: PaneId; sessionId: string | null; deferred?: DeferredPane | null }
   | { kind: "split"; id: string; direction: Direction; children: [GridNode, GridNode] };
 
 /** The `leaf` branch of `GridNode` on its own — handy when a function (like
@@ -43,6 +55,29 @@ export function nextPaneId(): string {
 /** A brand-new empty pane, optionally already attached to a session. */
 export function createLeaf(sessionId: string | null = null): LeafNode {
   return { kind: "leaf", id: nextPaneId(), sessionId };
+}
+
+/**
+ * Marks the leaf at `targetPaneId` as DEFERRED — cold-start restore's
+ * bounded budget (or circuit breaker; see `apps/server/src/pty/
+ * restore-budget.ts`) chose not to eagerly restore it. The pane keeps its
+ * shape and position in the tree exactly as-is; only its `deferred` field
+ * changes, which `PaneView.tsx` reads to show a "restore this pane"
+ * affordance instead of the ordinary empty-pane agent picker.
+ */
+export function markPaneDeferred(root: GridNode, targetPaneId: PaneId, deferred: DeferredPane): GridNode {
+  return mapLeaf(root, targetPaneId, (leaf) => ({ ...leaf, deferred }));
+}
+
+/**
+ * Clears a pane's deferred marker WITHOUT touching its `sessionId` — used
+ * when a deferred pane's underlying record is explicitly discarded (never
+ * actually restored, so the pane goes back to a plain empty state). A
+ * successful restore doesn't need this separately: `attachSession` below
+ * already clears `deferred` itself the moment a real session lands.
+ */
+export function clearDeferredPane(root: GridNode, targetPaneId: PaneId): GridNode {
+  return mapLeaf(root, targetPaneId, (leaf) => ({ ...leaf, deferred: null }));
 }
 
 /**
@@ -91,9 +126,13 @@ export function splitPane(root: GridNode, targetPaneId: PaneId, direction: Direc
  * agent in, and when the app boots up and needs to fold sessions that were
  * already running on the server (e.g. before a page refresh) back into the
  * tree it builds fresh on load.
+ *
+ * Also clears `deferred` (see that field's own doc comment above) — once a
+ * real session is attached, whether from the ordinary picker or from
+ * resuming a deferred pane's record, there's nothing left to "restore".
  */
 export function attachSession(root: GridNode, targetPaneId: PaneId, sessionId: string): GridNode {
-  return mapLeaf(root, targetPaneId, (leaf) => ({ ...leaf, sessionId }));
+  return mapLeaf(root, targetPaneId, (leaf) => ({ ...leaf, sessionId, deferred: null }));
 }
 
 /**

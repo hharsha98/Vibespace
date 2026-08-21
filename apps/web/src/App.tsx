@@ -1,14 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { AgentId, SessionInfo, SshProfile, SshProfilesResponse, Workspace } from "@vibedeck/shared";
+import type {
+  AgentId,
+  SessionInfo,
+  SshProfile,
+  SshProfilesResponse,
+  Workspace,
+  WorkspaceRestoreResponse,
+} from "@vibedeck/shared";
 import Grid from "./grid/Grid.js";
 import type { AgentOption } from "./grid/PaneView.js";
 import {
   attachSession,
   buildTemplate,
+  clearDeferredPane,
   closePane,
   createLeaf,
   findPane,
   listPanes,
+  markPaneDeferred,
   pruneDeadSessions,
   splitPane,
   type Direction,
@@ -105,6 +114,57 @@ function layoutToTree(layout: string | null, sessions: SessionInfo[]): GridNode 
     );
     return createLeaf(null);
   }
+}
+
+/**
+ * Session recovery, deferred cold-start restore (BridgeSpace v3.4.13
+ * parity): asks the server to eagerly resume up to its bounded budget of
+ * `workspaceId`'s recoverable sessions (`POST
+ * /api/workspaces/:id/restore-sessions` — see `apps/server/src/pty/
+ * restore.ts`), then folds the result into whatever tree is currently
+ * showing: restored panes get their fresh session attached (via
+ * `attachSession`, same as the ordinary picker path), everything past the
+ * budget (or dropped by the circuit breaker) gets marked `deferred` so
+ * `PaneView.tsx` can offer its "restore this pane" affordance.
+ *
+ * Deliberately fire-and-forget from the CALLER's point of view — it never
+ * blocks the tree `layoutToTree` already built and `setRoot` already
+ * applied on the network round trip; this only patches that tree once the
+ * server responds, via `setRoot`'s functional-updater form so it composes
+ * safely with whatever the user did in the meantime.
+ */
+function restoreWorkspaceSessions(
+  workspaceId: string,
+  setRoot: (updater: (prev: GridNode | null) => GridNode | null) => void,
+  setSessions: (updater: (prev: SessionInfo[]) => SessionInfo[]) => void
+): void {
+  fetch(`/api/workspaces/${workspaceId}/restore-sessions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  })
+    .then((res) => {
+      if (!res.ok) throw new Error(`Server responded with ${res.status}`);
+      return res.json() as Promise<WorkspaceRestoreResponse>;
+    })
+    .then((body) => {
+      if (body.restored.length === 0 && body.deferred.length === 0) return;
+      setSessions((prev) => [...prev, ...body.restored.map((r) => r.session)]);
+      setRoot((prev) => {
+        if (!prev) return prev;
+        let next = prev;
+        for (const restored of body.restored) {
+          next = attachSession(next, restored.paneId, restored.session.id);
+        }
+        for (const deferred of body.deferred) {
+          next = markPaneDeferred(next, deferred.paneId, deferred);
+        }
+        return next;
+      });
+    })
+    .catch((err: unknown) => {
+      console.warn("vibedeck: failed to restore workspace sessions", err);
+    });
 }
 
 // --- Rail/dock collapsed-state persistence ---------------------------------
@@ -459,6 +519,10 @@ export default function App() {
         const initial = deepLinked ?? loadedWorkspaces[0];
         setActiveWorkspaceId(initial.id);
         setRoot(layoutToTree(initial.layout, loadedSessions));
+        // Session recovery: patches in any eagerly-restored/deferred panes
+        // once the server responds — see restoreWorkspaceSessions's own
+        // doc comment for why this never blocks the tree set just above.
+        restoreWorkspaceSessions(initial.id, setRoot, setSessions);
       }
       // If there are zero workspaces, `root` stays null and `workspacesLoaded`
       // (now true) drives the first-run prompt instead of "Loading…".
@@ -641,7 +705,10 @@ export default function App() {
         fetch("/api/sessions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(activeWorkspaceId ? { agent, workspaceId: activeWorkspaceId } : { agent }),
+          body: JSON.stringify({
+            ...(activeWorkspaceId ? { agent, workspaceId: activeWorkspaceId } : { agent }),
+            paneId: targetPaneId,
+          }),
         })
           .then((res) => {
             if (!res.ok) throw new Error(`Server responded with ${res.status}`);
@@ -681,6 +748,17 @@ export default function App() {
       setMaximizedPaneId((prev) => (prev === paneId ? null : prev));
     },
     [root]
+  );
+
+  // Session recovery: a deferred pane's record was just explicitly
+  // discarded (PaneView.tsx's "Discard" button, already confirmed
+  // server-side via POST /api/session-records/:id/discard) — clear its
+  // `deferred` marker so the pane falls back to a plain empty state.
+  const handleDeferredDiscarded = useCallback(
+    (paneId: PaneId) => {
+      setRoot((prev) => (prev ? clearDeferredPane(prev, paneId) : prev));
+    },
+    []
   );
 
   // "New pane" splits whatever's focused; if nothing's focused (or there's
@@ -843,9 +921,10 @@ export default function App() {
         const res = await fetch("/api/sessions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(
-            activeWorkspaceId ? { agent, workspaceId: activeWorkspaceId } : { agent }
-          ),
+          body: JSON.stringify({
+            ...(activeWorkspaceId ? { agent, workspaceId: activeWorkspaceId } : { agent }),
+            paneId: focusedPaneId,
+          }),
         });
         if (!res.ok) return;
         const info = (await res.json()) as SessionInfo;
@@ -870,9 +949,12 @@ export default function App() {
         const res = await fetch("/api/sessions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(
-            activeWorkspaceId ? { sshProfileId: profileId, workspaceId: activeWorkspaceId } : { sshProfileId: profileId }
-          ),
+          body: JSON.stringify({
+            ...(activeWorkspaceId
+              ? { sshProfileId: profileId, workspaceId: activeWorkspaceId }
+              : { sshProfileId: profileId }),
+            paneId: focusedPaneId,
+          }),
         });
         if (!res.ok) return;
         const info = (await res.json()) as SessionInfo;
@@ -948,6 +1030,10 @@ export default function App() {
       setFocusedPaneId(null);
       setMaximizedPaneId(null);
       setGridEpoch((e) => e + 1); // wholesale swap — same reasoning as applyTemplate above
+      // Session recovery: same restore call the initial mount makes — a
+      // workspace switch is just as much "this workspace becoming active"
+      // as the first load is.
+      restoreWorkspaceSessions(targetId, setRoot, setSessions);
     },
     [activeWorkspaceId, root, workspaces, sessions]
   );
@@ -1624,6 +1710,7 @@ export default function App() {
                     focusedPaneId={focusedPaneId}
                     onFocus={handleFocus}
                     onSessionStarted={handleSessionStarted}
+                    onDeferredDiscarded={handleDeferredDiscarded}
                     onLaunchMultiple={handleLaunchMultiple}
                     onSplit={handleSplit}
                     onClosePane={handleClosePane}
@@ -1693,6 +1780,15 @@ export default function App() {
                     defaultAgent={defaultAgent}
                     onDefaultAgentChange={updateDefaultAgent}
                     agents={agents}
+                    workspaces={workspaces}
+                    // Session recovery: History's "Resume" reuses the exact
+                    // same "fold a fresh session into an empty pane, or
+                    // split the focused one" placement logic the board's
+                    // own Dispatch action already uses — see
+                    // History.tsx's top comment for why resuming from
+                    // History behaves like a dispatch, not a pane-local
+                    // restore.
+                    onSessionResumed={handleSessionDispatched}
                   />
                 </div>
               </div>
