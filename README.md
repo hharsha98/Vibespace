@@ -25,12 +25,12 @@ just answering questions.
 
 ## Download
 
-**[Get v0.1.1 →](https://github.com/hharsha98/vibedeck/releases/latest)**
+**[Get v0.1.2 →](https://github.com/hharsha98/vibedeck/releases/latest)**
 
 | Platform | File |
 |---|---|
-| macOS (Apple Silicon) | `vibedeck_0.1.1_aarch64.dmg` |
-| Windows | `vibedeck_0.1.1_x64-setup.exe` |
+| macOS (Apple Silicon) | `vibedeck_0.1.2_aarch64.dmg` |
+| Windows | `vibedeck_0.1.2_x64-setup.exe` |
 | Linux | `.deb`, `.rpm`, or `.AppImage` |
 
 Two things to know before you install:

@@ -1,8 +1,9 @@
 import Fastify from "fastify";
 import fastifyWebsocket from "@fastify/websocket";
 import fastifyStatic from "@fastify/static";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
 import { AGENT_IDS, AGENT_SPECS, WORKSPACE_COLORS, isWorkspaceColor, type ClientMessage } from "@vibedeck/shared";
 import { resolveServerPort, resolveStaticDir, formatReadyLine } from "./runtime-config.js";
 import { commandExists, detectAllAgents, INSTALL_HINTS, isAgentId } from "./pty/agents.js";
@@ -34,7 +35,31 @@ import { trackSessionForRecovery } from "./pty/session-lifecycle.js";
 import { attemptResume, restoreWorkspaceSessions } from "./pty/restore.js";
 import { EAGER_RESTORE_BUDGET } from "./pty/restore-budget.js";
 
-const VERSION = "0.0.0";
+/**
+ * Read out of `package.json` rather than written here, because a version
+ * literal in source is a version literal that goes stale: this said
+ * "0.0.0" while the shipped v0.1.1 desktop app reported exactly that over
+ * `/api/health` — caught by probing a real downloaded DMG, not by any test.
+ *
+ * `../package.json` resolves in all three layouts this file runs under:
+ * `src/index.ts` under tsx in development, `dist/index.js` in a normal
+ * build, and `dist/index.js` inside the desktop app's relocated server
+ * bundle — all three keep `package.json` exactly one directory up.
+ *
+ * Falls back rather than throwing. A version string is cosmetic; refusing
+ * to start the server over one would not be.
+ */
+function readVersion(): string {
+  try {
+    const pkgPath = join(dirname(fileURLToPath(import.meta.url)), "..", "package.json");
+    const parsed = JSON.parse(readFileSync(pkgPath, "utf8")) as { version?: unknown };
+    return typeof parsed.version === "string" ? parsed.version : "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+const VERSION = readVersion();
 // Phase 11a (PARITY #50): resolveServerPort defaults to 4317 — identical to
 // the old hardcoded literal — unless VIBEDECK_PORT is set, which only the
 // desktop app's sidecar wrapper does (see runtime-config.ts's doc comment
