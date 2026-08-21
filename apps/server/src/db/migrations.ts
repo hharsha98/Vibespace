@@ -25,8 +25,16 @@
  *      the version bump) rather than leaving the database half-migrated.
  *
  * Rules for adding a new migration:
- *   - Never DROP a table or column, never DELETE rows. If a change seems to
- *     need that, it doesn't belong here — stop and ask a human.
+ *   - Never DROP a table or column, and never DELETE rows that anything
+ *     could still reach. If a change seems to need that, it doesn't belong
+ *     here — stop and ask a human. Migration 9 is the one sanctioned
+ *     exception, and it only qualifies because the rows it deletes are
+ *     provably unreachable: their owning workspace no longer exists, so no
+ *     screen can display them, no query scoped to a live workspace can
+ *     return them, and no user action can delete them. That is a repair of
+ *     data that is already lost, not a deletion of data someone has. Any
+ *     future DELETE migration needs the same argument made explicitly, and
+ *     a human to agree with it.
  *   - `ALTER TABLE ... ADD COLUMN` cannot add a NOT NULL column without a
  *     default in SQLite, so add nullable + backfill with an UPDATE instead.
  *   - Guard every `ADD COLUMN` with `hasColumn()` first — SQLite throws
@@ -481,6 +489,94 @@ function up008SessionRecords(db: Database): void {
 }
 
 /**
+ * Migration 9 (workspace-deletion cleanup): sweeps up rows that were
+ * orphaned by every workspace deletion that ran BEFORE `WorkspaceStore.
+ * remove()` learned to cascade (see that method's own doc comment in
+ * `workspaces.ts` for the full story — `DELETE FROM workspaces WHERE id = ?`
+ * used to be the entire implementation, and none of the 11 tables below have
+ * a real `FOREIGN KEY`, so every row that belonged to a deleted workspace
+ * was stranded forever: invisible in the UI, never deletable, just
+ * accumulating). This migration is the one-time repair for damage already
+ * done; `remove()`'s transaction is what stops it from happening again.
+ *
+ * Two passes, order matters:
+ *
+ *   1. Direct tables (`board_cards`, `missions`, `agent_profiles`,
+ *      `saved_prompts`, `command_history`, `session_records`) — each has its
+ *      own `workspace_id` column, so "orphaned" means that id doesn't exist
+ *      in `workspaces` anymore. `saved_prompts.workspace_id` and
+ *      `session_records.workspace_id` are nullable (migrations 4 and 8) —
+ *      NULL there means "global", not "not yet set". (`agent_profiles.
+ *      workspace_id` is declared `NOT NULL` in migration 4 and is `NOT
+ *      NULL` in the live database too — checked directly with `PRAGMA
+ *      table_info(agent_profiles)` — so it has no global/NULL case today,
+ *      unlike its two siblings.) Every DELETE below is still guarded with
+ *      an explicit `workspace_id IS NOT NULL`, uniformly across all six
+ *      direct tables: it's a no-op for the non-nullable columns and the
+ *      thing that protects global rows for the nullable ones, and writing
+ *      the same guard on every table keeps this loop simple instead of
+ *      special-casing three tables out of six. The guard is technically
+ *      redundant with plain SQL `NOT IN` semantics even for the nullable
+ *      columns (`NULL NOT IN (...)` already evaluates to NULL/false, never
+ *      true, so a global row would never match even without it) — it's
+ *      kept anyway so the intent to preserve global rows is obvious on
+ *      read, not an accidental side-effect of NULL-comparison trivia.
+ *
+ *   2. Mission-child tables (`mission_agents`, `mission_messages`,
+ *      `file_claims`, `claim_conflicts`, `mission_tasks`) — these don't have
+ *      a `workspace_id` of their own, only `mission_id`, so they run AFTER
+ *      pass 1 has already deleted every `missions` row that belonged to a
+ *      dead workspace. That ordering is what makes this a full cascade in
+ *      one migration: a mission orphaned by pass 1 makes its children
+ *      orphaned too, and pass 2 catches exactly those in the same run,
+ *      rather than requiring a migration 10 to clean up what migration 9
+ *      just created.
+ *
+ * The `x NOT IN (SELECT id FROM workspaces)` / `(SELECT id FROM missions)`
+ * subqueries are safe from the classic `NOT IN` + NULL trap (`NOT IN`
+ * returns NULL, never TRUE, for every row if the subquery's result set
+ * contains even one NULL) because `workspaces.id` and `missions.id` are
+ * both `PRIMARY KEY` — SQLite never allows a NULL primary key value, so
+ * neither subquery can ever produce one.
+ *
+ * Table names below are hardcoded string literals, never user input, so
+ * building each DELETE with a template string is safe — same reasoning
+ * `migrate()`'s own `PRAGMA user_version = ${highestVersion}` interpolation
+ * below already relies on.
+ */
+function up009DeleteOrphanedWorkspaceScopedRows(db: Database): void {
+  const directTables = [
+    "board_cards",
+    "missions",
+    "agent_profiles",
+    "saved_prompts",
+    "command_history",
+    "session_records",
+  ];
+  for (const table of directTables) {
+    db.exec(
+      `DELETE FROM ${table} WHERE workspace_id IS NOT NULL AND workspace_id NOT IN (SELECT id FROM workspaces)`
+    );
+  }
+
+  // Runs AFTER the loop above so a mission that pass 1 just deleted (because
+  // ITS workspace was dead) makes its own children orphaned too, and they
+  // get swept up here in the same migration — see the doc comment above.
+  const missionChildTables = [
+    "mission_agents",
+    "mission_messages",
+    "file_claims",
+    "claim_conflicts",
+    "mission_tasks",
+  ];
+  for (const table of missionChildTables) {
+    db.exec(
+      `DELETE FROM ${table} WHERE mission_id IS NOT NULL AND mission_id NOT IN (SELECT id FROM missions)`
+    );
+  }
+}
+
+/**
  * Every migration, in ascending version order. Audited against the live
  * `~/.vibedeck/vibedeck.db` on this machine by comparing each `CREATE
  * TABLE` above to `PRAGMA table_info` on every table that db actually had:
@@ -494,7 +590,10 @@ function up008SessionRecords(db: Database): void {
  * (Phase 9.5c) is the same kind of new addition for `workspaces.color`.
  * Migration 7 (SSH connection profiles) is the same kind of brand-new
  * addition as migration 6's `command_history` — a fresh `CREATE TABLE`, not
- * a repair, since no existing database has ever had `ssh_profiles`.
+ * a repair, since no existing database has ever had `ssh_profiles`. Migration
+ * 9 is neither shape — it's a one-time data repair (DELETEs, not
+ * CREATE/ALTER) for rows orphaned by `WorkspaceStore.remove()` before it
+ * learned to cascade; see that migration's own doc comment.
  */
 export const MIGRATIONS: Migration[] = [
   { version: 1, name: "full schema", up: up001FullSchema },
@@ -505,6 +604,11 @@ export const MIGRATIONS: Migration[] = [
   { version: 6, name: "add command_history", up: up006CommandHistory },
   { version: 7, name: "add ssh_profiles", up: up007SshProfiles },
   { version: 8, name: "add session_records", up: up008SessionRecords },
+  {
+    version: 9,
+    name: "delete orphaned workspace-scoped rows",
+    up: up009DeleteOrphanedWorkspaceScopedRows,
+  },
 ];
 
 /** Copies the database file to `<dbPath>.backup-v<version>`. Flushes WAL
