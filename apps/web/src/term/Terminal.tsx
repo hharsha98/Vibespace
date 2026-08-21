@@ -10,8 +10,11 @@ import type { AgentId, ClientMessage, ServerMessage } from "@vibedeck/shared";
 import { AGENT_SPECS } from "@vibedeck/shared";
 import { isMacPlatform, matchShortcut } from "../keys/keymap.js";
 import { isCopyShortcut } from "./copyShortcut.js";
+import { fitIfVisible } from "./fitIfVisible.js";
 import type { Theme } from "../themes/themes.js";
 import type { Direction } from "../grid/tree.js";
+import { useTerminalPrefs } from "../settings/terminalPrefs.js";
+import { notifyAgentIdle } from "../settings/notificationPrefs.js";
 import { MOTION, RADIUS, SHADOW_VAR } from "../shell/tokens.js";
 import { BlockTracker, parseOsc133 } from "./blocks.js";
 import { createPendingCommand, type PendingCommand } from "./pendingCommand.js";
@@ -247,6 +250,7 @@ function styleGutterBar(el: HTMLElement, color: string): void {
   el.style.pointerEvents = "none";
 }
 
+
 /**
  * A real, server-backed terminal. Renders one xterm.js instance wired up to
  * a WebSocket that streams a pty's input/output. Closing this component
@@ -262,6 +266,13 @@ export default function Terminal({
   onClose,
   onSplit,
 }: TerminalProps) {
+  // Live-reactive terminal display prefs (font size, cursor style/blink,
+  // scrollback) — see terminalPrefs.ts's top comment for why this reads
+  // from a shared external store instead of a prop. Read once here (used
+  // at XTerm creation, below) and again by the separate live-apply effect
+  // near the theme-sync effect, which is what makes a change apply to a
+  // pane that's already open, not just to ones created afterward.
+  const terminalPrefs = useTerminalPrefs();
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -409,12 +420,22 @@ export default function Terminal({
    * that transition flushed a queued prompt, writes it into the pty right
    * away — "\r", the same carriage return xterm itself sends for Enter. */
   const applyAgentStatus = (status: AgentStatus) => {
+    const wasWorking = queueStateRef.current.status === "working";
     const result = setAgentStatus(queueStateRef.current, status);
     queueStateRef.current = result.state;
     setQueueStateForRender(result.state);
     if (result.send !== null) {
       recordPendingCommand(result.send);
       sendToSocket(result.send + "\r");
+    } else if (status === "idle" && wasWorking) {
+      // A real working -> idle transition with nothing queued behind it to
+      // flush (the `if` branch above) — see notificationPrefs.ts's top
+      // comment for exactly what this notification does and doesn't
+      // guarantee (exact for shell panes, a heuristic for agent TUIs).
+      // Skipped when a queued prompt was just sent instead: that pane is
+      // about to go straight back to "working," so notifying would just be
+      // noise for something the user already queued up themselves.
+      notifyAgentIdle(AGENT_SPECS[agentId].displayName);
     }
   };
 
@@ -469,8 +490,14 @@ export default function Terminal({
     if (!container) return;
 
     const term = new XTerm({
-      cursorBlink: true,
-      scrollback: 10000,
+      // Starting values only — read once, from whatever `terminalPrefs`
+      // was current when this effect ran (mount, or a session switch).
+      // Later changes are pushed live via the separate effect near the
+      // theme-sync one below, same "read once at creation, sync live via a
+      // dedicated effect" split `theme` already uses on this same object.
+      cursorBlink: terminalPrefs.cursorBlink,
+      cursorStyle: terminalPrefs.cursorStyle,
+      scrollback: terminalPrefs.scrollback,
       // Phase 5's gutter decorations (`registerMarker`/`registerDecoration`)
       // are still a "proposed" (unstable) part of xterm.js's public API —
       // without this flag, calling either of them throws SYNCHRONOUSLY from
@@ -485,7 +512,7 @@ export default function Terminal({
       // docs/DESIGN.md §3's type scale: terminals are 13px monospace at
       // 1.2 line-height — a step denser than the 14px/1.0 this shipped
       // with pre-Phase-4.5.
-      fontSize: 13,
+      fontSize: terminalPrefs.fontSize,
       lineHeight: 1.2,
       // `theme` here is just this terminal's starting colours — it's read
       // once, from whatever theme was active when this effect ran (mount,
@@ -872,7 +899,7 @@ export default function Terminal({
     const resizeObserver = new ResizeObserver(() => {
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
-        fitAddon.fit();
+        fitIfVisible(container, fitAddon);
       }, 50);
     });
     resizeObserver.observe(container);
@@ -968,6 +995,39 @@ export default function Terminal({
       termRef.current.options.theme = theme.terminal;
     }
   }, [theme]);
+
+  // Push terminal display prefs into this terminal LIVE — same idiom as the
+  // theme-sync effect just above: xterm re-reads these options and repaints
+  // immediately on assignment, no dispose/recreate needed, so a pane that
+  // was already open when Settings.tsx saved a change picks it up right
+  // away, not just panes created afterward (the explicit "must actually
+  // apply live" requirement for this preference).
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term) return;
+    term.options.fontSize = terminalPrefs.fontSize;
+    term.options.cursorStyle = terminalPrefs.cursorStyle;
+    term.options.cursorBlink = terminalPrefs.cursorBlink;
+    term.options.scrollback = terminalPrefs.scrollback;
+    // A font-size change resizes every cell, so the number of columns/rows
+    // that fit the pane's UNCHANGED pixel footprint changes too — re-fit so
+    // xterm (and, via its own `onResize` handler above, the server-side
+    // pty) picks up the new grid dimensions immediately, the same re-fit
+    // the ResizeObserver below already triggers whenever the container
+    // itself resizes.
+    //
+    // Guarded, because these preferences live in the SETTINGS view — so at
+    // the moment they change, this terminal is virtually always the hidden
+    // view, and a hidden container measures zero. Fitting against that
+    // computes a degenerate grid and ships it to the real pty as a resize:
+    // observed live as a terminal stuck at ~11 columns with the shell
+    // prompt wrapped in half and typing no longer echoing. The pane
+    // re-fits correctly on its own when it becomes visible again, via the
+    // ResizeObserver above (0 -> real size is itself a resize).
+    const container = containerRef.current;
+    const fitAddon = fitAddonRef.current;
+    if (container && fitAddon) fitIfVisible(container, fitAddon);
+  }, [terminalPrefs]);
 
   // Cmd/Ctrl+F opens the in-terminal search box instead of the browser's.
   useEffect(() => {
