@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type {
   AgentId,
   DeferredPane,
@@ -19,6 +19,7 @@ import {
   Pill,
   StatusDot,
   sessionStatusKind,
+  type StatusKind,
 } from "../shell/ui.js";
 import { FONT, MOTION, RADIUS, SHADOW_VAR, SPACE } from "../shell/tokens.js";
 import { AgentGlyph, agentAccentVar } from "./agentVisuals.js";
@@ -44,6 +45,22 @@ const PANE_HINT_SHORTCUTS: readonly { id: string; label: string }[] = [
   { id: "split-column", label: "Stack" },
   { id: "new-pane", label: "New pane" },
 ];
+
+/**
+ * Context-meter pill (BridgeSpace v3.4.17 parity): maps Codex's own
+ * "% context left" reading to a `Pill` colour. Thresholds are purely a
+ * visual-urgency judgement call (not anything Codex itself labels) — low
+ * remaining context gets progressively louder, matching how every other
+ * status colour in this app is used (docs/DESIGN.md §2/§6: colour means
+ * status, never decoration). `idle` (neutral grey), not `ok` (green), for
+ * the healthy majority of the range: a context meter sitting at 80% isn't
+ * an achievement worth celebrating in green, just unremarkable.
+ */
+function contextLeftPillStatus(percentLeft: number): StatusKind {
+  if (percentLeft <= 10) return "danger";
+  if (percentLeft <= 25) return "warn";
+  return "idle";
+}
 
 /** One entry from `GET /api/agents` — mirrors the shape App.tsx already fetches. */
 export interface AgentOption {
@@ -189,6 +206,23 @@ export default function PaneView({
   // useGitBranch.ts's top comment for why polling (not a filesystem watch)
   // and the resulting staleness window.
   const gitBranch = useGitBranch(workspaceId);
+  // Context-meter pill (BridgeSpace v3.4.17 parity): fed by Terminal.tsx's
+  // `onContextLeftChange`, which only ever fires for `agentId === "codex"`
+  // panes (the one CLI vibedeck ships that genuinely prints this — see
+  // contextMeter.ts's top comment). Stays `null` — and the pill below
+  // simply doesn't render — for every other agent, an empty pane, or a
+  // codex session that hasn't reached its composer footer yet.
+  const [contextLeft, setContextLeft] = useState<number | null>(null);
+  // Terminal.tsx resets this to null on every one of ITS OWN mounts (a new
+  // session starting), but when a session ENDS and this pane goes back to
+  // empty/deferred, `<Terminal>` unmounts without ever calling
+  // `onContextLeftChange` again — nothing would otherwise clear a stale
+  // reading left over from the session that just closed. This effect is
+  // that missing reset: whenever this pane has no live session, its pill
+  // state goes back to "nothing to show" too.
+  useEffect(() => {
+    if (!sessionId) setContextLeft(null);
+  }, [sessionId]);
   // Same "read navigator lazily, memoize once" pattern App.tsx's own isMac
   // already uses — the empty-pane footer's KeyHints need this to render
   // ⌘ vs Ctrl+.
@@ -489,6 +523,18 @@ export default function PaneView({
             </span>
           </span>
         )}
+        {/* Context-meter pill (BridgeSpace v3.4.17 parity): only ever
+            present for a codex session that has printed its own footer at
+            least once — see `contextLeft`'s own comment above and
+            contextMeter.ts's top comment for why this is Codex-only and why
+            it's a real reading, not an estimate. `title` spells that out on
+            hover, matching this app's established honesty-labelling tone
+            (see Settings.tsx's notification-permission copy). */}
+        {contextLeft !== null && (
+          <span title={`${contextLeft}% of Codex's context window left — reported by Codex's own status line, not measured or estimated by vibedeck.`}>
+            <Pill status={contextLeftPillStatus(contextLeft)}>{contextLeft}% left</Pill>
+          </span>
+        )}
         <div className="vd-pane-icons" style={{ display: "flex", alignItems: "center", gap: 2 }}>
           <IconButton title="Split vertical" onClick={() => onSplit(paneId, "row")}>
             <SplitVerticalIcon />
@@ -528,6 +574,9 @@ export default function PaneView({
             // icons already call (see the IconButtons above) — no separate
             // split logic lives in Terminal.tsx.
             onSplit={(direction) => onSplit(paneId, direction)}
+            // Context-meter pill: see `contextLeft` state's own comment
+            // above — Terminal.tsx only ever calls this for codex panes.
+            onContextLeftChange={setContextLeft}
           />
         ) : deferred ? (
           // Session recovery, deferred cold-start restore: this pane's

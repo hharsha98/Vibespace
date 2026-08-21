@@ -17,6 +17,7 @@ import { useTerminalPrefs } from "../settings/terminalPrefs.js";
 import { notifyAgentIdle } from "../settings/notificationPrefs.js";
 import { MOTION, RADIUS, SHADOW_VAR } from "../shell/tokens.js";
 import { BlockTracker, parseOsc133 } from "./blocks.js";
+import { ContextMeterTracker } from "./contextMeter.js";
 import { createPendingCommand, type PendingCommand } from "./pendingCommand.js";
 import {
   notifyBlocksChanged,
@@ -94,6 +95,17 @@ interface TerminalProps {
    * reach it).
    */
   onSplit?: (direction: Direction) => void;
+  /**
+   * Context-meter pill (BridgeSpace v3.4.17 parity): fired whenever this
+   * pane's reading of Codex's own "NN% context left" footer changes — see
+   * `contextMeter.ts`'s top comment for exactly what this is (a REAL value
+   * Codex itself prints, not an estimate) and why it only ever fires for
+   * `agentId === "codex"` panes. `PaneView.tsx` renders the header pill
+   * from this; every other agent simply never calls it, so that pill never
+   * appears rather than showing a fake/zeroed reading. Optional so no other
+   * `<Terminal>` caller needs to change.
+   */
+  onContextLeftChange?: (percent: number | null) => void;
 }
 
 /** Escape spaces in a dropped file's path, the way a shell expects (`a b` -> `a\ b`). */
@@ -265,6 +277,7 @@ export default function Terminal({
   isFocused,
   onClose,
   onSplit,
+  onContextLeftChange,
 }: TerminalProps) {
   // Live-reactive terminal display prefs (font size, cursor style/blink,
   // scrollback) — see terminalPrefs.ts's top comment for why this reads
@@ -294,6 +307,14 @@ export default function Terminal({
   // pendingCommand.ts's top comment for the consume-once semantics that
   // make this safe.
   const pendingCommandRef = useRef<PendingCommand | null>(null);
+  // Context-meter pill (BridgeSpace v3.4.17 parity) — created fresh per
+  // mount alongside `blockTracker` below, ONLY for `agentId === "codex"`
+  // (the one CLI vibedeck ships that genuinely prints this — see
+  // contextMeter.ts's top comment). `lastNotifiedContextLeftRef` exists
+  // purely so the "output" handler below only calls `onContextLeftChange`
+  // when the reading actually changed, not on every single chunk.
+  const contextMeterRef = useRef<ContextMeterTracker | null>(null);
+  const lastNotifiedContextLeftRef = useRef<number | null>(null);
 
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -593,6 +614,14 @@ export default function Terminal({
     blockTrackerRef.current = blockTracker;
     registerBlockTracker(sessionId, blockTracker);
 
+    // Context-meter pill: a fresh tracker per session mount, and only for
+    // codex — every other agentId leaves this null, so the "output" handler
+    // below simply never feeds it and the header pill never appears (see
+    // this component's `onContextLeftChange` prop doc comment).
+    contextMeterRef.current = agentId === "codex" ? new ContextMeterTracker() : null;
+    lastNotifiedContextLeftRef.current = null;
+    onContextLeftChange?.(null);
+
     // Mutable bookkeeping the OSC handler below needs between marker
     // events (which line "B" fired on, which block is currently open) —
     // plain closure variables are enough here (unlike blockTrackerRef /
@@ -879,6 +908,21 @@ export default function Terminal({
         // See promptQueue.ts's own comment on why it will sometimes be
         // wrong, and AGENT_ACTIVITY_IDLE_MS for the threshold.
         if (agentId !== "shell") recordAgentActivity();
+        // Context-meter pill: feed this pane's raw pty bytes (ANSI escapes
+        // and all — contextMeter.ts does its own stripping) BEFORE they've
+        // been through xterm.js. Only non-null for codex panes (see the
+        // mount effect above); a no-op for every other agent. Only notifies
+        // the parent when the reading actually changed, so a codex pane
+        // that's between redraws doesn't re-render PaneView's header on
+        // every single chunk.
+        if (contextMeterRef.current) {
+          contextMeterRef.current.feed(message.data);
+          const percent = contextMeterRef.current.current();
+          if (percent !== lastNotifiedContextLeftRef.current) {
+            lastNotifiedContextLeftRef.current = percent;
+            onContextLeftChange?.(percent);
+          }
+        }
       } else if (message.type === "exit") {
         term.write(`\r\n\x1b[2m[process exited with code ${message.code}]\x1b[0m\r\n`);
       }
