@@ -393,6 +393,26 @@ export function registerFileRoutes(app: FastifyInstance, workspaceStore: Workspa
         }
       });
 
+      // WITHOUT this the whole server dies. chokidar's FSWatcher is an
+      // EventEmitter, and an 'error' event with no listener is a Node
+      // process-level crash — not a caught exception, not a 500, the
+      // process. Watching a directory means watching whatever happens to
+      // be in it, and some entries simply cannot be watched: unix sockets,
+      // files that vanish mid-scan, entries with no read permission.
+      //
+      // Found by opening a workspace on /tmp, which had a stray
+      // `cursor-askpass-*.sock` in it: `fs.watch` threw
+      // `UNKNOWN: unknown error, watch '/tmp/cursor-askpass-….sock'` and
+      // took down the server — and with it every running agent session in
+      // EVERY workspace, not just this one. One unwatchable file is not
+      // worth anyone's sessions, so it is logged and skipped.
+      watcher.on("error", (err: unknown) => {
+        console.warn(
+          `vibedeck: file watcher error under "${root}" (continuing to watch): ` +
+            `${err instanceof Error ? err.message : String(err)}`
+        );
+      });
+
       watcher.on("add", (p: string) => emit("add", p));
       watcher.on("change", (p: string) => emit("change", p));
       watcher.on("unlink", (p: string) => emit("unlink", p));

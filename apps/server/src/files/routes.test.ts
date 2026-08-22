@@ -10,7 +10,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
-import type { AddressInfo } from "node:net";
+import { createServer, type AddressInfo, type Server } from "node:net";
 import {
   existsSync,
   mkdtempSync,
@@ -684,6 +684,63 @@ describe("GET /api/files/watch (WebSocket)", () => {
       closeServer = undefined;
     },
     30_000
+  );
+
+  it(
+    "survives an unwatchable entry in the workspace (a unix socket) instead of crashing the process",
+    async () => {
+      // The regression, exactly as it happened: a workspace opened on a
+      // directory containing a stray `cursor-askpass-*.sock` made fs.watch
+      // throw `UNKNOWN: unknown error, watch '…​.sock'`. chokidar's
+      // FSWatcher is an EventEmitter, so that 'error' event with no
+      // listener was a Node PROCESS crash — taking down every running
+      // agent session in every workspace, not just this one.
+      //
+      // If the handler is removed, this test does not merely fail: the
+      // whole vitest worker dies, which is a fair reflection of the bug.
+      const sockPath = join(projectDir, "test-askpass.sock");
+      const sock: Server = createServer();
+      await new Promise<void>((resolve) => sock.listen(sockPath, () => resolve()));
+
+      try {
+        const app = buildApp();
+        await app.listen({ port: 0, host: "127.0.0.1" });
+        closeServer = () => app.close();
+        const { port } = app.server.address() as AddressInfo;
+        const workspaceId = await createWorkspace(app);
+
+        const ws = new WebSocket(`ws://127.0.0.1:${port}/api/files/watch?workspaceId=${workspaceId}`);
+        await new Promise<void>((resolve, reject) => {
+          ws.on("open", () => resolve());
+          ws.on("error", reject);
+        });
+
+        // Reaching "ready" at all proves the watcher walked a directory
+        // holding an unwatchable entry and kept going.
+        await new Promise<void>((resolve, reject) => {
+          const timeout = setTimeout(() => reject(new Error("watcher never became ready")), 10_000);
+          ws.on("message", (raw: Buffer) => {
+            const event = JSON.parse(raw.toString()) as FileWatchEvent;
+            if (event.type === "ready") {
+              clearTimeout(timeout);
+              resolve();
+            }
+          });
+          ws.on("error", reject);
+        });
+
+        // And the server is still answering afterwards.
+        const health = await app.inject({ method: "GET", url: "/api/health" });
+        expect(health.statusCode).toBe(200);
+
+        ws.close();
+        await app.close();
+        closeServer = undefined;
+      } finally {
+        await new Promise<void>((resolve) => sock.close(() => resolve()));
+      }
+    },
+    20_000
   );
 
   it(

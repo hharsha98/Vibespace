@@ -369,6 +369,12 @@ export default function App() {
   const [renameError, setRenameError] = useState<string | null>(null);
 
   const [pendingDeleteWorkspaceId, setPendingDeleteWorkspaceId] = useState<string | null>(null);
+  /** Which layout template a workspace being created should start with.
+   * BridgeSpace asks this during setup ("Choose a workspace template — pick
+   * a layout that matches your workflow"); we only ever made a single empty
+   * pane and left you to build the grid afterwards. Defaults to 1, which is
+   * exactly what creation did before, so the quick path is unchanged. */
+  const [newWorkspaceTemplate, setNewWorkspaceTemplate] = useState<number>(1);
   /** Set when a delete actually failed, so the confirmation can say so
    * instead of the workspace silently staying put with no explanation. */
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -1054,6 +1060,7 @@ export default function App() {
   const openCreateForm = useCallback(() => {
     setNewWorkspaceName("");
     setNewWorkspacePath(serverCwd);
+    setNewWorkspaceTemplate(1);
     setCreateError(null);
     setShowCreateForm(true);
   }, [serverCwd]);
@@ -1074,7 +1081,9 @@ export default function App() {
       const workspace = body as Workspace;
       setWorkspaces((prev) => [...prev, workspace]);
       setActiveWorkspaceId(workspace.id);
-      setRoot(createLeaf(null));
+      // buildTemplate(1) is a bare leaf with no split (asserted in
+      // tree.test.ts), so the default is byte-for-byte the old behaviour.
+      setRoot(buildTemplate(newWorkspaceTemplate));
       setFocusedPaneId(null);
       setMaximizedPaneId(null);
       setGridEpoch((e) => e + 1);
@@ -1085,7 +1094,7 @@ export default function App() {
     } finally {
       setCreating(false);
     }
-  }, [newWorkspaceName, newWorkspacePath]);
+  }, [newWorkspaceName, newWorkspacePath, newWorkspaceTemplate]);
 
   const startRename = useCallback((workspace: Workspace) => {
     setRenamingId(workspace.id);
@@ -1684,6 +1693,8 @@ export default function App() {
             newWorkspacePath={newWorkspacePath}
             onNewWorkspacePathChange={setNewWorkspacePath}
             onCreateWorkspace={() => void createWorkspace()}
+            newWorkspaceTemplate={newWorkspaceTemplate}
+            onNewWorkspaceTemplateChange={setNewWorkspaceTemplate}
             onCancelCreate={() => setShowCreateForm(false)}
             creating={creating}
             createError={createError}

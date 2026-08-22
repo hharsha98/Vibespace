@@ -1,6 +1,13 @@
 import type { Workspace } from "@vibedeck/shared";
 import { IconButton } from "./ui.js";
 import FileTree from "../files/FileTree.js";
+import { templateLabel } from "../grid/templateNames.js";
+
+/** Mirrors App.tsx's own list and `grid/tree.ts`'s SUPPORTED_TEMPLATE_SIZES.
+ * Kept local rather than imported because tree.ts's copy is private and
+ * this is a display concern — `buildTemplate` rejects anything unsupported
+ * anyway, so the two cannot silently disagree in a way that ships. */
+const TEMPLATE_SIZES = [1, 2, 4, 6, 8, 10, 12, 14, 16];
 
 /**
  * The left rail: workspaces as a vertical list (docs/DESIGN.md §1/§5),
@@ -35,6 +42,10 @@ export interface WorkspaceRailProps {
   newWorkspacePath: string;
   onNewWorkspacePathChange: (value: string) => void;
   onCreateWorkspace: () => void;
+  /** Starting layout for the workspace being created — BridgeSpace asks
+   * this during setup rather than always handing you one empty pane. */
+  newWorkspaceTemplate: number;
+  onNewWorkspaceTemplateChange: (n: number) => void;
   onCancelCreate: () => void;
   creating: boolean;
   createError: string | null;
@@ -67,6 +78,8 @@ export default function WorkspaceRail(props: WorkspaceRailProps) {
     newWorkspacePath,
     onNewWorkspacePathChange,
     onCreateWorkspace,
+    newWorkspaceTemplate,
+    onNewWorkspaceTemplateChange,
     onCancelCreate,
     creating,
     createError,
@@ -182,6 +195,20 @@ export default function WorkspaceRail(props: WorkspaceRailProps) {
             onChange={(e) => onNewWorkspacePathChange(e.target.value)}
             style={railInputStyle}
           />
+          <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+            <span style={{ fontSize: 10, color: "var(--vd-text-faint)" }}>Starting layout</span>
+            <select
+              value={newWorkspaceTemplate}
+              onChange={(e) => onNewWorkspaceTemplateChange(Number(e.target.value))}
+              style={railInputStyle}
+            >
+              {TEMPLATE_SIZES.map((n) => (
+                <option key={n} value={n}>
+                  {templateLabel(n)}
+                </option>
+              ))}
+            </select>
+          </label>
           <div style={{ display: "flex", gap: 6 }}>
             <button onClick={onCreateWorkspace} disabled={creating} style={primaryButtonStyle}>
               Create

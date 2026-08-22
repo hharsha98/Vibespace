@@ -81,6 +81,19 @@ export function startMissionWatcher(
     claimsStore.recordConflict(missionId, relPath, claim.agentId);
   };
 
+  // Same process-killing hazard as the file-watch route's watcher, and for
+  // the same reason: an 'error' event with no listener on an EventEmitter
+  // takes the Node process down. A mission watches a real project
+  // directory, so it will meet unwatchable entries — sockets, files
+  // removed mid-scan, unreadable paths — and losing every agent session in
+  // every workspace over one of them is not a trade anyone would choose.
+  watcher.on("error", (err: unknown) => {
+    console.warn(
+      `vibedeck: mission ${missionId} watcher error under "${workspaceRoot}" (continuing to watch): ` +
+        `${err instanceof Error ? err.message : String(err)}`
+    );
+  });
+
   watcher.on("add", onChange);
   watcher.on("change", onChange);
 
