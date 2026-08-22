@@ -1,7 +1,5 @@
-import { useEffect, useState } from "react";
-import { WORKSPACE_COLORS, type Workspace } from "@vibedeck/shared";
-import { IconButton, ListRow } from "./ui.js";
-import { SHADOW_VAR } from "./tokens.js";
+import type { Workspace } from "@vibedeck/shared";
+import { IconButton } from "./ui.js";
 import FileTree from "../files/FileTree.js";
 
 /**
@@ -41,28 +39,13 @@ export interface WorkspaceRailProps {
   creating: boolean;
   createError: string | null;
 
-  renamingId: string | null;
-  renameValue: string;
-  onRenameValueChange: (value: string) => void;
-  onStartRename: (workspace: Workspace) => void;
-  onCommitRename: () => void;
-  onCancelRename: () => void;
-  renameError: string | null;
   /** Why a delete failed, if it did — see the confirmation block below. */
   deleteError: string | null;
 
   pendingDeleteWorkspaceId: string | null;
-  onRequestDelete: (id: string) => void;
   onConfirmDelete: () => void;
   onCancelDelete: () => void;
 
-  /** Phase 9.5c, PARITY #41: sets (or, with `null`, clears) a workspace's
-   * chosen colour. The picker popover's own open/closed state is transient
-   * UI state owned locally by this component (see the file's top comment
-   * for why that split, not App.tsx-lifted state, is the right call here) —
-   * only the actual mutation is lifted up, same as every other write in
-   * this file. */
-  onSetWorkspaceColor: (id: string, color: string | null) => void;
 }
 
 const RAIL_WIDTH = 220;
@@ -87,25 +70,12 @@ export default function WorkspaceRail(props: WorkspaceRailProps) {
     onCancelCreate,
     creating,
     createError,
-    renamingId,
-    renameValue,
-    onRenameValueChange,
-    onStartRename,
-    onCommitRename,
-    onCancelRename,
-    renameError,
     deleteError,
     pendingDeleteWorkspaceId,
-    onRequestDelete,
     onConfirmDelete,
     onCancelDelete,
-    onSetWorkspaceColor,
   } = props;
 
-  // Phase 9.5c: which row's colour-picker popover is currently open, if
-  // any — purely transient UI state, same "local, not lifted to App.tsx"
-  // treatment Terminal.tsx's right-click `contextMenu` state gets.
-  const [colorPickerOpenId, setColorPickerOpenId] = useState<string | null>(null);
 
   if (collapsed) {
     return (
@@ -187,161 +157,6 @@ export default function WorkspaceRail(props: WorkspaceRailProps) {
           rather than the file tree only appearing once you've scrolled
           all the way past every workspace. */}
       <div style={{ maxHeight: "55%", overflowY: "auto", flexShrink: 0 }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 4,
-          padding: "8px 8px 4px",
-          flexShrink: 0,
-        }}
-      >
-        <span
-          style={{
-            flex: 1,
-            fontSize: 10,
-            letterSpacing: "0.08em",
-            textTransform: "uppercase",
-            color: "var(--vd-text-faint)",
-          }}
-        >
-          Workspaces
-        </span>
-        <IconButton title="New workspace" onClick={onOpenCreateForm}>
-          <span style={{ fontSize: 14, lineHeight: 1 }}>+</span>
-        </IconButton>
-        <IconButton title="Collapse workspaces" onClick={onToggleCollapsed}>
-          <ChevronIcon direction="left" />
-        </IconButton>
-      </div>
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 3, padding: "0 8px" }}>
-        {workspaces.map((workspace) =>
-          renamingId === workspace.id ? (
-            <div
-              key={workspace.id}
-              style={{ display: "flex", alignItems: "center", gap: 4, padding: "2px 0" }}
-            >
-              <input
-                autoFocus
-                value={renameValue}
-                onChange={(e) => onRenameValueChange(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") onCommitRename();
-                  if (e.key === "Escape") onCancelRename();
-                }}
-                style={{ ...railInputStyle, flex: 1 }}
-              />
-              <IconButton title="Save name" onClick={onCommitRename}>
-                <span style={{ fontSize: 12 }}>✓</span>
-              </IconButton>
-              <IconButton title="Cancel rename" onClick={onCancelRename}>
-                <span style={{ fontSize: 12 }}>✕</span>
-              </IconButton>
-            </div>
-          ) : (
-            <div key={workspace.id} style={{ position: "relative" }} className="vd-workspace-row-wrap">
-              <ListRow
-                active={workspace.id === activeWorkspaceId}
-                statusKind={runningCount(workspace) > 0 ? "ok" : "idle"}
-                label={workspace.name}
-                title={workspace.rootPath}
-                onClick={() => onSwitch(workspace.id)}
-                // Phase 9.5c, PARITY #41: an active row with a chosen
-                // colour gets ITS colour as the thick left edge instead of
-                // the theme's default accent — see ListRow's own
-                // `accentColor` doc comment. `undefined` (not `workspace.
-                // color` directly, which is `string | null`) so a null
-                // colour genuinely falls back to ListRow's own default
-                // rather than passing `null` through as a CSS value.
-                accentColor={workspace.color ?? undefined}
-                trailing={
-                  // Stop the click from bubbling up to the ListRow's own
-                  // onClick (which switches the active workspace) — without
-                  // this, clicking rename/delete ALSO switches to that row's
-                  // workspace as a side effect, since these buttons render
-                  // inside the row's clickable area. The pre-Phase-4.5
-                  // tab-strip version of this UI had the same guard, just
-                  // written inline on each button instead of once here.
-                  <div
-                    onClick={(e) => e.stopPropagation()}
-                    style={{ display: "flex", alignItems: "center", gap: 3, position: "relative" }}
-                  >
-                    {/* Always visible — this is information (which colour
-                        this workspace carries, how many panes are running),
-                        not a destructive action, so it doesn't hide behind
-                        hover the way rename/delete now do below. */}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setColorPickerOpenId((open) => (open === workspace.id ? null : workspace.id))
-                      }
-                      title={workspace.color ? "Change workspace colour" : "Set workspace colour"}
-                      style={{
-                        width: 12,
-                        height: 12,
-                        borderRadius: "50%",
-                        flexShrink: 0,
-                        cursor: "pointer",
-                        padding: 0,
-                        background: workspace.color ?? "transparent",
-                        border: workspace.color
-                          ? "1px solid var(--vd-border)"
-                          : "1px dashed var(--vd-text-faint)",
-                      }}
-                    />
-                    {colorPickerOpenId === workspace.id && (
-                      <ColorPickerPopover
-                        current={workspace.color}
-                        onPick={(color) => {
-                          onSetWorkspaceColor(workspace.id, color);
-                          setColorPickerOpenId(null);
-                        }}
-                        onClose={() => setColorPickerOpenId(null)}
-                      />
-                    )}
-                    {runningCount(workspace) > 0 && (
-                      <span
-                        style={{
-                          fontSize: 10,
-                          color: "var(--vd-ok)",
-                          fontWeight: 600,
-                          minWidth: 12,
-                          textAlign: "right",
-                        }}
-                      >
-                        {runningCount(workspace)}
-                      </span>
-                    )}
-                    {/* Rename/delete: destructive/rarely-used controls, so
-                        they only reveal on hover/focus (see the
-                        .vd-workspace-row-actions rule in shell/ui.tsx's
-                        GlobalShellStyles) — a resting row shows just its
-                        name, colour and count, not five icons crammed
-                        together. */}
-                    <span
-                      className="vd-workspace-row-actions"
-                      style={{ display: "flex", alignItems: "center", gap: 1 }}
-                    >
-                      <IconButton title="Rename workspace" onClick={() => onStartRename(workspace)}>
-                        <span style={{ fontSize: 11 }}>✎</span>
-                      </IconButton>
-                      <IconButton title="Delete workspace" onClick={() => onRequestDelete(workspace.id)}>
-                        <span style={{ fontSize: 11 }}>✕</span>
-                      </IconButton>
-                    </span>
-                  </div>
-                }
-              />
-            </div>
-          )
-        )}
-      </div>
-
-      {renameError && (
-        <p style={{ color: "var(--vd-danger)", fontSize: 11, padding: "4px 8px", margin: 0 }}>{renameError}</p>
-      )}
-
       {showCreateForm && (
         <div
           style={{
@@ -429,98 +244,6 @@ export default function WorkspaceRail(props: WorkspaceRailProps) {
  * "document click-away listener" pattern Terminal.tsx's own right-click
  * context menu uses (see that file's `contextMenu` effect).
  */
-function ColorPickerPopover({
-  current,
-  onPick,
-  onClose,
-}: {
-  current: string | null;
-  onPick: (color: string | null) => void;
-  onClose: () => void;
-}) {
-  useEffect(() => {
-    const onClickAway = () => onClose();
-    // Deferred to the next tick: the swatch dot's own onClick (which opens
-    // this popover) also bubbles to `document` in the SAME click event —
-    // without a delay, this listener would fire immediately and close the
-    // popover the instant it opens.
-    const timer = setTimeout(() => document.addEventListener("click", onClickAway), 0);
-    return () => {
-      clearTimeout(timer);
-      document.removeEventListener("click", onClickAway);
-    };
-  }, [onClose]);
-
-  return (
-    <div
-      onClick={(e) => e.stopPropagation()}
-      className="vd-scale-in"
-      style={{
-        position: "absolute",
-        top: "100%",
-        left: 0,
-        marginTop: 4,
-        zIndex: 30,
-        display: "grid",
-        gridTemplateColumns: "repeat(4, 1fr)",
-        gap: 4,
-        padding: 6,
-        background: "var(--vd-surface-raised)",
-        border: "1px solid var(--vd-border)",
-        borderRadius: 6,
-        boxShadow: SHADOW_VAR.lg,
-      }}
-    >
-      <button
-        type="button"
-        onClick={() => onPick(null)}
-        title="No colour"
-        style={{
-          width: 18,
-          height: 18,
-          borderRadius: "50%",
-          cursor: "pointer",
-          background: "transparent",
-          border: current === null ? "2px solid var(--vd-accent)" : "1px dashed var(--vd-text-faint)",
-          padding: 0,
-        }}
-      />
-      {WORKSPACE_COLORS.map((color) => (
-        <button
-          key={color}
-          type="button"
-          onClick={() => onPick(color)}
-          title={color}
-          style={{
-            width: 18,
-            height: 18,
-            borderRadius: "50%",
-            cursor: "pointer",
-            background: color,
-            border: current === color ? "2px solid var(--vd-text)" : "1px solid var(--vd-border)",
-            padding: 0,
-          }}
-        />
-      ))}
-      <button
-        type="button"
-        onClick={onClose}
-        title="Close"
-        style={{
-          gridColumn: "1 / -1",
-          background: "transparent",
-          border: "none",
-          color: "var(--vd-text-faint)",
-          fontSize: 10,
-          cursor: "pointer",
-          padding: "2px 0 0",
-        }}
-      >
-        Close
-      </button>
-    </div>
-  );
-}
 
 /** A small chevron, inline SVG (no icon library/external request) — points
  * left when the rail is expanded (click to collapse) and right when

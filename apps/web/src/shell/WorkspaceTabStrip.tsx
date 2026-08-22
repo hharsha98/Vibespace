@@ -1,7 +1,8 @@
-import { useRef, type CSSProperties, type KeyboardEvent } from "react";
+import { useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import type { Workspace } from "@vibedeck/shared";
 import { deriveWorkspaceTabs, nextTabIndex } from "./workspaceTabs.js";
 import { FONT, RADIUS, SPACE } from "./tokens.js";
+import ColorPickerPopover from "./ColorPickerPopover.js";
 
 /**
  * Workspaces as a horizontal tab strip in the top bar.
@@ -54,6 +55,16 @@ export interface WorkspaceTabsProps {
   onStartRename: (workspace: Workspace) => void;
   onCommitRename: () => void;
   onCancelRename: () => void;
+  /** Why a rename was refused, if it was. Without showing this, a rejected
+   * rename (a duplicate name, say) left the input open with no explanation
+   * — the same silent-failure shape the delete path had. */
+  renameError: string | null;
+
+  /** Sets (or clears, with null) a workspace's colour. Reached by clicking
+   * the tab's own colour dot. Like rename, this only had a home in the
+   * rail's workspace list — a tab that shows a colour with no way to change
+   * it would be a feature quietly lost. */
+  onSetWorkspaceColor: (id: string, color: string | null) => void;
 }
 
 export default function WorkspaceTabs({
@@ -68,10 +79,16 @@ export default function WorkspaceTabs({
   onStartRename,
   onCommitRename,
   onCancelRename,
+  renameError,
+  onSetWorkspaceColor,
 }: WorkspaceTabsProps) {
   const tabs = deriveWorkspaceTabs(workspaces);
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const activeIndex = tabs.findIndex((t) => t.id === activeWorkspaceId);
+  // Which tab's colour popover is open, if any — transient UI state, kept
+  // local for the same reason the rail kept it local rather than lifting
+  // it into App.tsx.
+  const [colorPickerOpenId, setColorPickerOpenId] = useState<string | null>(null);
 
   // WAI-ARIA's horizontal-tabs pattern, with selection following focus —
   // the same behaviour Settings.tsx's rail already implements, so the two
@@ -114,8 +131,10 @@ export default function WorkspaceTabs({
                   // silently discarding what was typed.
                   onBlur={onCommitRename}
                   aria-label={`Rename workspace ${tab.name}`}
-                  style={renameInputStyle}
+                  title={renameError ?? undefined}
+                  style={renameError ? renameInputErrorStyle : renameInputStyle}
                 />
+                {renameError && <div style={renameErrorStyle}>{renameError}</div>}
               </div>
             );
           }
@@ -140,9 +159,37 @@ export default function WorkspaceTabs({
                 title={tab.name}
                 style={tabButtonStyle(active)}
               >
-                <span style={dotStyle(tab.color)} aria-hidden />
                 <span style={labelStyle}>{tab.name}</span>
               </button>
+
+              {/* The colour dot is its own button so it can open the
+                  picker. It sits OUTSIDE the tab button because a button
+                  cannot contain another button — nesting them breaks
+                  keyboard activation and the accessibility tree. Rendered
+                  before the label visually via `order`, so the dot still
+                  reads as the tab's leading mark. */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setColorPickerOpenId((prev) => (prev === tab.id ? null : tab.id));
+                }}
+                title={`Colour for ${tab.name}`}
+                aria-label={`Set colour for workspace ${tab.name}`}
+                style={dotButtonStyle}
+              >
+                <span style={dotStyle(tab.color)} aria-hidden />
+              </button>
+
+              {colorPickerOpenId === tab.id && (
+                <ColorPickerPopover
+                  current={tab.color}
+                  onPick={(color) => {
+                    onSetWorkspaceColor(tab.id, color);
+                    setColorPickerOpenId(null);
+                  }}
+                  onClose={() => setColorPickerOpenId(null)}
+                />
+              )}
               <button
                 // Not nested inside the tab button — a button cannot
                 // contain another button, and nesting them breaks both
@@ -190,6 +237,7 @@ const listStyle: CSSProperties = {
 
 function tabWrapStyle(active: boolean): CSSProperties {
   return {
+    position: "relative",
     display: "flex",
     alignItems: "center",
     flexShrink: 0,
@@ -229,6 +277,46 @@ const renameInputStyle: CSSProperties = {
   color: "var(--vd-text)",
   fontSize: FONT.body,
   outline: "none",
+};
+
+/** `order: -1` puts the dot visually before the tab's label even though it
+ * comes after in DOM order (it must, to avoid nesting a button inside a
+ * button). */
+const dotButtonStyle: CSSProperties = {
+  order: -1,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  width: 14,
+  height: 18,
+  padding: 0,
+  marginLeft: 5,
+  background: "transparent",
+  border: "none",
+  cursor: "pointer",
+  flexShrink: 0,
+};
+
+/** Same box, but flagged — plus the message below, since a 36px bar has no
+ * room to spell it out inline. */
+const renameInputErrorStyle: CSSProperties = {
+  ...renameInputStyle,
+  border: "1px solid var(--vd-danger)",
+};
+
+const renameErrorStyle: CSSProperties = {
+  position: "absolute",
+  top: "100%",
+  left: 0,
+  marginTop: 4,
+  zIndex: 30,
+  maxWidth: 260,
+  padding: "4px 6px",
+  background: "var(--vd-surface-raised)",
+  border: "1px solid var(--vd-danger)",
+  borderRadius: RADIUS.sm,
+  color: "var(--vd-danger)",
+  fontSize: FONT.meta,
 };
 
 const labelStyle: CSSProperties = {

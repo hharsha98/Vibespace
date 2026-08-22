@@ -1467,6 +1467,8 @@ export default function App() {
           onStartRename={startRename}
           onCommitRename={() => void commitRename()}
           onCancelRename={cancelRename}
+          renameError={renameError}
+          onSetWorkspaceColor={(id, color) => void setWorkspaceColor(id, color)}
         />
 
         {/* Just the path now. The workspace's NAME is on its tab a few
@@ -1681,19 +1683,10 @@ export default function App() {
             onCancelCreate={() => setShowCreateForm(false)}
             creating={creating}
             createError={createError}
-            renamingId={renamingId}
-            renameValue={renameValue}
-            onRenameValueChange={setRenameValue}
-            onStartRename={startRename}
-            onCommitRename={() => void commitRename()}
-            onCancelRename={cancelRename}
-            renameError={renameError}
             deleteError={deleteError}
             pendingDeleteWorkspaceId={pendingDeleteWorkspaceId}
-            onRequestDelete={requestDeleteWorkspace}
             onConfirmDelete={() => void confirmDeleteWorkspace()}
             onCancelDelete={cancelDeleteWorkspace}
-            onSetWorkspaceColor={(id, color) => void setWorkspaceColor(id, color)}
           />
         )}
 
