@@ -27,11 +27,29 @@ just answering questions.
 
 ![vibedeck demo — launching a shell and Claude Code side by side, splitting panes, the task board, and settings](./docs/vibedeck-demo.gif)
 
-Recorded from a real session, not a mockup. In order: an empty pane offers
-the agents actually installed on your machine → a real shell runs
-`git log` → the pane splits → Claude Code starts in the other half, so two
-agents are live at once → the task board → settings → back to the grid
-with both still running.
+Recorded from a real session, not a mockup — every pane is a real pty, and
+every agent listed is one actually installed on the machine that recorded
+it. About a minute, covering:
+
+- **Terminals** — an empty pane offers your installed agents; a real shell
+  runs `git log`
+- **Command blocks** — the Blocks toggle turns that run into a discrete
+  block with its exit status, Warp-style
+- **The grid** — split the pane, then start Claude Code beside the shell:
+  two agents live at once
+- **Layout templates** — `⌘K` → *Layout: Quad (4)*, which stops to warn you
+  first, because panes with running sessions would be closed
+- **Editor** — a file opened from the tree, with syntax highlighting
+- **Board** — the kanban columns work moves through
+- **Memory graph** and **Swarm** — the shared note graph, and a mission
+  canvas with a live agent node
+- **Agents · Prompts · Skills · SSH** — per-agent prompts, a saved prompt
+  library, 68 skills discovered from disk, and remote connection profiles
+- **Settings** — nine sections; the theme switches to Gruvbox Light and
+  back, one of 30
+- **Shortcuts** — the table, derived from the real keymap so it cannot drift
+
+It ends where it started: both agents still running.
 
 ## Download
 
