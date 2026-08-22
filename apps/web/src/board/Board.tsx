@@ -168,13 +168,38 @@ export default function Board({
 
   const deleteCard = useCallback((id: string) => {
     setActionError(null);
-    // Optimistic: gone from the UI immediately; a failed DELETE just gets
-    // reported in the error bar (the card stays deleted client-side rather
-    // than trying to un-delete it, which would be more surprising).
-    setCards((prev) => prev.filter((c) => c.id !== id));
-    fetch(`/api/board/cards/${id}`, { method: "DELETE" }).catch((err: unknown) => {
-      setActionError(err instanceof Error ? err.message : "Failed to delete card");
+    // Optimistic: the card leaves the board immediately, because deleting
+    // should feel instant. But it comes BACK if the server refused, and
+    // the reason is shown.
+    //
+    // Two things were wrong before. `.catch()` alone only fires on a
+    // NETWORK failure — an HTTP 404 or 500 resolves normally, so a
+    // server-side refusal was reported nowhere at all. And the card was
+    // dropped from the UI either way, on the reasoning that un-deleting it
+    // would be "more surprising" than leaving it gone. It isn't: the card
+    // still exists on the server, so it reappears on the next load anyway.
+    // Putting it back immediately, with an explanation, is the smaller
+    // surprise — and the same fix the workspace delete needed.
+    let removed: BoardCard | undefined;
+    setCards((prev) => {
+      removed = prev.find((c) => c.id === id);
+      return prev.filter((c) => c.id !== id);
     });
+    void (async () => {
+      try {
+        const res = await fetch(`/api/board/cards/${id}`, { method: "DELETE" });
+        if (!res.ok) {
+          const body = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(body.error ?? `Server responded with ${res.status}`);
+        }
+      } catch (err) {
+        if (removed) {
+          const card = removed;
+          setCards((prev) => (prev.some((c) => c.id === card.id) ? prev : [...prev, card]));
+        }
+        setActionError(err instanceof Error ? err.message : "Failed to delete card");
+      }
+    })();
   }, []);
 
   // Phase 9.5b (PARITY #27b): PATCHes a card's title/description/

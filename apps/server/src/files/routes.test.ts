@@ -691,7 +691,7 @@ describe("GET /api/files/watch (WebSocket)", () => {
     async () => {
       // The regression, exactly as it happened: a workspace opened on a
       // directory containing a stray `cursor-askpass-*.sock` made fs.watch
-      // throw `UNKNOWN: unknown error, watch '…​.sock'`. chokidar's
+      // throw `UNKNOWN: unknown error, watch '….sock'`. chokidar's
       // FSWatcher is an EventEmitter, so that 'error' event with no
       // listener was a Node PROCESS crash — taking down every running
       // agent session in every workspace, not just this one.
