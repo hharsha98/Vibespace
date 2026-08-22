@@ -125,6 +125,35 @@ export function buildApp(options: BuildAppOptions = {}) {
     // not itself the real limit.
     bodyLimit: 30 * 1024 * 1024, // 30MB
   });
+
+  /**
+   * Put the REAL reason in `error`, where this app's clients actually look.
+   *
+   * Fastify's default body for an uncaught throw is
+   * `{statusCode, error: "Internal Server Error", message: "<the reason>"}`.
+   * Every caller in the web app reads `body.error` — so a genuine failure
+   * arrived as the string "Internal Server Error" and the one useful part,
+   * `message`, was dropped on the floor.
+   *
+   * That gap has real teeth on the spawn path. Asking for an agent that
+   * isn't installed is caught up front and answered with a 409 and an
+   * install hint, but `pty.spawn` can still throw for things no
+   * availability check can see: a binary that exists and won't execute, a
+   * missing `spawn-helper`, an unusable cwd. A packaged build once lost
+   * `spawn-helper`'s executable bit and every terminal died with
+   * `posix_spawnp failed` — a message that is only worth anything if it
+   * reaches the person looking at the screen.
+   *
+   * `err.statusCode` is preserved so Fastify's own 4xx (malformed JSON,
+   * body too large) keep their status instead of all becoming 500s.
+   */
+  app.setErrorHandler((err: unknown, _request, reply) => {
+    const fastifyErr = err as { statusCode?: number; message?: string };
+    const status = fastifyErr.statusCode ?? 500;
+    if (status >= 500) console.error("vibedeck: request failed", err);
+    return reply.status(status).send({ error: fastifyErr.message ?? "Request failed" });
+  });
+
   const sessionManager = options.sessionManager ?? new SessionManager();
   const workspaceStore = options.workspaceStore ?? new WorkspaceStore();
   const boardStore = options.boardStore ?? new BoardStore();
