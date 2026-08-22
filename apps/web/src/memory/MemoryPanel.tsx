@@ -74,9 +74,27 @@ export default function MemoryPanel({ workspaceId, openNoteRequest }: MemoryPane
     setListLoadState("loading");
     setListError(null);
     const qs = `workspaceId=${encodeURIComponent(workspaceId)}`;
+    // `res.ok` matters more here than it looks. Without it a 500 still
+    // parses: the server's `{error: "..."}` body deserialises fine, so
+    // `notesBody.notes` came out `undefined`, `setListLoadState("loaded")`
+    // ran, and the panel reported an empty memory rather than a failure —
+    // telling someone their notes are gone when the server merely errored.
+    // It did not even stay that quiet: `notes.map(...)` further down throws
+    // on `undefined`, blanking the panel. The note-detail fetch in this
+    // same file already does this properly; these two were the
+    // inconsistency, not the convention.
+    const loadJson = async <T,>(url: string): Promise<T> => {
+      const res = await fetch(url);
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? `Server responded with ${res.status}`);
+      }
+      return (await res.json()) as T;
+    };
+
     Promise.all([
-      fetch(`/api/memory/notes?${qs}`).then((res) => res.json() as Promise<{ notes: MemoryNote[] }>),
-      fetch(`/api/memory/graph?${qs}`).then((res) => res.json() as Promise<{ edges: MemoryGraphEdge[] }>),
+      loadJson<{ notes: MemoryNote[] }>(`/api/memory/notes?${qs}`),
+      loadJson<{ edges: MemoryGraphEdge[] }>(`/api/memory/graph?${qs}`),
     ])
       .then(([notesBody, graphBody]) => {
         setNotes(notesBody.notes);

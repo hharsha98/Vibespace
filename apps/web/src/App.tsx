@@ -97,6 +97,26 @@ type HealthState =
 const TEMPLATE_SIZES = [1, 2, 4, 6, 8, 10, 12, 14, 16];
 
 /**
+ * GET a JSON endpoint, refusing to treat an error response as data.
+ *
+ * `fetch` resolves for 4xx/5xx, so `.then(res => res.json())` happily
+ * parses the server's `{error: "..."}` body and hands back an object whose
+ * expected field is `undefined`. The startup loads below then did things
+ * like `setAgents(undefined)`, which does not fail where it happens — it
+ * fails later, at the first `agents.map(...)`, a long way from the cause.
+ * A `.catch()` does not save it either: a 500 is not a rejection, so the
+ * existing fallbacks never ran.
+ */
+async function loadJson<T>(url: string): Promise<T> {
+  const res = await fetch(url);
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `Server responded with ${res.status}`);
+  }
+  return (await res.json()) as T;
+}
+
+/**
  * Turns a workspace's saved `layout` (JSON string, or null if it's never
  * had one saved) into a GridNode tree ready to render. Two honesty rules,
  * per Phase 3's design: a workspace with no saved layout starts as a single
@@ -488,8 +508,7 @@ export default function App() {
         });
       });
 
-    fetch("/api/agents")
-      .then((res) => res.json() as Promise<{ agents: AgentOption[] }>)
+    loadJson<{ agents: AgentOption[] }>("/api/agents")
       .then((body) => {
         setAgents(body.agents);
         // Phase 9.5c: honour a previously-saved default agent if it's still
@@ -540,8 +559,7 @@ export default function App() {
       // (now true) drives the first-run prompt instead of "Loading…".
     };
 
-    fetch("/api/sessions")
-      .then((res) => res.json() as Promise<{ sessions: SessionInfo[] }>)
+    loadJson<{ sessions: SessionInfo[] }>("/api/sessions")
       .then((body) => {
         loadedSessions = body.sessions;
         tryInitRoot();
@@ -552,8 +570,7 @@ export default function App() {
         tryInitRoot();
       });
 
-    fetch("/api/workspaces")
-      .then((res) => res.json() as Promise<{ workspaces: Workspace[] }>)
+    loadJson<{ workspaces: Workspace[] }>("/api/workspaces")
       .then((body) => {
         loadedWorkspaces = body.workspaces;
         tryInitRoot();
