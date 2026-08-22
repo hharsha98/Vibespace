@@ -39,6 +39,8 @@ import ThemePicker from "./themes/ThemePicker.js";
 import CommandPalette, { type PaletteCommand } from "./CommandPalette.js";
 import KeyboardCheatSheet from "./KeyboardCheatSheet.js";
 import WorkspaceRail from "./shell/WorkspaceRail.js";
+import WorkspaceTabStrip from "./shell/WorkspaceTabStrip.js";
+import { workspaceIdForTabIndex } from "./shell/workspaceTabs.js";
 import RightDock from "./shell/RightDock.js";
 import Logo from "./shell/Logo.js";
 import { GlobalShellStyles, IconButton, StatusDot } from "./shell/ui.js";
@@ -366,6 +368,9 @@ export default function App() {
   const [renameError, setRenameError] = useState<string | null>(null);
 
   const [pendingDeleteWorkspaceId, setPendingDeleteWorkspaceId] = useState<string | null>(null);
+  /** Set when a delete actually failed, so the confirmation can say so
+   * instead of the workspace silently staying put with no explanation. */
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) ?? null;
 
@@ -1140,16 +1145,39 @@ export default function App() {
     setPendingDeleteWorkspaceId(id);
   }, []);
 
-  const cancelDeleteWorkspace = useCallback(() => setPendingDeleteWorkspaceId(null), []);
+  // Clears the error too, so a previous failure isn't still on screen the
+  // next time the confirmation opens.
+  const cancelDeleteWorkspace = useCallback(() => {
+    setPendingDeleteWorkspaceId(null);
+    setDeleteError(null);
+  }, []);
 
   const confirmDeleteWorkspace = useCallback(async () => {
     const id = pendingDeleteWorkspaceId;
     if (!id) return;
+    // Both halves of this matter. `fetch` only rejects on a NETWORK
+    // failure — an HTTP 404 or 500 resolves normally — so without the
+    // `res.ok` check a server-side refusal counted as success. And the UI
+    // used to drop the workspace whether or not the delete actually
+    // happened, which is the worse half: the workspace vanished from the
+    // tab strip, looked deleted, and came back on the next launch because
+    // the server still had it. Observed exactly that, with the row still
+    // present in ~/.vibedeck/vibedeck.db after the tab was gone.
+    //
+    // Now a failure leaves the workspace visible and says so, which is the
+    // honest outcome — the alternative is a UI that lies about what it did.
     try {
-      await fetch(`/api/workspaces/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/workspaces/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setDeleteError(body.error ?? `Could not delete workspace (HTTP ${res.status})`);
+        return;
+      }
     } catch (err) {
-      console.warn("vibedeck: failed to delete workspace", err);
+      setDeleteError(err instanceof Error ? err.message : "Could not reach the server.");
+      return;
     }
+    setDeleteError(null);
     const remaining = workspaces.filter((w) => w.id !== id);
     setWorkspaces(remaining);
     if (activeWorkspaceId === id) {
@@ -1200,6 +1228,15 @@ export default function App() {
       "quick-open": () => {
         if (activeWorkspaceId) setActiveOverlay("quickOpen");
       },
+      // ⌘T / ⌘W, matching BridgeSpace's documented shortcut table. Both go
+      // through the SAME paths the tab strip's own "+" and "×" use — a
+      // shortcut that quietly skipped the delete confirmation would be a
+      // very expensive difference, since a workspace can own running agent
+      // sessions.
+      "new-workspace-tab": () => openCreateForm(),
+      "close-workspace-tab": () => {
+        if (activeWorkspaceId) requestDeleteWorkspace(activeWorkspaceId);
+      },
     };
     // The nine "focus pane N" shortcuts all share one handler shape, keyed
     // off `paneIndex` (see keymap.ts) instead of writing out
@@ -1208,6 +1245,17 @@ export default function App() {
       if (shortcut.paneIndex !== undefined) {
         const index = shortcut.paneIndex;
         handlers[shortcut.id] = () => focusPaneByIndex(index);
+      }
+      // Same trick for the nine "switch to workspace tab N" shortcuts.
+      // `workspaceIdForTabIndex` returns null when there is no tab at that
+      // position — ⌘7 with three workspaces open does nothing at all,
+      // rather than throwing on an undefined array slot.
+      if (shortcut.workspaceIndex !== undefined) {
+        const oneBased = shortcut.workspaceIndex + 1;
+        handlers[shortcut.id] = () => {
+          const id = workspaceIdForTabIndex(workspaces, oneBased);
+          if (id !== null && id !== activeWorkspaceId) switchWorkspace(id);
+        };
       }
     }
     return handlers;
@@ -1404,36 +1452,39 @@ export default function App() {
 
         <StatusDot status={healthStatusKind} title={healthTitle} />
 
+        {/* Workspaces as tabs (BridgeSpace's own layout — see
+            WorkspaceTabs.tsx). They live here rather than in the left
+            sidebar, which is now purely the file browser. */}
+        <WorkspaceTabStrip
+          workspaces={workspaces}
+          activeWorkspaceId={activeWorkspaceId}
+          onSwitch={switchWorkspace}
+          onNewWorkspace={openCreateForm}
+          onRequestClose={requestDeleteWorkspace}
+          renamingId={renamingId}
+          renameValue={renameValue}
+          onRenameValueChange={setRenameValue}
+          onStartRename={startRename}
+          onCommitRename={() => void commitRename()}
+          onCancelRename={cancelRename}
+        />
+
+        {/* Just the path now. The workspace's NAME is on its tab a few
+            pixels to the left, and printing it twice in one 36px bar spends
+            horizontal room the tab strip needs more. */}
         <span
           style={{
             fontSize: 11,
-            color: "var(--vd-text-muted)",
-            display: "flex",
-            alignItems: "center",
-            gap: 4,
+            color: "var(--vd-text-faint)",
             overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
             minWidth: 0,
+            flexShrink: 1,
           }}
+          title={activeWorkspace ? activeWorkspace.rootPath : undefined}
         >
-          {activeWorkspace ? (
-            <>
-              <span style={{ color: "var(--vd-text)" }}>{activeWorkspace.name}</span>
-              <span style={{ color: "var(--vd-text-faint)" }}>›</span>
-              <span
-                style={{
-                  color: "var(--vd-text-faint)",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-                title={activeWorkspace.rootPath}
-              >
-                {activeWorkspace.rootPath}
-              </span>
-            </>
-          ) : (
-            "No workspace"
-          )}
+          {activeWorkspace ? activeWorkspace.rootPath : "No workspace"}
         </span>
 
         <div style={{ flex: 1 }} />
@@ -1637,6 +1688,7 @@ export default function App() {
             onCommitRename={() => void commitRename()}
             onCancelRename={cancelRename}
             renameError={renameError}
+            deleteError={deleteError}
             pendingDeleteWorkspaceId={pendingDeleteWorkspaceId}
             onRequestDelete={requestDeleteWorkspace}
             onConfirmDelete={() => void confirmDeleteWorkspace()}

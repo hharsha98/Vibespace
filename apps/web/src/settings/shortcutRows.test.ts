@@ -4,20 +4,33 @@ import { getShortcutRows } from "./shortcutRows.js";
 
 describe("getShortcutRows", () => {
   it("derives one row per non-collapsed KEYMAP entry, plus the hand-added search row", () => {
-    const collapsedCount = KEYMAP.filter((s) => s.paneIndex === undefined || s.paneIndex === 0).length;
+    const collapsedCount = KEYMAP.filter(
+      (s) => (s.paneIndex === undefined || s.paneIndex === 0) && (s.workspaceIndex === undefined || s.workspaceIndex === 0)
+    ).length;
     const rows = getShortcutRows(KEYMAP, true);
     expect(rows.length).toBe(collapsedCount + 1);
   });
 
-  it("collapses the nine focus-pane shortcuts into a single row", () => {
+  it("collapses the nine focus-pane shortcuts into a single row, using the Cmd+Option form", () => {
     const rows = getShortcutRows(KEYMAP, true);
     const focusRow = rows.find((r) => r.id === "focus-pane-1");
     expect(focusRow).toBeDefined();
     expect(focusRow?.label).toBe("Focus pane 1–9");
-    expect(focusRow?.keyDisplay).toBe("⌘1 … ⌘9");
+    expect(focusRow?.keyDisplay).toBe("⌘⌥1 … ⌘⌥9");
     // None of the other eight collapse into their own row.
     for (let i = 2; i <= 9; i++) {
       expect(rows.find((r) => r.id === `focus-pane-${i}`)).toBeUndefined();
+    }
+  });
+
+  it("collapses the nine workspace-tab shortcuts into a single row, using the plain Cmd form", () => {
+    const rows = getShortcutRows(KEYMAP, true);
+    const tabRow = rows.find((r) => r.id === "workspace-tab-1");
+    expect(tabRow).toBeDefined();
+    expect(tabRow?.label).toBe("Switch to workspace tab 1–9");
+    expect(tabRow?.keyDisplay).toBe("⌘1 … ⌘9");
+    for (let i = 2; i <= 9; i++) {
+      expect(rows.find((r) => r.id === `workspace-tab-${i}`)).toBeUndefined();
     }
   });
 
@@ -32,9 +45,10 @@ describe("getShortcutRows", () => {
     const rows = getShortcutRows(KEYMAP, isMac);
     for (const shortcut of KEYMAP) {
       if (shortcut.paneIndex !== undefined && shortcut.paneIndex !== 0) continue; // collapsed, checked above
+      if (shortcut.workspaceIndex !== undefined && shortcut.workspaceIndex !== 0) continue; // collapsed, checked above
       const row = rows.find((r) => r.id === shortcut.id);
       expect(row, `row for KEYMAP id "${shortcut.id}" should exist`).toBeDefined();
-      if (shortcut.paneIndex === 0) continue; // the collapsed row, checked above
+      if (shortcut.paneIndex === 0 || shortcut.workspaceIndex === 0) continue; // the collapsed rows, checked above
       expect(row?.label).toBe(shortcut.label);
       expect(row?.keyDisplay).toBe(formatShortcut(shortcut, isMac));
     }

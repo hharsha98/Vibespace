@@ -10,9 +10,11 @@
  * breaking that promise later.
  *
  * Collapsing rule: KEYMAP.ts's nine "focus pane N" shortcuts (paneIndex
- * 0..8) collapse into a single "Focus pane 1-9" row instead of nine
- * near-identical ones — the exact same rule KeyboardCheatSheet.tsx already
- * applies, kept in sync here rather than reinvented.
+ * 0..8) collapse into a single "Focus pane 1-9" row, and its nine
+ * "workspace tab N" shortcuts (workspaceIndex 0..8) collapse into a single
+ * "Switch to workspace tab 1-9" row, instead of eighteen near-identical
+ * ones — the exact same rule KeyboardCheatSheet.tsx already applies, kept
+ * in sync here rather than reinvented.
  */
 import { KEYMAP, formatShortcut, type Shortcut } from "../keys/keymap.js";
 
@@ -33,17 +35,32 @@ function searchInTerminalRow(isMac: boolean): ShortcutRow {
 }
 
 /** Every row the Shortcuts section shows, in order: KEYMAP's own order
- * (with the nine focus-pane entries collapsed to one), then the one
- * hand-added terminal-search row. */
+ * (with the nine focus-pane and nine workspace-tab entries each collapsed
+ * to one row), then the one hand-added terminal-search row. */
 export function getShortcutRows(keymap: readonly Shortcut[] = KEYMAP, isMac: boolean = false): ShortcutRow[] {
   const rows = keymap
-    .filter((s) => s.paneIndex === undefined || s.paneIndex === 0)
-    .map((shortcut): ShortcutRow => ({
-      id: shortcut.id,
-      label: shortcut.paneIndex === 0 ? "Focus pane 1–9" : shortcut.label,
-      keyDisplay:
-        shortcut.paneIndex === 0 ? (isMac ? "⌘1 … ⌘9" : "Ctrl+1 … Ctrl+9") : formatShortcut(shortcut, isMac),
-    }));
+    .filter(
+      (s) =>
+        (s.paneIndex === undefined || s.paneIndex === 0) &&
+        (s.workspaceIndex === undefined || s.workspaceIndex === 0)
+    )
+    .map((shortcut): ShortcutRow => {
+      if (shortcut.paneIndex === 0) {
+        return {
+          id: shortcut.id,
+          label: "Focus pane 1–9",
+          keyDisplay: isMac ? "⌘⌥1 … ⌘⌥9" : "Ctrl+Alt+1 … Ctrl+Alt+9",
+        };
+      }
+      if (shortcut.workspaceIndex === 0) {
+        return {
+          id: shortcut.id,
+          label: "Switch to workspace tab 1–9",
+          keyDisplay: isMac ? "⌘1 … ⌘9" : "Ctrl+1 … Ctrl+9",
+        };
+      }
+      return { id: shortcut.id, label: shortcut.label, keyDisplay: formatShortcut(shortcut, isMac) };
+    });
   rows.push(searchInTerminalRow(isMac));
   return rows;
 }

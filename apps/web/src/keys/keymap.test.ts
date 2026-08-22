@@ -23,9 +23,16 @@ describe("matchShortcut", () => {
     expect(matchShortcut(key({ key: "n", metaKey: true }), true)).toBeNull();
   });
 
-  it("matches Cmd+Shift+W to close-pane, but plain Cmd+W matches nothing", () => {
+  it("matches Cmd+Shift+W to close-pane, and plain Cmd+W to close-workspace-tab", () => {
     expect(matchShortcut(key({ key: "w", metaKey: true, shiftKey: true }), true)).toBe("close-pane");
-    expect(matchShortcut(key({ key: "w", metaKey: true }), true)).toBeNull();
+    // Unlike new-pane's plain-⌘N alias (which only matches when isDesktop is
+    // true), close-workspace-tab is a real KEYMAP entry in its own right —
+    // it matches here regardless of isDesktop. Whether the keystroke ever
+    // REACHES this matcher in a real browser tab is a separate story (the
+    // browser itself reserves plain ⌘W and never dispatches the keydown at
+    // all — see keymap.ts's top comment), not something matchShortcut needs
+    // to account for.
+    expect(matchShortcut(key({ key: "w", metaKey: true }), true)).toBe("close-workspace-tab");
   });
 
   it("matches Cmd+D to split-row and Cmd+Shift+D to split-column", () => {
@@ -33,13 +40,26 @@ describe("matchShortcut", () => {
     expect(matchShortcut(key({ key: "d", metaKey: true, shiftKey: true }), true)).toBe("split-column");
   });
 
-  it("maps Cmd+1..Cmd+9 to focus-pane-1..focus-pane-9, each with the right 0-based paneIndex", () => {
+  it("maps plain Cmd+1..Cmd+9 to workspace-tab-1..workspace-tab-9, each with the right 0-based workspaceIndex", () => {
     for (let n = 1; n <= 9; n++) {
       const id = matchShortcut(key({ key: String(n), metaKey: true }), true);
+      expect(id).toBe(`workspace-tab-${n}`);
+      const shortcut = KEYMAP.find((s) => s.id === id);
+      expect(shortcut?.workspaceIndex).toBe(n - 1);
+    }
+  });
+
+  it("maps Cmd+Option+1..Cmd+Option+9 to focus-pane-1..focus-pane-9, each with the right 0-based paneIndex", () => {
+    for (let n = 1; n <= 9; n++) {
+      const id = matchShortcut(key({ key: String(n), metaKey: true, altKey: true }), true);
       expect(id).toBe(`focus-pane-${n}`);
       const shortcut = KEYMAP.find((s) => s.id === id);
       expect(shortcut?.paneIndex).toBe(n - 1);
     }
+  });
+
+  it("plain Cmd+1 does NOT match focus-pane-1 — Alt is required now that plain digits mean workspace tabs", () => {
+    expect(matchShortcut(key({ key: "1", metaKey: true }), true)).not.toBe("focus-pane-1");
   });
 
   it("matches Cmd+] and Cmd+[ to cycling focus", () => {
@@ -113,27 +133,38 @@ describe("matchShortcut", () => {
   });
 
   describe("isDesktop (Phase 11a: the plain forms Chrome reserves)", () => {
-    it("matches plain Cmd+N/Cmd+W/Cmd+T when isDesktop is true, on top of the Shift form still matching", () => {
+    it("matches plain Cmd+N when isDesktop is true, on top of the Shift form still matching", () => {
       expect(matchShortcut(key({ key: "n", metaKey: true }), true, true)).toBe("new-pane");
       expect(matchShortcut(key({ key: "n", metaKey: true, shiftKey: true }), true, true)).toBe("new-pane");
-
-      expect(matchShortcut(key({ key: "w", metaKey: true }), true, true)).toBe("close-pane");
-      expect(matchShortcut(key({ key: "w", metaKey: true, shiftKey: true }), true, true)).toBe("close-pane");
-
-      expect(matchShortcut(key({ key: "t", metaKey: true }), true, true)).toBe("theme-picker");
-      expect(matchShortcut(key({ key: "t", metaKey: true, shiftKey: true }), true, true)).toBe("theme-picker");
     });
 
-    it("still rejects plain Cmd+N/Cmd+W/Cmd+T when isDesktop is false (the default) — the browser build is unaffected", () => {
+    it("still rejects plain Cmd+N when isDesktop is false (the default) — the browser build is unaffected", () => {
       expect(matchShortcut(key({ key: "n", metaKey: true }), true)).toBeNull();
-      expect(matchShortcut(key({ key: "w", metaKey: true }), true)).toBeNull();
-      expect(matchShortcut(key({ key: "t", metaKey: true }), true, false)).toBeNull();
     });
 
     it("does NOT extend the plain-form exception to shortcuts outside the reserved set, e.g. split-column stays Shift-only", () => {
       expect(matchShortcut(key({ key: "d", metaKey: true, shiftKey: true }), true, true)).toBe("split-column");
       // Plain Cmd+D is (and stays) split-row, never split-column, even on desktop.
       expect(matchShortcut(key({ key: "d", metaKey: true }), true, true)).toBe("split-row");
+    });
+
+    it("plain Cmd+W/Cmd+T match close-workspace-tab/new-workspace-tab the same regardless of isDesktop — they're real KEYMAP entries, not a plain-form alias of close-pane/theme-picker anymore", () => {
+      expect(matchShortcut(key({ key: "w", metaKey: true }), true, false)).toBe("close-workspace-tab");
+      expect(matchShortcut(key({ key: "w", metaKey: true }), true, true)).toBe("close-workspace-tab");
+      expect(matchShortcut(key({ key: "t", metaKey: true }), true, false)).toBe("new-workspace-tab");
+      expect(matchShortcut(key({ key: "t", metaKey: true }), true, true)).toBe("new-workspace-tab");
+    });
+  });
+
+  describe("workspace-tab shortcuts (Cmd+T/Cmd+W/Cmd+1-9, matching BridgeSpace's documented set)", () => {
+    it("matches plain Cmd+T to new-workspace-tab and plain Cmd+W to close-workspace-tab", () => {
+      expect(matchShortcut(key({ key: "t", metaKey: true }), true)).toBe("new-workspace-tab");
+      expect(matchShortcut(key({ key: "w", metaKey: true }), true)).toBe("close-workspace-tab");
+    });
+
+    it("Shift+T/Shift+W still reach theme-picker/close-pane, unaffected by the new plain bindings", () => {
+      expect(matchShortcut(key({ key: "t", metaKey: true, shiftKey: true }), true)).toBe("theme-picker");
+      expect(matchShortcut(key({ key: "w", metaKey: true, shiftKey: true }), true)).toBe("close-pane");
     });
   });
 });
@@ -189,11 +220,41 @@ describe("formatShortcut", () => {
     expect(formatShortcut(prevBlock, false)).toBe("Ctrl+↑");
     expect(formatShortcut(nextBlock, false)).toBe("Ctrl+↓");
   });
+
+  it("renders the Alt/Option modifier for the focus-pane-N shortcuts", () => {
+    const focusPane1 = KEYMAP.find((s) => s.id === "focus-pane-1")!;
+    expect(formatShortcut(focusPane1, true)).toBe("⌘⌥1");
+    expect(formatShortcut(focusPane1, false)).toBe("Ctrl+Alt+1");
+  });
+
+  it("renders the plain workspace-tab shortcuts with no extra modifier glyph", () => {
+    const workspaceTab1 = KEYMAP.find((s) => s.id === "workspace-tab-1")!;
+    expect(formatShortcut(workspaceTab1, true)).toBe("⌘1");
+    expect(formatShortcut(workspaceTab1, false)).toBe("Ctrl+1");
+  });
 });
 
 describe("KEYMAP", () => {
   it("has a unique id for every shortcut", () => {
     const ids = KEYMAP.map((s) => s.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  // This is the test that would have caught the original ⌘T collision
+  // (theme-picker's desktop-only plain alias vs. a hypothetical new
+  // workspace-tab action both claiming plain ⌘T) — every shortcut's
+  // key+shift+alt combination must be unique, or two actions would race for
+  // the same keystroke and `matchShortcut` would silently only ever return
+  // whichever one happens to appear first in the array.
+  it("has no two actions sharing the same key+shift+alt combination", () => {
+    const combos = new Map<string, string[]>();
+    for (const shortcut of KEYMAP) {
+      const combo = `${shortcut.key.toLowerCase()}|shift:${Boolean(shortcut.shift)}|alt:${Boolean(shortcut.alt)}`;
+      const ids = combos.get(combo) ?? [];
+      ids.push(shortcut.id);
+      combos.set(combo, ids);
+    }
+    const collisions = [...combos.entries()].filter(([, ids]) => ids.length > 1);
+    expect(collisions).toEqual([]);
   });
 });

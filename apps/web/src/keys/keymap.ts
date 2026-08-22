@@ -22,6 +22,23 @@
  * pane", Cmd+Shift+T for the theme picker) — Chrome does not reserve any of
  * the Shift variants.
  *
+ * --- Workspace tabs claim the plain forms instead (matching BridgeSpace) ---
+ *
+ * BridgeSpace documents plain Cmd+T/Cmd+W/Cmd+1-9 for workspace-tab actions
+ * (new tab, close tab, switch to tab N). Those exact combos are the same
+ * ones Chrome reserves — so in the browser build they simply never reach
+ * this file's listener, same as every other reserved combo above, and are
+ * harmless no-ops there. In the Tauri desktop build (see the next section)
+ * nothing reserves them, so `new-workspace-tab` (Cmd+T) and
+ * `close-workspace-tab` (Cmd+W) work exactly as BridgeSpace's docs describe.
+ * `theme-picker` and `close-pane` keep their existing Cmd+Shift+T/Cmd+Shift+W
+ * bindings unchanged, but no longer ALSO accept the plain form on desktop
+ * (see `DESKTOP_PLAIN_FORM_IDS` below) — the plain form now belongs to the
+ * new workspace-tab actions instead, and one physical key combo can only
+ * ever mean one action. The nine `focus-pane-N` shortcuts, which used to own
+ * plain Cmd+1-9, move to Cmd+Option+1-9 (`alt: true` below) so Cmd+1-9 can
+ * mean "switch to workspace tab N" instead, matching BridgeSpace.
+ *
  * --- Phase 11a: the desktop build changes this, for real ---
  *
  * The Tauri desktop wrapper (apps/desktop/) runs the exact same webview
@@ -63,10 +80,13 @@ export interface KeyEventLike {
 /**
  * One entry in the shortcut table. Shortcuts always use the platform's
  * "primary" modifier (Cmd on Mac, Ctrl elsewhere — see `matchShortcut`),
- * optionally combined with Shift. None of vibedeck's shortcuts use Alt, so
- * there's no `alt` field; `matchShortcut` rejects any event with Alt held,
- * which also keeps macOS's Option-key dead-key/special-character input
- * (e.g. Option+D → ∂) from ever getting misread as one of our combos.
+ * optionally combined with Shift and/or Alt. Alt is used ONLY by the nine
+ * "focus pane N" shortcuts (Cmd+Option+1-9, freed up so plain Cmd+1-9 can
+ * mean "switch to workspace tab N" instead — see this file's top comment) —
+ * every other shortcut still omits `alt`, and `matchShortcut` rejects any
+ * event holding Alt for those, same protection as before against macOS's
+ * Option-key dead-key/special-character input (e.g. Option+D → ∂) ever
+ * getting misread as one of our combos.
  */
 export interface Shortcut {
   /** Stable id used both to match an event and to look up its handler. */
@@ -79,12 +99,24 @@ export interface Shortcut {
   key: string;
   /** Whether Shift must also be held. Omitted (falsy) means Shift must be UP. */
   shift?: boolean;
+  /** Whether Alt/Option must also be held. Omitted (falsy) means Alt must be
+   * UP. Only ever `true` on the nine "focus pane N" shortcuts — see this
+   * interface's own top comment. */
+  alt?: boolean;
   /**
    * Only set on the nine "focus pane N" shortcuts: the 0-based index (into
    * `listPanes()`'s left-to-right order) that this shortcut focuses. Lets
    * callers (App.tsx, tests) get the index without parsing the id string.
    */
   paneIndex?: number;
+  /**
+   * Only set on the nine "workspace tab N" shortcuts: the 0-based index
+   * (into the workspace tab strip's own left-to-right order, i.e.
+   * `workspaces` array order — see `shell/workspaceTabs.ts`) that this
+   * shortcut switches to. Same "index on the entry, not parsed from the id
+   * string" shape as `paneIndex` above.
+   */
+  workspaceIndex?: number;
 }
 
 /**
@@ -126,17 +158,41 @@ export const KEYMAP: readonly Shortcut[] = [
   {
     id: "close-pane",
     label: "Close pane",
-    description:
-      "Close the focused pane (and its session, if it has one). Desktop build: plain ⌘W also works.",
+    description: "Close the focused pane (and its session, if it has one).",
     key: "w",
     shift: true,
+  },
+  {
+    id: "new-workspace-tab",
+    label: "New workspace tab",
+    // Plain ⌘T: a reserved combo in a browser tab (see this file's top
+    // comment), so this only actually fires in the Tauri desktop build —
+    // harmless no-op in the browser, same as new-pane's/close-pane's own
+    // reserved-combo story used to be before this shortcut existed.
+    description: "Create a new workspace tab. Desktop build only — reserved by the browser tab otherwise.",
+    key: "t",
+  },
+  {
+    id: "close-workspace-tab",
+    label: "Close workspace tab",
+    description:
+      "Close the current workspace tab (through the same delete confirmation as its × button). Desktop build only.",
+    key: "w",
   },
   ...Array.from({ length: 9 }, (_, i) => ({
     id: `focus-pane-${i + 1}`,
     label: `Focus pane ${i + 1}`,
-    description: `Move focus to pane ${i + 1} (left to right, top to bottom).`,
+    description: `Move focus to pane ${i + 1} (left to right, top to bottom). Plain ⌘${i + 1} switches workspace tabs instead.`,
     key: String(i + 1),
+    alt: true,
     paneIndex: i,
+  })),
+  ...Array.from({ length: 9 }, (_, i) => ({
+    id: `workspace-tab-${i + 1}`,
+    label: `Switch to workspace tab ${i + 1}`,
+    description: `Switch to workspace tab ${i + 1} (left to right, as shown in the top bar). Does nothing if there's no tab at that position.`,
+    key: String(i + 1),
+    workspaceIndex: i,
   })),
   {
     id: "cycle-focus-next",
@@ -153,7 +209,7 @@ export const KEYMAP: readonly Shortcut[] = [
   {
     id: "theme-picker",
     label: "Theme picker",
-    description: "Open the theme picker. Desktop build: plain ⌘T also works.",
+    description: "Open the theme picker.",
     key: "t",
     shift: true,
   },
@@ -179,8 +235,9 @@ export const KEYMAP: readonly Shortcut[] = [
   // --- Phase 6: centre-column view switcher ---------------------------
   // The centre column is view-switchable (Terminals/Editor/Preview, see
   // App.tsx's `centerView` state) — these three pick which one shows.
-  // Deliberately NOT Cmd+1/2/3: those nine combos already mean "focus pane
-  // N" (see the `focus-pane-*` block above), and Shift+digit is unreliable
+  // Deliberately NOT Cmd+1/2/3: those nine combos mean "switch to workspace
+  // tab N" (see the `workspace-tab-*` block above; "focus pane N" moved to
+  // Cmd+Option+1-9 to make room for that), and Shift+digit is unreliable
   // across keyboard layouts (Shift+1 reports as "!" in `event.key` on a US
   // layout, not "1" — see matchShortcut's key comparison, which is literal).
   // Plain, unmodified-by-shift letters avoid that AND read as mnemonics —
@@ -320,14 +377,20 @@ export const KEYMAP: readonly Shortcut[] = [
 ];
 
 /**
- * The three shortcut ids whose Shift form exists ONLY because a browser tab
+ * The one shortcut id whose Shift form exists ONLY because a browser tab
  * reserves the plain combo (see this file's top comment). In the desktop
  * build, `matchShortcut`'s `isDesktop` flag additionally accepts the plain
- * form for exactly these ids — nowhere else, so e.g. `split-column`
+ * form for exactly this id — nowhere else, so e.g. `split-column`
  * (Cmd+Shift+D) is unaffected: its Shift never existed to work around a
  * browser reservation in the first place.
+ *
+ * `close-pane` and `theme-picker` used to be in this set too, but plain
+ * ⌘W/⌘T now belong to `close-workspace-tab`/`new-workspace-tab` instead
+ * (see this file's top comment) — one physical combo can only mean one
+ * action, so those two lost their plain-form alias when the workspace-tab
+ * actions claimed it.
  */
-const DESKTOP_PLAIN_FORM_IDS = new Set(["new-pane", "close-pane", "theme-picker"]);
+const DESKTOP_PLAIN_FORM_IDS = new Set(["new-pane"]);
 
 /**
  * Is `event` — under platform `isMac` — one of the shortcuts in `KEYMAP`?
@@ -350,8 +413,6 @@ const DESKTOP_PLAIN_FORM_IDS = new Set(["new-pane", "close-pane", "theme-picker"
  *   file's top comment for why.
  */
 export function matchShortcut(event: KeyEventLike, isMac: boolean, isDesktop = false): string | null {
-  if (event.altKey) return null; // none of our shortcuts use Alt — see the Shortcut doc comment
-
   const primaryHeld = isMac ? event.metaKey : event.ctrlKey;
   const otherModifierHeld = isMac ? event.ctrlKey : event.metaKey;
   if (!primaryHeld || otherModifierHeld) return null;
@@ -360,9 +421,23 @@ export function matchShortcut(event: KeyEventLike, isMac: boolean, isDesktop = f
   for (const shortcut of KEYMAP) {
     if (shortcut.key.toLowerCase() !== key) continue;
 
-    const matchesAsDocumented = Boolean(shortcut.shift) === event.shiftKey;
+    // Alt must match exactly, same as Shift — a shortcut that doesn't
+    // declare `alt: true` (every one of them except the nine focus-pane-N
+    // entries) is rejected the instant Alt is held, which is what used to
+    // be a single blanket `if (event.altKey) return null` up front before
+    // focus-pane-N needed Alt for real. Folding it into this per-shortcut
+    // comparison (instead of a global early return) is what lets
+    // focus-pane-N's `alt: true` actually match while every other shortcut
+    // keeps rejecting Alt exactly as before.
+    const matchesAsDocumented =
+      Boolean(shortcut.shift) === event.shiftKey && Boolean(shortcut.alt) === event.altKey;
     const matchesAsDesktopPlainForm =
-      isDesktop && shortcut.shift === true && !event.shiftKey && DESKTOP_PLAIN_FORM_IDS.has(shortcut.id);
+      isDesktop &&
+      shortcut.shift === true &&
+      !shortcut.alt &&
+      !event.shiftKey &&
+      !event.altKey &&
+      DESKTOP_PLAIN_FORM_IDS.has(shortcut.id);
     if (!matchesAsDocumented && !matchesAsDesktopPlainForm) continue;
 
     return shortcut.id;
@@ -385,9 +460,10 @@ const KEY_DISPLAY_OVERRIDES: Record<string, string> = {
  */
 export function formatShortcut(shortcut: Shortcut, isMac: boolean): string {
   const mod = isMac ? "⌘" : "Ctrl+";
+  const alt = shortcut.alt ? (isMac ? "⌥" : "Alt+") : "";
   const shift = shortcut.shift ? (isMac ? "⇧" : "Shift+") : "";
   const keyDisplay = KEY_DISPLAY_OVERRIDES[shortcut.key] ?? shortcut.key.toUpperCase();
-  return `${mod}${shift}${keyDisplay}`;
+  return `${mod}${alt}${shift}${keyDisplay}`;
 }
 
 /**

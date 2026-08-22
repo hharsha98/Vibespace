@@ -48,6 +48,8 @@ export interface WorkspaceRailProps {
   onCommitRename: () => void;
   onCancelRename: () => void;
   renameError: string | null;
+  /** Why a delete failed, if it did — see the confirmation block below. */
+  deleteError: string | null;
 
   pendingDeleteWorkspaceId: string | null;
   onRequestDelete: (id: string) => void;
@@ -92,6 +94,7 @@ export default function WorkspaceRail(props: WorkspaceRailProps) {
     onCommitRename,
     onCancelRename,
     renameError,
+    deleteError,
     pendingDeleteWorkspaceId,
     onRequestDelete,
     onConfirmDelete,
@@ -395,6 +398,13 @@ export default function WorkspaceRail(props: WorkspaceRailProps) {
             {workspaces.find((w) => w.id === pendingDeleteWorkspaceId)?.name ?? pendingDeleteWorkspaceId}"?
             Running sessions keep running — only the workspace entry and its saved layout go away.
           </p>
+          {/* A delete that failed used to remove the workspace from the UI
+              anyway, so it looked deleted and then reappeared on the next
+              launch. It now stays put and says why, right where the user
+              asked for it. */}
+          {deleteError && (
+            <p style={{ fontSize: 11, color: "var(--vd-danger)", margin: 0 }}>{deleteError}</p>
+          )}
           <div style={{ display: "flex", gap: 6 }}>
             <button onClick={onConfirmDelete} style={primaryButtonStyle}>
               Delete
