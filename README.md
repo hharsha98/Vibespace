@@ -23,6 +23,16 @@ Think of it as a mission control screen for AI coding agents:
 (here: AI coding agents editing code, running commands, etc.) rather than
 just answering questions.
 
+## See it work
+
+![vibedeck demo — launching a shell and Claude Code side by side, splitting panes, the task board, and settings](./docs/vibedeck-demo.gif)
+
+Recorded from a real session, not a mockup. In order: an empty pane offers
+the agents actually installed on your machine → a real shell runs
+`git log` → the pane splits → Claude Code starts in the other half, so two
+agents are live at once → the task board → settings → back to the grid
+with both still running.
+
 ## Download
 
 **[Get v0.1.2 →](https://github.com/hharsha98/vibedeck/releases/latest)**
