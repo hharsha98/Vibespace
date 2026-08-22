@@ -40,6 +40,7 @@ import CommandPalette, { type PaletteCommand } from "./CommandPalette.js";
 import KeyboardCheatSheet from "./KeyboardCheatSheet.js";
 import WorkspaceRail from "./shell/WorkspaceRail.js";
 import WorkspaceTabStrip from "./shell/WorkspaceTabStrip.js";
+import { templateLabel } from "./grid/templateNames.js";
 import { workspaceIdForTabIndex } from "./shell/workspaceTabs.js";
 import RightDock from "./shell/RightDock.js";
 import Logo from "./shell/Logo.js";
@@ -1350,7 +1351,9 @@ export default function App() {
     for (const n of TEMPLATE_SIZES) {
       commands.push({
         id: `layout-${n}`,
-        label: `Layout: ${n} pane${n === 1 ? "" : "s"}`,
+        // "Layout: Quad (4)" rather than "Layout: 4 panes" — BridgeSpace
+        // names its templates, and the count stays visible either way.
+        label: `Layout: ${templateLabel(n)}`,
         category: "Layout",
         run: () => applyTemplate(n),
       });
@@ -1468,6 +1471,7 @@ export default function App() {
           onCommitRename={() => void commitRename()}
           onCancelRename={cancelRename}
           renameError={renameError}
+          runningCount={workspacePaneCount}
           onSetWorkspaceColor={(id, color) => void setWorkspaceColor(id, color)}
         />
 

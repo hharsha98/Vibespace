@@ -60,6 +60,11 @@ export interface WorkspaceTabsProps {
    * — the same silent-failure shape the delete path had. */
   renameError: string | null;
 
+  /** How many sessions are running in a workspace. The old rail showed
+   * this per row; a tab strip that dropped it would quietly remove the
+   * only at-a-glance answer to "which workspace has agents working". */
+  runningCount: (workspace: Workspace) => number;
+
   /** Sets (or clears, with null) a workspace's colour. Reached by clicking
    * the tab's own colour dot. Like rename, this only had a home in the
    * rail's workspace list — a tab that shows a colour with no way to change
@@ -80,6 +85,7 @@ export default function WorkspaceTabs({
   onCommitRename,
   onCancelRename,
   renameError,
+  runningCount,
   onSetWorkspaceColor,
 }: WorkspaceTabsProps) {
   const tabs = deriveWorkspaceTabs(workspaces);
@@ -89,6 +95,11 @@ export default function WorkspaceTabs({
   // local for the same reason the rail kept it local rather than lifting
   // it into App.tsx.
   const [colorPickerOpenId, setColorPickerOpenId] = useState<string | null>(null);
+
+  // Counted once per render rather than inside the map, so the lookup below
+  // stays a plain read.
+  const runningTotals: Record<string, number> = {};
+  for (const w of workspaces) runningTotals[w.id] = runningCount(w);
 
   // WAI-ARIA's horizontal-tabs pattern, with selection following focus —
   // the same behaviour Settings.tsx's rail already implements, so the two
@@ -160,6 +171,13 @@ export default function WorkspaceTabs({
                 style={tabButtonStyle(active)}
               >
                 <span style={labelStyle}>{tab.name}</span>
+                {/* Only when something is actually running — a "0" on every
+                    idle tab would be noise competing with the names. */}
+                {runningTotals[tab.id] > 0 && (
+                  <span style={countStyle} title={`${runningTotals[tab.id]} running`}>
+                    {runningTotals[tab.id]}
+                  </span>
+                )}
               </button>
 
               {/* The colour dot is its own button so it can open the
@@ -317,6 +335,17 @@ const renameErrorStyle: CSSProperties = {
   borderRadius: RADIUS.sm,
   color: "var(--vd-danger)",
   fontSize: FONT.meta,
+};
+
+const countStyle: CSSProperties = {
+  padding: "0 4px",
+  borderRadius: RADIUS.sm,
+  background: "var(--vd-surface)",
+  border: "1px solid var(--vd-border)",
+  color: "var(--vd-text-faint)",
+  fontSize: FONT.meta,
+  lineHeight: "14px",
+  flexShrink: 0,
 };
 
 const labelStyle: CSSProperties = {
