@@ -8,7 +8,7 @@
  * `get_agent`, `create_agent`, `update_agent`, `delete_agent`.
  */
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { AGENT_IDS, AGENT_PROFILE_SYSTEM_PROMPT_MAX_LENGTH, type AgentId } from "@vibedeck/shared";
+import { AGENT_IDS, AGENT_PROFILE_SYSTEM_PROMPT_MAX_LENGTH, type AgentId } from "@vibespace/shared";
 import type { AgentProfileStore, UpdateAgentProfileOptions } from "./store.js";
 import { jsonResult, errorResult } from "../mcp/result.js";
 

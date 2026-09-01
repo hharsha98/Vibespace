@@ -1,10 +1,10 @@
 {
-  "name": "@vibedeck/desktop",
+  "name": "@vibespace/desktop",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "pnpm --filter @vibedeck/web build",
+    "build": "pnpm --filter @vibespace/web build",
     "build:server-resources": "node scripts/build-server-resources.mjs",
     "tauri": "tauri",
     "tauri:dev": "pnpm run build && tauri dev",

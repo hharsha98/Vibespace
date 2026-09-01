@@ -6,7 +6,7 @@ import type {
   SshProfilesResponse,
   Workspace,
   WorkspaceRestoreResponse,
-} from "@vibedeck/shared";
+} from "@vibespace/shared";
 import Grid from "./grid/Grid.js";
 import type { AgentOption } from "./grid/PaneView.js";
 import {
@@ -26,6 +26,7 @@ import {
 } from "./grid/tree.js";
 import { KEYMAP, formatShortcut, isMacPlatform } from "./keys/keymap.js";
 import { useKeyboardShortcuts, type ShortcutHandlers } from "./keys/useKeyboardShortcuts.js";
+import { readWithLegacyFallback } from "./settings/legacyStorage.js";
 import { getBlocksSnapshot, scrollSessionToLine } from "./term/blockStore.js";
 import {
   DEFAULT_THEME_ID,
@@ -132,7 +133,7 @@ function layoutToTree(layout: string | null, sessions: SessionInfo[]): GridNode 
     return pruneDeadSessions(parsed, new Set(sessions.map((s) => s.id)));
   } catch (err) {
     console.warn(
-      "vibedeck: failed to parse a saved workspace layout, starting with an empty pane instead",
+      "vibespace: failed to parse a saved workspace layout, starting with an empty pane instead",
       err
     );
     return createLeaf(null);
@@ -186,7 +187,7 @@ function restoreWorkspaceSessions(
       });
     })
     .catch((err: unknown) => {
-      console.warn("vibedeck: failed to restore workspace sessions", err);
+      console.warn("vibespace: failed to restore workspace sessions", err);
     });
 }
 
@@ -197,14 +198,12 @@ function restoreWorkspaceSessions(
 // (rather than surfacing an error) is the right call here: "the rail
 // forgets it was collapsed" is not worth interrupting anyone over.
 
-function loadBoolPref(key: string, fallback: boolean): boolean {
-  if (typeof window === "undefined") return fallback;
-  try {
-    const raw = window.localStorage.getItem(key);
-    return raw === null ? fallback : raw === "true";
-  } catch {
-    return fallback;
-  }
+// `legacyKey` is the pre-rename `vibedeck.*` name for the same preference —
+// see `legacyStorage.ts`'s top comment for why every persisted preference
+// in this app reads one as a fallback.
+function loadBoolPref(key: string, legacyKey: string, fallback: boolean): boolean {
+  const raw = readWithLegacyFallback(key, legacyKey);
+  return raw === null ? fallback : raw === "true";
 }
 
 function saveBoolPref(key: string, value: boolean): void {
@@ -216,11 +215,13 @@ function saveBoolPref(key: string, value: boolean): void {
   }
 }
 
-const RAIL_COLLAPSED_KEY = "vibedeck.rail.collapsed";
+const RAIL_COLLAPSED_KEY = "vibespace.rail.collapsed";
+const LEGACY_RAIL_COLLAPSED_KEY = "vibedeck.rail.collapsed";
 // The right dock ships with only one tab (Info) — DESIGN.md is explicit
 // that it should be "collapsed/hidden by default" until Phases 7/8/10 give
 // it real content, hence `true` as the fallback (vs. the rail's `false`).
-const DOCK_COLLAPSED_KEY = "vibedeck.dock.collapsed";
+const DOCK_COLLAPSED_KEY = "vibespace.dock.collapsed";
+const LEGACY_DOCK_COLLAPSED_KEY = "vibedeck.dock.collapsed";
 
 // Phase 9.5c (PARITY #45, Settings screen): the default-agent picker existed
 // in the nav bar since Phase 2 but was NEVER actually persisted — it reset
@@ -230,15 +231,11 @@ const DOCK_COLLAPSED_KEY = "vibedeck.dock.collapsed";
 // established persistence mechanism (there is no other settings store), so
 // Settings.tsx's new preferences follow it too rather than inventing a
 // second one.
-const DEFAULT_AGENT_KEY = "vibedeck.defaultAgent";
+const DEFAULT_AGENT_KEY = "vibespace.defaultAgent";
+const LEGACY_DEFAULT_AGENT_KEY = "vibedeck.defaultAgent";
 
 function loadStoredDefaultAgent(): string | null {
-  if (typeof window === "undefined") return null;
-  try {
-    return window.localStorage.getItem(DEFAULT_AGENT_KEY);
-  } catch {
-    return null; // Private-browsing Safari throws on access, not just on write.
-  }
+  return readWithLegacyFallback(DEFAULT_AGENT_KEY, LEGACY_DEFAULT_AGENT_KEY);
 }
 
 function saveDefaultAgent(id: string): void {
@@ -251,8 +248,8 @@ function saveDefaultAgent(id: string): void {
   }
 }
 
-// --- `?workspace=<id>` deep link (the `vibedeck` CLI, apps/server/src/cli) -
-// `vibedeck [path]` ensures a workspace exists for that path, then opens the
+// --- `?workspace=<id>` deep link (the `vibespace` CLI, apps/server/src/cli) -
+// `vibespace [path]` ensures a workspace exists for that path, then opens the
 // browser at `/?workspace=<id>` so the RIGHT workspace is selected instead
 // of whichever one happens to be first (see `tryInitRoot` below) — without
 // this, the CLI would open the app but the user would still have to click
@@ -351,8 +348,12 @@ export default function App() {
   const [pendingTemplate, setPendingTemplate] = useState<number | null>(null);
 
   // --- Left rail / right dock collapsed state -------------------------------
-  const [railCollapsed, setRailCollapsedState] = useState(() => loadBoolPref(RAIL_COLLAPSED_KEY, false));
-  const [dockCollapsed, setDockCollapsedState] = useState(() => loadBoolPref(DOCK_COLLAPSED_KEY, true));
+  const [railCollapsed, setRailCollapsedState] = useState(() =>
+    loadBoolPref(RAIL_COLLAPSED_KEY, LEGACY_RAIL_COLLAPSED_KEY, false)
+  );
+  const [dockCollapsed, setDockCollapsedState] = useState(() =>
+    loadBoolPref(DOCK_COLLAPSED_KEY, LEGACY_DOCK_COLLAPSED_KEY, true)
+  );
 
   const toggleRailCollapsed = useCallback(() => {
     setRailCollapsedState((prev) => {
@@ -522,7 +523,7 @@ export default function App() {
         if (initial) setDefaultAgent(initial.id);
       })
       .catch((err: unknown) => {
-        console.warn("vibedeck: failed to load agents", err);
+        console.warn("vibespace: failed to load agents", err);
       });
 
     // Sessions and workspaces load independently, but building the initial
@@ -565,7 +566,7 @@ export default function App() {
         tryInitRoot();
       })
       .catch((err: unknown) => {
-        console.warn("vibedeck: failed to load sessions", err);
+        console.warn("vibespace: failed to load sessions", err);
         loadedSessions = []; // still let workspace/root init proceed
         tryInitRoot();
       });
@@ -576,7 +577,7 @@ export default function App() {
         tryInitRoot();
       })
       .catch((err: unknown) => {
-        console.warn("vibedeck: failed to load workspaces", err);
+        console.warn("vibespace: failed to load workspaces", err);
         loadedWorkspaces = [];
         tryInitRoot();
       });
@@ -607,7 +608,7 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ layout: JSON.stringify(root) }),
       }).catch((err: unknown) => {
-        console.warn("vibedeck: failed to autosave workspace layout", err);
+        console.warn("vibespace: failed to autosave workspace layout", err);
       });
     }, 500);
     return () => clearTimeout(saveTimerRef.current);
@@ -751,7 +752,7 @@ export default function App() {
             // Same "warn, leave that half of the split empty" fallback
             // PaneView.tsx's own single-agent startSession uses on failure
             // — the other agent (if it already started) keeps running.
-            console.warn(`vibedeck: failed to start "${agent}" during multi-launch`, err);
+            console.warn(`vibespace: failed to start "${agent}" during multi-launch`, err);
           });
 
       void startOne(firstAgent, paneId);
@@ -874,7 +875,7 @@ export default function App() {
     const pane = findPane(root, focusedPaneId);
     if (pane?.kind === "leaf" && pane.sessionId) {
       fetch(`/api/sessions/${pane.sessionId}`, { method: "DELETE" }).catch((err: unknown) => {
-        console.warn("vibedeck: failed to close session via keyboard shortcut", err);
+        console.warn("vibespace: failed to close session via keyboard shortcut", err);
       });
     }
     handleClosePane(focusedPaneId);
@@ -966,7 +967,7 @@ export default function App() {
         const info = (await res.json()) as SessionInfo;
         handleSessionStarted(focusedPaneId, info);
       } catch (err) {
-        console.warn("vibedeck: failed to start an agent from the command palette", err);
+        console.warn("vibespace: failed to start an agent from the command palette", err);
       }
     },
     [root, focusedPaneId, activeWorkspaceId, handleSessionStarted]
@@ -996,7 +997,7 @@ export default function App() {
         const info = (await res.json()) as SessionInfo;
         handleSessionStarted(focusedPaneId, info);
       } catch (err) {
-        console.warn("vibedeck: failed to start an SSH session from the command palette", err);
+        console.warn("vibespace: failed to start an SSH session from the command palette", err);
       }
     },
     [root, focusedPaneId, activeWorkspaceId, handleSessionStarted]
@@ -1025,7 +1026,7 @@ export default function App() {
     for (const pane of listPanes(root)) {
       if (pane.sessionId) {
         fetch(`/api/sessions/${pane.sessionId}`, { method: "DELETE" }).catch((err: unknown) => {
-          console.warn("vibedeck: failed to close session while applying a new template", err);
+          console.warn("vibespace: failed to close session while applying a new template", err);
         });
       }
     }
@@ -1057,7 +1058,7 @@ export default function App() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ layout: JSON.stringify(root) }),
         }).catch((err: unknown) => {
-          console.warn("vibedeck: failed to save the outgoing workspace's layout", err);
+          console.warn("vibespace: failed to save the outgoing workspace's layout", err);
         });
       }
 
@@ -1164,7 +1165,7 @@ export default function App() {
       const updated = body as Workspace;
       setWorkspaces((prev) => prev.map((w) => (w.id === updated.id ? updated : w)));
     } catch (err) {
-      console.warn("vibedeck: failed to set workspace colour", err);
+      console.warn("vibespace: failed to set workspace colour", err);
     }
   }, []);
 
@@ -1189,7 +1190,7 @@ export default function App() {
     // happened, which is the worse half: the workspace vanished from the
     // tab strip, looked deleted, and came back on the next launch because
     // the server still had it. Observed exactly that, with the row still
-    // present in ~/.vibedeck/vibedeck.db after the tab was gone.
+    // present in ~/.vibespace/vibespace.db after the tab was gone.
     //
     // Now a failure leaves the workspace visible and says so, which is the
     // honest outcome — the alternative is a UI that lies about what it did.
@@ -1476,7 +1477,7 @@ export default function App() {
       >
         <Logo size={16} accent="var(--vd-accent)" />
         <strong style={{ fontSize: FONT.title, fontWeight: 600, letterSpacing: "-0.01em", flexShrink: 0 }}>
-          vibedeck
+          vibespace
         </strong>
 
         <StatusDot status={healthStatusKind} title={healthTitle} />
@@ -1746,7 +1747,7 @@ export default function App() {
                 <div style={{ textAlign: "center", maxWidth: 420 }}>
                   <p style={{ color: "var(--vd-text-muted)", marginBottom: 12, fontSize: 12 }}>
                     No workspaces yet. A workspace is a project directory — panes you start spawn
-                    there instead of vibedeck's own install folder.
+                    there instead of vibespace's own install folder.
                   </p>
                   <input
                     placeholder="Name (e.g. my-project)"

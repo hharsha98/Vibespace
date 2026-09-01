@@ -9,7 +9,7 @@
  * just request validation + wiring.
  */
 import type { FastifyInstance } from "fastify";
-import type { MemoryNoteWithBacklinks } from "@vibedeck/shared";
+import type { MemoryNoteWithBacklinks } from "@vibespace/shared";
 import type { WorkspaceStore } from "../db/workspaces.js";
 import * as memoryStore from "./store.js";
 import { buildGraph } from "./links.js";

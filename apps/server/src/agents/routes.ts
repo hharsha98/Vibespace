@@ -22,7 +22,7 @@
  * of one endpoint doing two jobs.
  */
 import type { FastifyInstance } from "fastify";
-import { AGENT_IDS, AGENT_PROFILE_SYSTEM_PROMPT_MAX_LENGTH, type AgentId } from "@vibedeck/shared";
+import { AGENT_IDS, AGENT_PROFILE_SYSTEM_PROMPT_MAX_LENGTH, type AgentId } from "@vibespace/shared";
 import type { WorkspaceStore } from "../db/workspaces.js";
 import type { AgentProfileStore, UpdateAgentProfileOptions } from "./store.js";
 import { isAgentId } from "../pty/agents.js";

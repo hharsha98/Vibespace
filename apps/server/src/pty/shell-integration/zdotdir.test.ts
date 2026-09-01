@@ -10,14 +10,14 @@ import {
   resolveRealZdotdir,
 } from "./zdotdir.js";
 
-// A tiny fixture script stands in for the real vibedeck-integration.zsh in
+// A tiny fixture script stands in for the real vibespace-integration.zsh in
 // most of these tests — its actual content isn't this file's concern (that's
 // covered by reading it directly in production, and by hand-testing in a
 // real terminal per the phase's verification steps); what matters here is
 // that `createShellIntegrationDir` copies WHATEVER is at the given path,
 // unmodified, into the temp dir.
 function makeFixtureScript(): string {
-  const dir = mkdtempSync(join(tmpdir(), "vibedeck-fixture-"));
+  const dir = mkdtempSync(join(tmpdir(), "vibespace-fixture-"));
   const path = join(dir, "fixture-integration.zsh");
   writeFileSync(path, "# fixture integration script\n", "utf8");
   return path;
@@ -40,22 +40,22 @@ describe("resolveRealZdotdir", () => {
 });
 
 describe("generateRcFileContent", () => {
-  it("every generated file sources the user's real config first, via $_VIBEDECK_REAL_ZDOTDIR", () => {
+  it("every generated file sources the user's real config first, via $_VIBESPACE_REAL_ZDOTDIR", () => {
     for (const fileName of [".zshenv", ".zprofile", ".zshrc", ".zlogin"] as const) {
       const content = generateRcFileContent(fileName, fileName === ".zshrc");
-      expect(content).toContain(`$_VIBEDECK_REAL_ZDOTDIR/${fileName}`);
-      expect(content).toContain(`source "$_VIBEDECK_REAL_ZDOTDIR/${fileName}"`);
+      expect(content).toContain(`$_VIBESPACE_REAL_ZDOTDIR/${fileName}`);
+      expect(content).toContain(`source "$_VIBESPACE_REAL_ZDOTDIR/${fileName}"`);
     }
   });
 
-  it("only .zshrc appends the vibedeck integration sourcing", () => {
+  it("only .zshrc appends the vibespace integration sourcing", () => {
     const zshrc = generateRcFileContent(".zshrc", true);
-    expect(zshrc).toContain("vibedeck-integration.zsh");
-    expect(zshrc).toContain('source "$ZDOTDIR/vibedeck-integration.zsh"');
+    expect(zshrc).toContain("vibespace-integration.zsh");
+    expect(zshrc).toContain('source "$ZDOTDIR/vibespace-integration.zsh"');
 
     for (const fileName of [".zshenv", ".zprofile", ".zlogin"] as const) {
       const content = generateRcFileContent(fileName, false);
-      expect(content).not.toContain("vibedeck-integration.zsh");
+      expect(content).not.toContain("vibespace-integration.zsh");
     }
   });
 
@@ -65,7 +65,7 @@ describe("generateRcFileContent", () => {
     // guard is what keeps that from breaking every "shell" pane for anyone
     // who doesn't happen to have all four dotfiles.
     const content = generateRcFileContent(".zshrc", true);
-    expect(content).toMatch(/\[\[ -f "\$_VIBEDECK_REAL_ZDOTDIR\/\.zshrc" \]\]/);
+    expect(content).toMatch(/\[\[ -f "\$_VIBESPACE_REAL_ZDOTDIR\/\.zshrc" \]\]/);
   });
 });
 
@@ -90,7 +90,7 @@ describe("createShellIntegrationDir", () => {
 
     const entries = readdirSync(dir).sort();
     expect(entries).toEqual(
-      [".zlogin", ".zprofile", ".zshenv", ".zshrc", "vibedeck-integration.zsh"].sort()
+      [".zlogin", ".zprofile", ".zshenv", ".zshrc", "vibespace-integration.zsh"].sort()
     );
 
     for (const entry of entries) {
@@ -103,7 +103,7 @@ describe("createShellIntegrationDir", () => {
     const dir = createShellIntegrationDir(scriptPath);
     createdDirs.push(dir);
 
-    const copied = readFileSync(join(dir, "vibedeck-integration.zsh"), "utf8");
+    const copied = readFileSync(join(dir, "vibespace-integration.zsh"), "utf8");
     const original = readFileSync(scriptPath, "utf8");
     expect(copied).toBe(original);
   });
@@ -118,20 +118,20 @@ describe("createShellIntegrationDir", () => {
 });
 
 describe("ShellIntegrationManager", () => {
-  it("returns ZDOTDIR + _VIBEDECK_REAL_ZDOTDIR env overrides by default", () => {
+  it("returns ZDOTDIR + _VIBESPACE_REAL_ZDOTDIR env overrides by default", () => {
     const manager = new ShellIntegrationManager({}, "/Users/fake-home");
     try {
       const env = manager.getEnvForShell({});
       expect(env).not.toBeNull();
       expect(env!.ZDOTDIR.startsWith(tmpdir())).toBe(true);
-      expect(env!._VIBEDECK_REAL_ZDOTDIR).toBe("/Users/fake-home");
+      expect(env!._VIBESPACE_REAL_ZDOTDIR).toBe("/Users/fake-home");
     } finally {
       manager.dispose();
     }
   });
 
   it("never writes anything under the real (fake) home directory it was given", () => {
-    const fakeHome = join(tmpdir(), `vibedeck-fake-home-${Date.now()}`);
+    const fakeHome = join(tmpdir(), `vibespace-fake-home-${Date.now()}`);
     // Deliberately do NOT create fakeHome — if this manager ever tried to
     // write into it, we'd see it appear.
     const manager = new ShellIntegrationManager({}, fakeHome);
@@ -143,7 +143,7 @@ describe("ShellIntegrationManager", () => {
     }
   });
 
-  it("is disabled by VIBEDECK_DISABLE_SHELL_INTEGRATION=1 — no env overrides, no temp dir", () => {
+  it("is disabled by VIBESPACE_DISABLE_SHELL_INTEGRATION=1 — no env overrides, no temp dir", () => {
     const manager = new ShellIntegrationManager({}, "/Users/fake-home");
     try {
       const env = manager.getEnvForShell({ [DISABLE_ENV_VAR]: "1" });

@@ -3,7 +3,7 @@
  * at the top of a memory note (see store.ts's top comment for the file
  * format). Deliberately NOT a real YAML parser — a `js-yaml` dependency
  * would be massive overkill for four flat fields (`title`, `tags`,
- * `created`, `updated`) that vibedeck itself always writes in exactly the
+ * `created`, `updated`) that vibespace itself always writes in exactly the
  * same shape, and pulling one in was explicitly ruled out by this phase's
  * spec. This file is the whole of that decision: a well-tested regex split
  * plus a few line parsers, nothing more.
@@ -43,7 +43,7 @@ export interface ParsedFrontmatter {
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
 
 /** Parses a `tags:` value into a string array. Supports the bracketed form
- * vibedeck itself writes (`[parser, design]`, or `[]` for no tags) and,
+ * vibespace itself writes (`[parser, design]`, or `[]` for no tags) and,
  * defensively, a single bare word with no brackets — anything else parses
  * to an empty list rather than throwing, per this module's "never throw on
  * malformed input" contract. */

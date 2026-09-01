@@ -170,16 +170,16 @@ describe("matchShortcut", () => {
 });
 
 describe("hasDesktopMarker", () => {
-  it("is true only for the exact ?vibedeckDesktop=1 marker the desktop wrapper appends", () => {
-    expect(hasDesktopMarker("?vibedeckDesktop=1")).toBe(true);
-    expect(hasDesktopMarker("?foo=bar&vibedeckDesktop=1")).toBe(true);
+  it("is true only for the exact ?vibespaceDesktop=1 marker the desktop wrapper appends", () => {
+    expect(hasDesktopMarker("?vibespaceDesktop=1")).toBe(true);
+    expect(hasDesktopMarker("?foo=bar&vibespaceDesktop=1")).toBe(true);
   });
 
   it("is false for a plain browser URL, an unrelated query string, or a wrong/empty value", () => {
     expect(hasDesktopMarker("")).toBe(false);
     expect(hasDesktopMarker("?foo=bar")).toBe(false);
-    expect(hasDesktopMarker("?vibedeckDesktop=0")).toBe(false);
-    expect(hasDesktopMarker("?vibedeckDesktop=true")).toBe(false);
+    expect(hasDesktopMarker("?vibespaceDesktop=0")).toBe(false);
+    expect(hasDesktopMarker("?vibespaceDesktop=true")).toBe(false);
   });
 });
 

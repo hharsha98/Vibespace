@@ -21,9 +21,9 @@ let dispose: (() => void) | null;
 const MISSION_ID = "mission-watch";
 
 beforeEach(() => {
-  dataDir = mkdtempSync(join(tmpdir(), "vibedeck-watch-test-"));
-  process.env.VIBEDECK_DATA_DIR = dataDir;
-  workspaceRoot = mkdtempSync(join(tmpdir(), "vibedeck-watch-workspace-"));
+  dataDir = mkdtempSync(join(tmpdir(), "vibespace-watch-test-"));
+  process.env.VIBESPACE_DATA_DIR = dataDir;
+  workspaceRoot = mkdtempSync(join(tmpdir(), "vibespace-watch-workspace-"));
   mkdirSync(join(workspaceRoot, "src"), { recursive: true });
   store = new ClaimsStore();
   dispose = null;
@@ -32,7 +32,7 @@ beforeEach(() => {
 afterEach(() => {
   dispose?.();
   store.close();
-  delete process.env.VIBEDECK_DATA_DIR;
+  delete process.env.VIBESPACE_DATA_DIR;
   rmSync(dataDir, { recursive: true, force: true });
   rmSync(workspaceRoot, { recursive: true, force: true });
 });

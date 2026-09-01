@@ -1,6 +1,6 @@
 /**
  * The Prompts library (Phase 9.5b, PARITY #27): CRUD for saved, reusable
- * prompt text — see `@vibedeck/shared`'s `SavedPrompt` doc comment for the
+ * prompt text — see `@vibespace/shared`'s `SavedPrompt` doc comment for the
  * GLOBAL (`workspaceId: null`, available in every workspace) vs.
  * workspace-scoped split this view makes visually obvious throughout (list
  * grouping, a pill on every row, and a toggle in the create form), per this
@@ -33,7 +33,7 @@
  * of that and covers the same "reuse a saved prompt" need with a paste.
  */
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
-import type { SavedPrompt } from "@vibedeck/shared";
+import type { SavedPrompt } from "@vibespace/shared";
 import { Button, EmptyState, ListRow, Pill } from "../shell/ui.js";
 import { FONT, RADIUS, SPACE } from "../shell/tokens.js";
 import { groupPromptsByScope } from "./logic.js";

@@ -1,13 +1,13 @@
 # Shared agent memory (Phase 8)
 
 Memory is **plain markdown files on disk**, one per note, at
-`<workspace-root>/.vibedeck/memory/<slug>.md`. It is deliberately not a
+`<workspace-root>/.vibespace/memory/<slug>.md`. It is deliberately not a
 database: notes live next to the code they're about, are readable in any
 editor or with a plain `cat`, and can be committed to git along with the
 rest of the project (or `.gitignore`d, if you'd rather keep them local —
-that's your call, vibedeck doesn't force either way).
+that's your call, Vibespace doesn't force either way).
 
-The point of this phase: every coding agent working in a vibedeck workspace
+The point of this phase: every coding agent working in a Vibespace workspace
 — Claude Code, cursor-agent, Codex, or a human reading the Memory tab —
 reads and writes the **same** notes. What one agent learns, the next one
 starts with.
@@ -77,13 +77,13 @@ error codes). Summary:
 ## The MCP server
 
 This is the part that makes memory genuinely *shared* across different
-agent CLIs, not just something the vibedeck web UI happens to show. One
+agent CLIs, not just something the Vibespace web UI happens to show. One
 process, one workspace, talking [MCP](https://modelcontextprotocol.io) over
 stdio.
 
 As of Phase 9.5b, this is no longer a memory-only server: the SAME process
 also exposes the board, agent profiles, and the prompts library as MCP
-tools, plus a `vibedeck_developer_guide` MCP *prompt* that onboards a
+tools, plus a `vibespace_developer_guide` MCP *prompt* that onboards a
 connected agent into the whole workflow. See `apps/server/src/mcp/build-server.ts`'s
 top comment for why board/agents/prompts share this one process rather
 than a second server, and [docs/AGENT-API.md](./AGENT-API.md#board-agents-and-prompts-over-mcp-phase-95b)
@@ -110,7 +110,7 @@ process gives you all of it.
 
 A **tool** is something an agent calls; a **prompt** is boilerplate text an
 MCP client can insert into the conversation on request (e.g. Claude Code's
-`/mcp` prompt picker) — `vibedeck_developer_guide` is the latter, not
+`/mcp` prompt picker) — `vibespace_developer_guide` is the latter, not
 something you `callTool` on. See `apps/server/src/mcp/developer-guide.ts`
 for its exact text.
 
@@ -149,20 +149,20 @@ verified expected output.
 After `pnpm build` at the repo root:
 
 ```bash
-node /absolute/path/to/vibedeck/apps/server/dist/memory/mcp-server.js /absolute/path/to/your/workspace
+node /absolute/path/to/vibespace/apps/server/dist/memory/mcp-server.js /absolute/path/to/your/workspace
 ```
 
 For local development without building first:
 
 ```bash
-cd /absolute/path/to/vibedeck/apps/server
+cd /absolute/path/to/vibespace/apps/server
 pnpm memory-mcp /absolute/path/to/your/workspace
 ```
 
 The single required argument is the **workspace root** — the same
-directory a vibedeck `Workspace.rootPath` points at, i.e. the project
-directory whose `.vibedeck/memory/` you want this server to read and write.
-One MCP server process per workspace; if you work in multiple vibedeck
+directory a Vibespace `Workspace.rootPath` points at, i.e. the project
+directory whose `.vibespace/memory/` you want this server to read and write.
+One MCP server process per workspace; if you work in multiple Vibespace
 workspaces, configure one entry per workspace root.
 
 ### Connecting Claude Code
@@ -173,10 +173,10 @@ Project-scoped (drop this in the project's `.mcp.json`, or run
 ```json
 {
   "mcpServers": {
-    "vibedeck-memory": {
+    "vibespace-memory": {
       "command": "node",
       "args": [
-        "/absolute/path/to/vibedeck/apps/server/dist/memory/mcp-server.js",
+        "/absolute/path/to/vibespace/apps/server/dist/memory/mcp-server.js",
         "/absolute/path/to/your/workspace"
       ]
     }
@@ -187,7 +187,7 @@ Project-scoped (drop this in the project's `.mcp.json`, or run
 Or via the CLI, from inside your workspace:
 
 ```bash
-claude mcp add vibedeck-memory -- node /absolute/path/to/vibedeck/apps/server/dist/memory/mcp-server.js /absolute/path/to/your/workspace
+claude mcp add vibespace-memory -- node /absolute/path/to/vibespace/apps/server/dist/memory/mcp-server.js /absolute/path/to/your/workspace
 ```
 
 ### Connecting Cursor
@@ -198,10 +198,10 @@ Add to `.cursor/mcp.json` (project-scoped) or `~/.cursor/mcp.json`
 ```json
 {
   "mcpServers": {
-    "vibedeck-memory": {
+    "vibespace-memory": {
       "command": "node",
       "args": [
-        "/absolute/path/to/vibedeck/apps/server/dist/memory/mcp-server.js",
+        "/absolute/path/to/vibespace/apps/server/dist/memory/mcp-server.js",
         "/absolute/path/to/your/workspace"
       ]
     }
@@ -214,10 +214,10 @@ Add to `.cursor/mcp.json` (project-scoped) or `~/.cursor/mcp.json`
 Codex reads MCP servers from `~/.codex/config.toml`:
 
 ```toml
-[mcp_servers.vibedeck-memory]
+[mcp_servers.vibespace-memory]
 command = "node"
 args = [
-  "/absolute/path/to/vibedeck/apps/server/dist/memory/mcp-server.js",
+  "/absolute/path/to/vibespace/apps/server/dist/memory/mcp-server.js",
   "/absolute/path/to/your/workspace",
 ]
 ```
@@ -244,7 +244,7 @@ a `Client` to the actual composed server over the SDK's `InMemoryTransport`
 (two linked in-process transports, one for each end — no stdio, no child
 process) and drives it through `tools/list`, `create_task` -> `list_tasks`
 -> `get_task`, `create_agent` -> `list_agents`, `list_prompts`, and
-`prompts/get` for `vibedeck_developer_guide`. This runs in CI (unlike the
+`prompts/get` for `vibespace_developer_guide`. This runs in CI (unlike the
 memory subprocess smoke test above) since there's no subprocess involved
 to make it slow or flaky.
 
@@ -252,7 +252,7 @@ to make it slow or flaky.
 
 Every slug — from a URL param, an MCP tool argument, wherever — is resolved
 through `apps/server/src/files/safe-path.ts`'s `safeResolve` against the
-workspace's `.vibedeck/memory/` directory specifically (not just the
+workspace's `.vibespace/memory/` directory specifically (not just the
 workspace root), so a crafted slug like `"../../../etc/passwd"` can't
 escape it. See `apps/server/src/memory/store.test.ts`'s "path traversal via
 a crafted slug" tests.

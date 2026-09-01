@@ -3,11 +3,11 @@
 // on the macOS build this phase actually targets and tests.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-//! vibedeck's desktop wrapper (Phase 11a, PARITY #50, closes #48).
+//! vibespace's desktop wrapper (Phase 11a, PARITY #50, closes #48).
 //!
 //! # The central problem this file exists to solve
 //!
-//! vibedeck's backend (apps/server) is a Node process with two native
+//! vibespace's backend (apps/server) is a Node process with two native
 //! addons — `node-pty` and `better-sqlite3` — that cannot be rewritten in
 //! Rust. So this Tauri app does not reimplement the server; it spawns the
 //! REAL Node server as a child process ("sidecar"), waits for it to answer,
@@ -50,7 +50,7 @@
 //! a real, dereferenced copy of `apps/server` + its production
 //! dependencies (not a symlink into the live monorepo — verified by hand:
 //! `pnpm deploy --legacy`'s target is a fully independent directory tree),
-//! then patches ONLY that deployed copy's `@vibedeck/shared/package.json`
+//! then patches ONLY that deployed copy's `@vibespace/shared/package.json`
 //! to point `main`/`types` at its own already-built `dist/`. The live
 //! `packages/shared/package.json` in the actual monorepo is never touched
 //! — every other consumer (`pnpm dev`, Vite, Vitest, `tsx`) keeps resolving
@@ -78,9 +78,9 @@ use url::Url;
 
 /// The port the desktop app's sidecar server listens on. Deliberately NOT
 /// 4317 (apps/server's own default, read by `resolveServerPort` in
-/// runtime-config.ts when `VIBEDECK_PORT` is unset): launching the desktop
+/// runtime-config.ts when `VIBESPACE_PORT` is unset): launching the desktop
 /// app while `pnpm dev` is already running in a terminal is a completely
-/// normal thing to do while developing vibedeck itself, and both would try
+/// normal thing to do while developing vibespace itself, and both would try
 /// to bind 4317 if this used the same value. 45317 was picked to visually
 /// pair with the two ports the browser build already uses side by side —
 /// :4317 (server) and :5317 (Vite) — rather than being an arbitrary number;
@@ -91,7 +91,7 @@ const DESKTOP_PORT: u16 = 45317;
 /// EXACTLY — the two sides can't share a constant across the
 /// Rust/TypeScript boundary, so this comment is the tether between them.
 /// If you change one, change the other.
-const READY_LINE_PREFIX: &str = "VIBEDECK_SERVER_READY:";
+const READY_LINE_PREFIX: &str = "VIBESPACE_SERVER_READY:";
 
 /// How long to wait for the ready line before giving up and showing an
 /// error instead of an indefinitely spinning loading screen. Generous
@@ -137,7 +137,7 @@ fn repo_root() -> PathBuf {
         .canonicalize()
         .expect(
             "repo root (three directories above apps/desktop/src-tauri) must exist — \
-             this binary was built from a vibedeck checkout that has since moved or been deleted",
+             this binary was built from a vibespace checkout that has since moved or been deleted",
         )
 }
 
@@ -181,7 +181,7 @@ fn resolve_node_dir() -> Option<PathBuf> {
     fallback_candidates.into_iter().find(|dir| dir.join("node").is_file())
 }
 
-/// Where `spawn_server` should run the vibedeck server FROM — resolved once
+/// Where `spawn_server` should run the vibespace server FROM — resolved once
 /// per app launch by `resolve_server_source`, below. Two variants, checked
 /// in that order:
 ///
@@ -201,7 +201,7 @@ enum ServerSource {
 
 /// Decides which `ServerSource` this launch should use. `app.path()` (via
 /// the `Manager` trait, already imported) resolves to the OS-appropriate
-/// resources location for a packaged build (e.g. `VibeDeck.app/Contents/
+/// resources location for a packaged build (e.g. `Vibespace.app/Contents/
 /// Resources` on macOS) — but ALSO resolves to *something* during `cargo
 /// tauri dev` (typically a debug target directory), where our bundle was
 /// never copied. Rather than trying to distinguish "packaged" from "dev" by
@@ -221,7 +221,7 @@ fn resolve_server_source(app: &tauri::App) -> ServerSource {
     ServerSource::Dev { repo_root: repo_root() }
 }
 
-/// Spawns the real vibedeck server as a child process. Two paths, matching
+/// Spawns the real vibespace server as a child process. Two paths, matching
 /// `ServerSource`'s two variants:
 ///
 ///  - `Bundled`: runs `node dist/index.js` directly against the
@@ -260,8 +260,8 @@ fn spawn_server(source: &ServerSource) -> std::io::Result<Child> {
             Command::new(node_bin)
                 .arg(server_dir.join("dist").join("index.js"))
                 .current_dir(server_dir)
-                .env("VIBEDECK_PORT", DESKTOP_PORT.to_string())
-                .env("VIBEDECK_STATIC_DIR", static_dir)
+                .env("VIBESPACE_PORT", DESKTOP_PORT.to_string())
+                .env("VIBESPACE_STATIC_DIR", static_dir)
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .stdin(Stdio::null())
@@ -276,8 +276,8 @@ fn spawn_server(source: &ServerSource) -> std::io::Result<Child> {
             command
                 .arg("src/index.ts")
                 .current_dir(&server_dir)
-                .env("VIBEDECK_PORT", DESKTOP_PORT.to_string())
-                .env("VIBEDECK_STATIC_DIR", &static_dir)
+                .env("VIBESPACE_PORT", DESKTOP_PORT.to_string())
+                .env("VIBESPACE_STATIC_DIR", &static_dir)
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .stdin(Stdio::null());
@@ -427,7 +427,7 @@ fn kill_server(state: &ServerState) {
 
 /// Hardens against exactly the leaked-process bug this phase called out by
 /// name: a bare `SIGTERM` sent straight to this process (`kill <pid>`,
-/// `pkill vibedeck`, a process manager) bypasses Tauri's own event loop
+/// `pkill vibespace`, a process manager) bypasses Tauri's own event loop
 /// entirely — neither `on_window_event`'s `CloseRequested` nor `.run`'s
 /// `RunEvent::Exit` fire, because those only cover the normal GUI
 /// termination lifecycle (window close, Cmd+Q, Dock > Quit), not raw Unix
@@ -473,7 +473,7 @@ fn main() {
         .enable_macos_default_menu(false)
         // Phase 11b (PARITY #51): the updater plugin only CHECKS/downloads/
         // installs when the web app (running desktop-detected via
-        // `?vibedeckDesktop=1`, same marker as everywhere else) explicitly
+        // `?vibespaceDesktop=1`, same marker as everywhere else) explicitly
         // asks it to — see apps/web/src/shell/UpdateBanner.tsx for the
         // actual check-on-startup-then-ask-before-restarting UX and why a
         // silent auto-restart would be actively harmful here (this app
@@ -506,7 +506,7 @@ fn main() {
                     let window_for_wait = window.clone();
                     thread::spawn(move || match rx.recv_timeout(READY_TIMEOUT) {
                         Ok(ServerStartup::Ready(port)) => {
-                            // ?vibedeckDesktop=1 is how the served app tells
+                            // ?vibespaceDesktop=1 is how the served app tells
                             // apart the desktop build from the ordinary
                             // browser build — see keymap.ts's
                             // `hasDesktopMarker` for why a URL marker WE
@@ -515,7 +515,7 @@ fn main() {
                             // a non-tauri:// origin (uncertain enough that
                             // betting the desktop shortcut fix on it felt
                             // wrong).
-                            let url_string = format!("http://127.0.0.1:{port}/?vibedeckDesktop=1");
+                            let url_string = format!("http://127.0.0.1:{port}/?vibespaceDesktop=1");
                             match Url::parse(&url_string) {
                                 Ok(url) => {
                                     let _ = window_for_wait.navigate(url);
@@ -529,7 +529,7 @@ fn main() {
                         Ok(ServerStartup::Exited(stderr_tail)) => show_error(
                             &window_for_wait,
                             &format!(
-                                "The vibedeck server exited before it was ready.\n\n{}",
+                                "The vibespace server exited before it was ready.\n\n{}",
                                 if stderr_tail.is_empty() {
                                     "(it printed nothing to stderr)".to_string()
                                 } else {
@@ -540,8 +540,8 @@ fn main() {
                         Err(_) => show_error(
                             &window_for_wait,
                             &format!(
-                                "Timed out after {}s waiting for the vibedeck server to start.\n\n\
-                                 Make sure Node.js 22+ is installed, then quit and relaunch vibedeck. \
+                                "Timed out after {}s waiting for the vibespace server to start.\n\n\
+                                 Make sure Node.js 22+ is installed, then quit and relaunch vibespace. \
                                  See docs/DESKTOP.md if this keeps happening.",
                                 READY_TIMEOUT.as_secs()
                             ),
@@ -552,7 +552,7 @@ fn main() {
                     show_error(
                         &window,
                         &format!(
-                            "Couldn't start the vibedeck server: {err}\n\n\
+                            "Couldn't start the vibespace server: {err}\n\n\
                              Make sure Node.js 22+ is installed and on your PATH. \
                              See docs/DESKTOP.md for what this build actually requires.",
                         ),
@@ -578,7 +578,7 @@ fn main() {
             // one real implementation.
             let handle = app.handle();
 
-            let app_menu = SubmenuBuilder::new(handle, "vibedeck")
+            let app_menu = SubmenuBuilder::new(handle, "vibespace")
                 .item(&PredefinedMenuItem::about(handle, None, None)?)
                 .separator()
                 .item(&PredefinedMenuItem::quit(handle, None)?)
@@ -586,12 +586,12 @@ fn main() {
 
             // Undo/Redo/Cut/Copy/Paste only — deliberately NOT
             // `PredefinedMenuItem::select_all` (default accelerator ⌘A,
-            // which is vibedeck's OWN "View: Agents" shortcut — see
+            // which is vibespace's OWN "View: Agents" shortcut — see
             // keymap.ts's KEYMAP) and NOT `::close_window` (⌘W — see the
             // `.enable_macos_default_menu` comment above for why that one
             // specifically had to go). Every accelerator that IS set below
             // (⌘Z, ⇧⌘Z, ⌘X, ⌘C, ⌘V) was checked against KEYMAP and none of
-            // those letters are bound to anything in vibedeck.
+            // those letters are bound to anything in vibespace.
             let edit_menu = SubmenuBuilder::new(handle, "Edit")
                 .item(&PredefinedMenuItem::undo(handle, None)?)
                 .item(&PredefinedMenuItem::redo(handle, None)?)
@@ -602,10 +602,10 @@ fn main() {
                 .build()?;
 
             let pane_menu = SubmenuBuilder::new(handle, "Pane")
-                .text("vibedeck-new-pane", "New Pane                     ⌘N")
-                .text("vibedeck-close-pane", "Close Pane                   ⌘W")
+                .text("vibespace-new-pane", "New Pane                     ⌘N")
+                .text("vibespace-close-pane", "Close Pane                   ⌘W")
                 .separator()
-                .text("vibedeck-theme-picker", "Theme Picker                 ⌘T")
+                .text("vibespace-theme-picker", "Theme Picker                 ⌘T")
                 .build()?;
 
             let menu = MenuBuilder::new(handle)
@@ -623,9 +623,9 @@ fn main() {
                 // instead of a second, parallel implementation of "new
                 // pane"/"close pane"/"theme picker".
                 let key = match event.id().as_ref() {
-                    "vibedeck-new-pane" => Some("n"),
-                    "vibedeck-close-pane" => Some("w"),
-                    "vibedeck-theme-picker" => Some("t"),
+                    "vibespace-new-pane" => Some("n"),
+                    "vibespace-close-pane" => Some("w"),
+                    "vibespace-theme-picker" => Some("t"),
                     _ => None,
                 };
                 if let Some(key) = key {
@@ -647,7 +647,7 @@ fn main() {
             }
         })
         .build(tauri::generate_context!())
-        .expect("error while building the vibedeck desktop app")
+        .expect("error while building the vibespace desktop app")
         .run(|app_handle, event| {
             if let tauri::RunEvent::Exit = event {
                 kill_server(&app_handle.state::<ServerState>());

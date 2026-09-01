@@ -1,15 +1,15 @@
 # Agent API — moving your own board card
 
-You are a coding agent running inside a vibedeck terminal pane, dispatched
+You are a coding agent running inside a Vibespace terminal pane, dispatched
 to work on a specific board card. This page is the plain HTTP surface for
 finding and updating that card — plain `curl`, no MCP client required. If
-you ARE connected to vibedeck over MCP (see docs/MEMORY.md's "The MCP
+you ARE connected to Vibespace over MCP (see docs/MEMORY.md's "The MCP
 server" section — the same server also exposes the board, agent profiles,
 and the prompts library as of Phase 9.5b), prefer its tools
 (`list_tasks`/`get_task`/`create_task`/`update_task` and friends) over
 these HTTP calls where available; they're the same underlying stores, just
 without needing to know your `workspaceId`. The MCP server also serves a
-`vibedeck_developer_guide` prompt that's a shorter, task-oriented version
+`vibespace_developer_guide` prompt that's a shorter, task-oriented version
 of everything on this page — ask your MCP client to insert it if you want
 the condensed version.
 
@@ -21,7 +21,7 @@ When you were dispatched, the first thing typed into this terminal was a
 short preamble naming your card's id and workspace, e.g.:
 
 ```
-[vibedeck] You are working on board card 3f2a1c9e-... ("Fix the flaky test").
+[Vibespace] You are working on board card 3f2a1c9e-... ("Fix the flaky test").
 When you are done, move it to In Review by running:
 curl -s -X PATCH http://localhost:4317/api/board/cards/3f2a1c9e-... -H "Content-Type: application/json" -d '{"columnId":"in_review"}'
 ```
@@ -174,7 +174,7 @@ curl -s -X DELETE http://localhost:4317/api/prompts/<ID>
 ## Shared memory (Phase 8)
 
 Every workspace also has a small shared knowledge base — plain markdown
-notes at `.vibedeck/memory/*.md`, readable/writable by every agent working
+notes at `.vibespace/memory/*.md`, readable/writable by every agent working
 in that workspace, not just the one that wrote them. Full details (the
 wikilink convention, the MCP server, path-safety notes) are in
 [docs/MEMORY.md](./MEMORY.md); this section is just the REST reference, in
@@ -295,7 +295,7 @@ your workspace. Ten tools:
 | `list_prompts` | Saved, reusable prompts — global ones plus this workspace's own |
 
 Plus one MCP **prompt** (not a tool — see docs/MEMORY.md for the
-tool/prompt distinction): `vibedeck_developer_guide`, a condensed onboarding
+tool/prompt distinction): `vibespace_developer_guide`, a condensed onboarding
 doc covering everything on this page (tasks, `taskKnowledge` vs
 `description`, the board lifecycle, memory, and swarm claims) that your MCP
 client can insert on request.
@@ -304,15 +304,15 @@ Setup is identical to the memory-only setup in docs/MEMORY.md — same
 command, same config, same one-process-per-workspace model:
 
 ```bash
-node /absolute/path/to/vibedeck/apps/server/dist/memory/mcp-server.js /absolute/path/to/your/workspace
+node /absolute/path/to/vibespace/apps/server/dist/memory/mcp-server.js /absolute/path/to/your/workspace
 ```
 
 Errors follow the same convention as everywhere else: a validation or
 lookup failure returns a tool result with `isError: true` and a message
 naming what went wrong (e.g. a duplicate agent name, a task id that
 doesn't exist, or — for `create_task`/`create_agent`/`list_agents`/etc —
-"this directory is not a registered vibedeck workspace yet" if you're
-connected before ever opening the workspace in the vibedeck app itself).
+"this directory is not a registered Vibespace workspace yet" if you're
+connected before ever opening the workspace in the Vibespace app itself).
 Memory tools and `list_prompts` are unaffected by that last case; they
 work regardless.
 

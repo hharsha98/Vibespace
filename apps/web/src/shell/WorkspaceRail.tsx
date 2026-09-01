@@ -1,4 +1,4 @@
-import type { Workspace } from "@vibedeck/shared";
+import type { Workspace } from "@vibespace/shared";
 import { IconButton } from "./ui.js";
 import FileTree from "../files/FileTree.js";
 import { templateLabel } from "../grid/templateNames.js";

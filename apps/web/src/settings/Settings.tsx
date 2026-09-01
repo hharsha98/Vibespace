@@ -33,7 +33,7 @@
  * BridgeSpace's nine sections (Appearance · Terminal · Shortcuts · Agents ·
  * Accounts · API Keys · Billing · Notifications · About) are all here, plus
  * one addition — History (session recovery) — which has no BridgeSpace
- * equivalent slot but is a real vibedeck feature that isn't getting dropped
+ * equivalent slot but is a real vibespace feature that isn't getting dropped
  * for the sake of matching a competitor's section count; see sections.ts's
  * own comment.
  *
@@ -48,7 +48,7 @@
  * "preferences" table), so nothing added by this pass invents a second one.
  */
 import { useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
-import type { AgentId, SessionInfo, Workspace } from "@vibedeck/shared";
+import type { AgentId, SessionInfo, Workspace } from "@vibespace/shared";
 import { KEYMAP, formatShortcut, isMacPlatform, isTauriApp } from "../keys/keymap.js";
 import { THEMES } from "../themes/themes.js";
 import { ThemeSection } from "../themes/ThemePicker.js";
@@ -409,9 +409,9 @@ function AccountsSection({ agents }: { agents: AgentOption[] }) {
   return (
     <>
       <p style={sectionHintStyle}>
-        vibedeck has no login of its own. Each agent CLI below manages its own authentication, completely outside
-        vibedeck — signing in happens INSIDE that CLI, exactly as it would if you'd launched it from a plain terminal
-        without vibedeck at all.
+        vibespace has no login of its own. Each agent CLI below manages its own authentication, completely outside
+        vibespace — signing in happens INSIDE that CLI, exactly as it would if you'd launched it from a plain terminal
+        without vibespace at all.
       </p>
       <div style={{ display: "flex", flexDirection: "column", gap: SPACE.xs }}>
         {loginAgents.map((agent) => (
@@ -460,9 +460,9 @@ function ApiKeysSection() {
   return (
     <>
       <p style={sectionHintStyle}>
-        Agent CLIs read API keys from environment variables — vibedeck spawns each CLI as a real child process and
+        Agent CLIs read API keys from environment variables — vibespace spawns each CLI as a real child process and
         passes your shell's environment straight through to it, the same environment that CLI would see if you'd run
-        it directly in a terminal. vibedeck itself never asks for, stores, or transmits an API key: there is
+        it directly in a terminal. vibespace itself never asks for, stores, or transmits an API key: there is
         deliberately no field on this page to type one into.
       </p>
       <ul style={envVarListStyle}>
@@ -475,7 +475,7 @@ function ApiKeysSection() {
       <p style={sectionHintStyle}>
         Every other agent CLI reads its own provider's standard environment variable the same way — check that CLI's
         own documentation for its exact name. Set the variable in your shell (e.g. your <code style={codeStyle}>~/.zshrc</code>)
-        before launching vibedeck, the same way you'd set it up for using that CLI on its own.
+        before launching vibespace, the same way you'd set it up for using that CLI on its own.
       </p>
     </>
   );
@@ -554,8 +554,8 @@ function AboutSection() {
   return (
     <>
       <p style={sectionHintStyle}>
-        <a href="https://github.com/hharsha98/vibedeck" target="_blank" rel="noreferrer" style={linkStyle}>
-          github.com/hharsha98/vibedeck
+        <a href="https://github.com/hharsha98/Vibespace" target="_blank" rel="noreferrer" style={linkStyle}>
+          github.com/hharsha98/Vibespace
         </a>{" "}
         — MIT licensed, free and open source. See the repo's releases page for the current version and changelog.
       </p>

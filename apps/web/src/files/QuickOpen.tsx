@@ -15,7 +15,7 @@
  * if this becomes a real pain point).
  */
 import { useEffect, useMemo, useState } from "react";
-import type { FileTreeResponse } from "@vibedeck/shared";
+import type { FileTreeResponse } from "@vibespace/shared";
 import OverlayPalette, { fuzzyMatch } from "../OverlayPalette.js";
 
 interface QuickOpenProps {

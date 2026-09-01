@@ -4,7 +4,7 @@ import fastifyStatic from "@fastify/static";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
-import { AGENT_IDS, AGENT_SPECS, WORKSPACE_COLORS, isWorkspaceColor, type ClientMessage } from "@vibedeck/shared";
+import { AGENT_IDS, AGENT_SPECS, WORKSPACE_COLORS, isWorkspaceColor, type ClientMessage } from "@vibespace/shared";
 import { resolveServerPort, resolveStaticDir, formatReadyLine } from "./runtime-config.js";
 import { commandExists, detectAllAgents, INSTALL_HINTS, isAgentId } from "./pty/agents.js";
 import { SessionManager } from "./pty/session-manager.js";
@@ -61,7 +61,7 @@ function readVersion(): string {
 
 const VERSION = readVersion();
 // Phase 11a (PARITY #50): resolveServerPort defaults to 4317 — identical to
-// the old hardcoded literal — unless VIBEDECK_PORT is set, which only the
+// the old hardcoded literal — unless VIBESPACE_PORT is set, which only the
 // desktop app's sidecar wrapper does (see runtime-config.ts's doc comment
 // for why 4317 itself is unsafe for the desktop app to reuse).
 const PORT = resolveServerPort(process.env);
@@ -150,7 +150,7 @@ export function buildApp(options: BuildAppOptions = {}) {
   app.setErrorHandler((err: unknown, _request, reply) => {
     const fastifyErr = err as { statusCode?: number; message?: string };
     const status = fastifyErr.statusCode ?? 500;
-    if (status >= 500) console.error("vibedeck: request failed", err);
+    if (status >= 500) console.error("vibespace: request failed", err);
     return reply.status(status).send({ error: fastifyErr.message ?? "Request failed" });
   });
 
@@ -752,7 +752,7 @@ declare module "fastify" {
 if (import.meta.url === `file://${process.argv[1]}`) {
   // Phase 11a (PARITY #50): resolve whether to serve a built web app here,
   // at the real entrypoint — not inside buildApp() itself — so tests never
-  // have to reason about VIBEDECK_STATIC_DIR or a possibly-stale on-disk
+  // have to reason about VIBESPACE_STATIC_DIR or a possibly-stale on-disk
   // apps/web/dist. See resolveStaticDir's doc comment in runtime-config.ts.
   const moduleDir = dirname(fileURLToPath(import.meta.url));
   const staticDir = resolveStaticDir({ env: process.env, moduleDir });
@@ -761,7 +761,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   app
     .listen({ port: PORT, host: "0.0.0.0" })
     .then(() => {
-      console.log(`vibedeck server listening on http://localhost:${PORT}`);
+      console.log(`vibespace server listening on http://localhost:${PORT}`);
       if (staticDir) {
         console.log(`serving built web app from ${staticDir}`);
       }

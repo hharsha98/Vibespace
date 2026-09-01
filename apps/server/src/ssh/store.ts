@@ -23,7 +23,7 @@
  */
 import type { Database } from "better-sqlite3";
 import { randomUUID } from "node:crypto";
-import type { SshProfile } from "@vibedeck/shared";
+import type { SshProfile } from "@vibespace/shared";
 import { openDatabase } from "../db/schema.js";
 
 /** The raw shape a row comes back as from better-sqlite3 (snake_case, as SQLite gave it to us). */

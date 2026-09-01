@@ -107,7 +107,7 @@ describe("SessionInfo", () => {
     const session: SessionInfo = {
       id: "11111111-1111-1111-1111-111111111111",
       agent: "shell",
-      cwd: "/Users/harsha/projects/vibedeck",
+      cwd: "/Users/harsha/projects/vibespace",
       title: "shell",
       status: "running",
       exitCode: null,
@@ -183,8 +183,8 @@ describe("Workspace", () => {
   it("describes a freshly-created workspace with no layout saved yet", () => {
     const workspace: Workspace = {
       id: "33333333-3333-3333-3333-333333333333",
-      name: "vibedeck",
-      rootPath: "/Users/harsha/projects/vibedeck",
+      name: "vibespace",
+      rootPath: "/Users/harsha/projects/vibespace",
       layout: null,
       color: null,
       createdAt: "2026-08-10T12:00:00.000Z",

@@ -43,7 +43,7 @@ import {
   type CardPriority,
   type ColumnId,
   type SessionInfo,
-} from "@vibedeck/shared";
+} from "@vibespace/shared";
 import type { AgentOption } from "../grid/PaneView.js";
 import { FONT, SPACE } from "../shell/tokens.js";
 import { StatusDot } from "../shell/ui.js";

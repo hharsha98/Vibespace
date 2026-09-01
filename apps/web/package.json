@@ -1,5 +1,5 @@
 {
-  "name": "@vibedeck/web",
+  "name": "@vibespace/web",
   "version": "0.1.2",
   "private": true,
   "type": "module",
@@ -27,7 +27,7 @@
     "@lezer/highlight": "^1.2.1",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-updater": "^2.10.1",
-    "@vibedeck/shared": "workspace:*",
+    "@vibespace/shared": "workspace:*",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-image": "0.9.0",
     "@xterm/addon-search": "^0.16.0",

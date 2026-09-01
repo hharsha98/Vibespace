@@ -14,7 +14,7 @@
  * needs to react to the slug.
  */
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
-import type { MemoryGraphEdge, MemoryNote, MemoryNoteWithBacklinks } from "@vibedeck/shared";
+import type { MemoryGraphEdge, MemoryNote, MemoryNoteWithBacklinks } from "@vibespace/shared";
 import { EmptyState, Pill, StatusDot } from "../shell/ui.js";
 import { SPACE } from "../shell/tokens.js";
 import { tokenizeBody } from "./wikitext.js";
@@ -208,7 +208,7 @@ export default function MemoryPanel({ workspaceId, openNoteRequest }: MemoryPane
   // A click on a dangling `[[link]]` in the reader: create the note
   // immediately (title = the link target, since that's the only text a
   // dangling link gives us) and drop straight into edit mode so the user
-  // can fill in the body vibedeck couldn't guess.
+  // can fill in the body vibespace couldn't guess.
   const createFromDangling = useCallback((target: string) => createNote(target), [createNote]);
 
   // --- Edit -------------------------------------------------------------

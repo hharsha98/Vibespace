@@ -1,8 +1,8 @@
 /**
  * Migration-runner tests, run against real SQLite files — always inside a
- * fresh `mkdtempSync` temp directory (`VIBEDECK_DATA_DIR`), same pattern as
+ * fresh `mkdtempSync` temp directory (`VIBESPACE_DATA_DIR`), same pattern as
  * `workspaces.test.ts` and `board.test.ts`. NEVER the developer's real
- * `~/.vibedeck` — that would be catastrophic for a test suite that
+ * `~/.vibespace` — that would be catastrophic for a test suite that
  * deliberately hand-builds broken/outdated database shapes.
  *
  * The regression this whole file exists to prove fixed: `openDatabase()`
@@ -21,9 +21,9 @@ import { MIGRATIONS } from "./migrations.js";
 
 // Mirrors schema.ts's private DB_FILENAME constant — not exported, so
 // duplicated here; every test that hand-builds a database file must open
-// exactly this filename for `openDatabase()` (which reads `VIBEDECK_DATA_DIR`
+// exactly this filename for `openDatabase()` (which reads `VIBESPACE_DATA_DIR`
 // + this same name) to find it.
-const DB_FILENAME = "vibedeck.db";
+const DB_FILENAME = "vibespace.db";
 
 const LATEST_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
 
@@ -128,12 +128,12 @@ function columnsOf(db: Database.Database, table: string): string[] {
 let dataDir: string;
 
 beforeEach(() => {
-  dataDir = mkdtempSync(join(tmpdir(), "vibedeck-migrations-test-"));
-  process.env.VIBEDECK_DATA_DIR = dataDir;
+  dataDir = mkdtempSync(join(tmpdir(), "vibespace-migrations-test-"));
+  process.env.VIBESPACE_DATA_DIR = dataDir;
 });
 
 afterEach(() => {
-  delete process.env.VIBEDECK_DATA_DIR;
+  delete process.env.VIBESPACE_DATA_DIR;
   rmSync(dataDir, { recursive: true, force: true });
 });
 
@@ -156,7 +156,7 @@ describe("migrate() via openDatabase()", () => {
     // Hand-build the OLD shape: file_claims without last_heartbeat_at, and
     // user_version left at its default of 0 — exactly what every real
     // database created before this migration system existed looks like
-    // (confirmed against the live ~/.vibedeck/vibedeck.db during this fix).
+    // (confirmed against the live ~/.vibespace/vibespace.db during this fix).
     //
     // Also hand-build a real workspaces row and the missions row claim-1
     // actually belongs to: migration 9 (added after this test was written —
@@ -197,7 +197,7 @@ describe("migrate() via openDatabase()", () => {
       .prepare(
         `INSERT INTO workspaces (id, name, root_path, layout, created_at, updated_at) VALUES (?, ?, ?, NULL, ?, ?)`
       )
-      .run("ws-1", "vibedeck", "/tmp/vibedeck", "2026-01-01T00:00:00.000Z", "2026-01-01T00:00:00.000Z");
+      .run("ws-1", "vibespace", "/tmp/vibespace", "2026-01-01T00:00:00.000Z", "2026-01-01T00:00:00.000Z");
     raw
       .prepare(
         `INSERT INTO missions (id, workspace_id, prompt, status, created_at, updated_at) VALUES (?, ?, 'do it', 'running', ?, ?)`
@@ -286,7 +286,7 @@ describe("migrate() via openDatabase()", () => {
       .prepare(
         `INSERT INTO workspaces (id, name, root_path, layout, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`
       )
-      .run("ws-1", "vibedeck", "/tmp/vibedeck", null, "2026-01-01T00:00:00.000Z", "2026-01-01T00:00:00.000Z");
+      .run("ws-1", "vibespace", "/tmp/vibespace", null, "2026-01-01T00:00:00.000Z", "2026-01-01T00:00:00.000Z");
     raw.exec(`
       CREATE TABLE file_claims (
         id TEXT PRIMARY KEY,
@@ -304,8 +304,8 @@ describe("migrate() via openDatabase()", () => {
     const row = db.prepare(`SELECT * FROM workspaces WHERE id = ?`).get("ws-1");
     expect(row).toEqual({
       id: "ws-1",
-      name: "vibedeck",
-      root_path: "/tmp/vibedeck",
+      name: "vibespace",
+      root_path: "/tmp/vibespace",
       layout: null,
       // The hand-built table above predates migration 5 (no "color" column
       // at all) — after openDatabase() repairs it, the pre-existing row

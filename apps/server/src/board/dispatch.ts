@@ -14,7 +14,7 @@
  * `DISPATCH_SETTLE_DELAY_MS` before actually writing — see that constant's
  * comment for how reliable this heuristic is in practice.
  */
-import type { AgentId, BoardCard } from "@vibedeck/shared";
+import type { AgentId, BoardCard } from "@vibespace/shared";
 import type { SessionManager } from "../pty/session-manager.js";
 
 /**
@@ -114,7 +114,7 @@ export function buildDispatchPrompt(
     `curl -s -X PATCH http://localhost:${serverPort}/api/board/cards/${card.id} ` +
     `-H "Content-Type: application/json" -d '{"columnId":"in_review"}'`;
   const preamble =
-    `[vibedeck] You are working on board card ${card.id} ("${card.title}"). ` +
+    `[vibespace] You are working on board card ${card.id} ("${card.title}"). ` +
     `When you are done, move it to In Review by running: ${moveCommand} — the task follows. `;
 
   // `taskKnowledge` is reference material (architecture decisions, file

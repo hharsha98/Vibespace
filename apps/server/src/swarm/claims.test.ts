@@ -19,17 +19,17 @@ const MISSION_A = "mission-a";
 const MISSION_B = "mission-b";
 
 beforeEach(() => {
-  dataDir = mkdtempSync(join(tmpdir(), "vibedeck-claims-test-"));
-  process.env.VIBEDECK_DATA_DIR = dataDir;
+  dataDir = mkdtempSync(join(tmpdir(), "vibespace-claims-test-"));
+  process.env.VIBESPACE_DATA_DIR = dataDir;
   // A separate, real directory to be the "workspace root" claims are
   // resolved against — safeResolve requires the root itself to exist.
-  workspaceRoot = mkdtempSync(join(tmpdir(), "vibedeck-claims-workspace-"));
+  workspaceRoot = mkdtempSync(join(tmpdir(), "vibespace-claims-workspace-"));
   store = new ClaimsStore();
 });
 
 afterEach(() => {
   store.close();
-  delete process.env.VIBEDECK_DATA_DIR;
+  delete process.env.VIBESPACE_DATA_DIR;
   rmSync(dataDir, { recursive: true, force: true });
   rmSync(workspaceRoot, { recursive: true, force: true });
   vi.useRealTimers();

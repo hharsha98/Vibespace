@@ -1,15 +1,15 @@
 ---
-name: vibedeck-parity-audit
-description: Use this skill when asked to check whether a vibedeck feature actually matches its docs/PARITY.md entry, before marking a PARITY row done, or when a PARITY status feels stale. Verifies the ✅/🟡/⛔ status against the real codebase rather than trusting the table.
+name: vibespace-parity-audit
+description: Use this skill when asked to check whether a vibespace feature actually matches its docs/PARITY.md entry, before marking a PARITY row done, or when a PARITY status feels stale. Verifies the ✅/🟡/⛔ status against the real codebase rather than trusting the table.
 license: MIT
-compatibility: Works in any vibedeck workspace checkout; assumes read access to the repo.
+compatibility: Works in any vibespace workspace checkout; assumes read access to the repo.
 metadata:
   category: project-maintenance
-  author: vibedeck
+  author: vibespace
 ---
 # Auditing a feature against docs/PARITY.md
 
-`docs/PARITY.md` is vibedeck's feature-parity checklist against BridgeSpace
+`docs/PARITY.md` is vibespace's feature-parity checklist against BridgeSpace
 — the source of truth for "is this actually done". Its whole value depends
 on the status column being *true*, not aspirational. This skill is a
 repeatable procedure for checking one row honestly, instead of trusting

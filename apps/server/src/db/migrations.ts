@@ -9,7 +9,7 @@
  * column is added to a table's definition later, a database created before
  * that change never gets it. `file_claims.last_heartbeat_at` is exactly
  * this bug in production: it was added to the table definition after some
- * users' `~/.vibedeck/vibedeck.db` was already created, so their file_claims
+ * users' `~/.vibespace/vibespace.db` was already created, so their file_claims
  * table is missing it and every claim request 500s.
  *
  * How it works:
@@ -425,7 +425,7 @@ function up007SshProfiles(db: Database): void {
  *     resuming always gets a brand-new id, since an OS process, once gone,
  *     can never be revived; this column just tracks "whichever one is
  *     currently live, if any".
- *   - `agent_session_ref` is a stable per-agent-CLI handle vibedeck controls
+ *   - `agent_session_ref` is a stable per-agent-CLI handle vibespace controls
  *     itself at spawn time (Claude's `--session-id <uuid>` today — see
  *     `apps/server/src/pty/resume.ts`'s research notes) that survives every
  *     resume, unlike `session_id` — `claude --resume <ref>` needs the SAME
@@ -578,7 +578,7 @@ function up009DeleteOrphanedWorkspaceScopedRows(db: Database): void {
 
 /**
  * Every migration, in ascending version order. Audited against the live
- * `~/.vibedeck/vibedeck.db` on this machine by comparing each `CREATE
+ * `~/.vibespace/vibespace.db` on this machine by comparing each `CREATE
  * TABLE` above to `PRAGMA table_info` on every table that db actually had:
  * `workspaces`, `board_cards`, `missions`, `mission_agents`,
  * `mission_messages`, `claim_conflicts`, and `mission_tasks` all already

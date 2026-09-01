@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { BoardCard } from "@vibedeck/shared";
+import type { BoardCard } from "@vibespace/shared";
 import { buildDispatchPrompt } from "./dispatch.js";
 
 /**
@@ -35,7 +35,7 @@ describe("buildDispatchPrompt", () => {
 
     expect(prompt).toBe("echo hello\n");
     // A shell would try to *run* any of these as a command.
-    expect(prompt).not.toContain("[vibedeck]");
+    expect(prompt).not.toContain("[vibespace]");
     expect(prompt).not.toContain("In Review");
     expect(prompt).not.toContain("curl");
   });

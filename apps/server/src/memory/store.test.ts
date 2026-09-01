@@ -2,7 +2,7 @@
  * CRUD + path-safety tests for the memory store, run against a real temp
  * directory standing in for a workspace's `rootPath` — same `mkdtempSync`
  * pattern as `db/workspaces.test.ts`, except here the "database" IS the
- * filesystem, so there's no `VIBEDECK_DATA_DIR` to redirect.
+ * filesystem, so there's no `VIBESPACE_DATA_DIR` to redirect.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -13,7 +13,7 @@ import * as memory from "./store.js";
 let root: string;
 
 beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), "vibedeck-memory-test-"));
+  root = mkdtempSync(join(tmpdir(), "vibespace-memory-test-"));
 });
 
 afterEach(() => {
@@ -70,9 +70,9 @@ describe("create", () => {
     expect(third.slug).toBe("duplicate-title-3");
   });
 
-  it("writes a real .md file under <root>/.vibedeck/memory/", () => {
+  it("writes a real .md file under <root>/.vibespace/memory/", () => {
     const note = memory.create(root, { title: "On disk", body: "Hello.", tags: ["x"] });
-    const path = join(root, ".vibedeck", "memory", `${note.slug}.md`);
+    const path = join(root, ".vibespace", "memory", `${note.slug}.md`);
     const raw = readFileSync(path, "utf8");
     expect(raw).toContain("title: On disk");
     expect(raw).toContain("tags: [x]");
@@ -134,7 +134,7 @@ describe("remove", () => {
 
 describe("malformed frontmatter on disk", () => {
   it("treats a file with no frontmatter block as body-only, deriving the title from the filename", () => {
-    const dir = join(root, ".vibedeck", "memory");
+    const dir = join(root, ".vibespace", "memory");
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "hand-written.md"), "Just plain text, no frontmatter at all.", "utf8");
 
@@ -146,7 +146,7 @@ describe("malformed frontmatter on disk", () => {
   });
 
   it("does not throw when reading a malformed frontmatter block", () => {
-    const dir = join(root, ".vibedeck", "memory");
+    const dir = join(root, ".vibespace", "memory");
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "broken.md"), "---\ntitle: Unclosed block\nno closing delimiter here", "utf8");
 
@@ -155,7 +155,7 @@ describe("malformed frontmatter on disk", () => {
 });
 
 describe("path traversal via a crafted slug", () => {
-  it("get() refuses to read outside .vibedeck/memory for a traversal slug", () => {
+  it("get() refuses to read outside .vibespace/memory for a traversal slug", () => {
     expect(memory.get(root, "../../../etc/passwd")).toBeNull();
   });
 
@@ -172,10 +172,44 @@ describe("path traversal via a crafted slug", () => {
     expect(memory.remove(root, "../../../outside")).toBe(false);
   });
 
-  it("a traversal slug never actually creates a file outside .vibedeck/memory", () => {
+  it("a traversal slug never actually creates a file outside .vibespace/memory", () => {
     memory.get(root, "../../escaped");
     // Nothing should have been created one level above `root` either.
     expect(existsSync(join(root, "..", "escaped.md"))).toBe(false);
     expect(existsSync(join(root, "..", "escaped"))).toBe(false);
+  });
+});
+
+describe("legacy .vibedeck workspace back-compat", () => {
+  it("list() finds a note that only exists under legacy .vibedeck/memory, migrating the dot-dir first", () => {
+    const legacyMemoryDir = join(root, ".vibedeck", "memory");
+    mkdirSync(legacyMemoryDir, { recursive: true });
+    writeFileSync(
+      join(legacyMemoryDir, "old-note.md"),
+      ["---", "title: Old Note", "created: 2024-01-01T00:00:00.000Z", "updated: 2024-01-01T00:00:00.000Z", "---", "Body."].join(
+        "\n"
+      ),
+      "utf8"
+    );
+
+    const listed = memory.list(root);
+
+    expect(listed.map((n) => n.title)).toEqual(["Old Note"]);
+    // The migration actually moved the directory, not just found the note
+    // some other way.
+    expect(existsSync(join(root, ".vibedeck"))).toBe(false);
+    expect(existsSync(join(root, ".vibespace", "memory", "old-note.md"))).toBe(true);
+  });
+
+  it("create() writes into .vibespace/memory even when a legacy .vibedeck/memory already has notes", () => {
+    const legacyMemoryDir = join(root, ".vibedeck", "memory");
+    mkdirSync(legacyMemoryDir, { recursive: true });
+    writeFileSync(join(legacyMemoryDir, "old-note.md"), "---\ntitle: Old Note\n---\nBody.", "utf8");
+
+    const created = memory.create(root, { title: "New Note" });
+
+    expect(created.slug).toBe("new-note");
+    const listed = memory.list(root);
+    expect(listed.map((n) => n.title).sort()).toEqual(["New Note", "Old Note"]);
   });
 });

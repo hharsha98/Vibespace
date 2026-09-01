@@ -1,15 +1,15 @@
 /**
- * Two kinds of coverage here, mirroring the split in vibedeck.ts itself:
+ * Two kinds of coverage here, mirroring the split in vibespace.ts itself:
  *
- *   - `runVibedeckCli` — every branch of the pure orchestration logic
+ *   - `runVibespaceCli` — every branch of the pure orchestration logic
  *     (path validation, port discovery, server-start timeout, workspace
- *     errors, the final URL) driven with fake `VibedeckCliDeps`. No real
+ *     errors, the final URL) driven with fake `VibespaceCliDeps`. No real
  *     network call, no real child process, no real browser launch.
  *   - `ensureWorkspace` — the one piece of this module that DOES talk to a
  *     real server, tested against an actual `buildApp()` instance listening
  *     on an OS-assigned ephemeral port (same pattern `index.test.ts`'s
  *     WebSocket tests use), backed by a fresh `mkdtempSync` temp directory
- *     via `VIBEDECK_DATA_DIR` — never the developer's real `~/.vibedeck`.
+ *     via `VIBESPACE_DATA_DIR` — never the developer's real `~/.vibespace`.
  *     This is what actually proves the "reuse by exact rootPath match, else
  *     create" contract round-trips through the real REST API shape, not
  *     just a hand-written mock of it.
@@ -21,15 +21,15 @@ import { join } from "node:path";
 import type { AddressInfo } from "node:net";
 import { buildApp } from "../index.js";
 import type { ResolveRootPathResult } from "../workspace-path.js";
-import { ensureWorkspace, runVibedeckCli, type VibedeckCliDeps } from "./vibedeck.js";
+import { ensureWorkspace, runVibespaceCli, type VibespaceCliDeps } from "./vibespace.js";
 
-// --- runVibedeckCli ---------------------------------------------------------
+// --- runVibespaceCli ---------------------------------------------------------
 
-/** Builds a fully-stubbed `VibedeckCliDeps`, with every field overridable —
+/** Builds a fully-stubbed `VibespaceCliDeps`, with every field overridable —
  * each test only specifies the handful of fields its scenario actually
  * cares about, same "sensible all-succeed defaults, override what you're
  * testing" shape other fixture builders in this repo use. */
-function fakeDeps(overrides: Partial<VibedeckCliDeps> = {}): VibedeckCliDeps {
+function fakeDeps(overrides: Partial<VibespaceCliDeps> = {}): VibespaceCliDeps {
   return {
     resolvePath: (input) => ({ ok: true, path: `/resolved/${input}` }),
     candidatePorts: [4317, 45317],
@@ -45,7 +45,7 @@ function fakeDeps(overrides: Partial<VibedeckCliDeps> = {}): VibedeckCliDeps {
   };
 }
 
-describe("runVibedeckCli", () => {
+describe("runVibespaceCli", () => {
   it("defaults the path argument to '.' when argv is empty", async () => {
     let seenInput: string | undefined;
     const deps = fakeDeps({
@@ -54,7 +54,7 @@ describe("runVibedeckCli", () => {
         return { ok: true, path: "/cwd" };
       },
     });
-    await runVibedeckCli([], deps);
+    await runVibespaceCli([], deps);
     expect(seenInput).toBe(".");
   });
 
@@ -66,7 +66,7 @@ describe("runVibedeckCli", () => {
         return { ok: true, path: "/somewhere" };
       },
     });
-    await runVibedeckCli(["../other-project"], deps);
+    await runVibespaceCli(["../other-project"], deps);
     expect(seenInput).toBe("../other-project");
   });
 
@@ -78,7 +78,7 @@ describe("runVibedeckCli", () => {
     });
     const deps = fakeDeps({ resolvePath: badResolve, logError: (m) => errors.push(m) });
 
-    const code = await runVibedeckCli(["/nope"], deps);
+    const code = await runVibespaceCli(["/nope"], deps);
 
     expect(code).toBe(1);
     expect(errors.join("\n")).toContain("does not exist");
@@ -91,7 +91,7 @@ describe("runVibedeckCli", () => {
       logError: (m) => errors.push(m),
     });
 
-    const code = await runVibedeckCli(["file.txt"], deps);
+    const code = await runVibespaceCli(["file.txt"], deps);
 
     expect(code).toBe(1);
     expect(errors.join("\n")).toContain("not a directory");
@@ -111,7 +111,7 @@ describe("runVibedeckCli", () => {
       },
     });
 
-    const code = await runVibedeckCli(["."], deps);
+    const code = await runVibespaceCli(["."], deps);
 
     expect(code).toBe(0);
     expect(checked).toEqual([4317]); // stops checking once the first candidate answers
@@ -132,7 +132,7 @@ describe("runVibedeckCli", () => {
       },
     });
 
-    const code = await runVibedeckCli(["."], deps);
+    const code = await runVibespaceCli(["."], deps);
 
     expect(code).toBe(0);
     expect(ensuredPort).toBe(45317);
@@ -154,7 +154,7 @@ describe("runVibedeckCli", () => {
       },
     });
 
-    const code = await runVibedeckCli(["."], deps);
+    const code = await runVibespaceCli(["."], deps);
 
     expect(code).toBe(0);
     expect(startedPort).toBe(4317);
@@ -171,7 +171,7 @@ describe("runVibedeckCli", () => {
       logError: (m) => errors.push(m),
     });
 
-    const code = await runVibedeckCli(["."], deps);
+    const code = await runVibespaceCli(["."], deps);
 
     expect(code).toBe(1);
     expect(errors.join("\n")).toContain("could not start the server");
@@ -187,7 +187,7 @@ describe("runVibedeckCli", () => {
       logError: (m) => errors.push(m),
     });
 
-    const code = await runVibedeckCli(["."], deps);
+    const code = await runVibespaceCli(["."], deps);
 
     expect(code).toBe(1);
     expect(errors.join("\n")).toContain("did not come up");
@@ -200,7 +200,7 @@ describe("runVibedeckCli", () => {
       logError: (m) => errors.push(m),
     });
 
-    const code = await runVibedeckCli(["."], deps);
+    const code = await runVibespaceCli(["."], deps);
 
     expect(code).toBe(1);
     expect(errors.join("\n")).toContain("Could not reach the server");
@@ -218,7 +218,7 @@ describe("runVibedeckCli", () => {
       log: (m) => logs.push(m),
     });
 
-    const code = await runVibedeckCli(["."], deps);
+    const code = await runVibespaceCli(["."], deps);
 
     expect(code).toBe(0);
     expect(openedUrl).toBe("http://localhost:4317/?workspace=abc-123");
@@ -232,7 +232,7 @@ describe("runVibedeckCli", () => {
       log: (m) => logs.push(m),
     });
 
-    await runVibedeckCli(["."], deps);
+    await runVibespaceCli(["."], deps);
 
     expect(logs.some((l) => l.includes("Created") && l.includes("new-project"))).toBe(true);
     expect(logs.some((l) => l.includes("Reusing"))).toBe(false);
@@ -248,9 +248,9 @@ describe("ensureWorkspace", () => {
   let port: number;
 
   beforeEach(async () => {
-    dataDir = mkdtempSync(join(tmpdir(), "vibedeck-cli-test-db-"));
-    workspaceDir = mkdtempSync(join(tmpdir(), "vibedeck-cli-test-ws-"));
-    process.env.VIBEDECK_DATA_DIR = dataDir;
+    dataDir = mkdtempSync(join(tmpdir(), "vibespace-cli-test-db-"));
+    workspaceDir = mkdtempSync(join(tmpdir(), "vibespace-cli-test-ws-"));
+    process.env.VIBESPACE_DATA_DIR = dataDir;
 
     app = buildApp();
     await app.listen({ port: 0, host: "127.0.0.1" });
@@ -259,7 +259,7 @@ describe("ensureWorkspace", () => {
 
   afterEach(async () => {
     await app.close();
-    delete process.env.VIBEDECK_DATA_DIR;
+    delete process.env.VIBESPACE_DATA_DIR;
     rmSync(dataDir, { recursive: true, force: true });
     rmSync(workspaceDir, { recursive: true, force: true });
   });

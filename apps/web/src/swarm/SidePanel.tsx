@@ -21,7 +21,7 @@
  * Memory tab when a graph node is opened.
  */
 import { useEffect, useState } from "react";
-import type { ClaimConflict, FileClaim, MissionAgent, MissionMessage, MissionTask } from "@vibedeck/shared";
+import type { ClaimConflict, FileClaim, MissionAgent, MissionMessage, MissionTask } from "@vibespace/shared";
 import { Pill, StatusDot } from "../shell/ui.js";
 import { agentStatusKind, roleColorVar, roleGlyph } from "./logic.js";
 

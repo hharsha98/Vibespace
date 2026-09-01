@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AGENT_IDS } from "@vibedeck/shared";
+import { AGENT_IDS } from "@vibespace/shared";
 import { agentAccentVar } from "./agentVisuals.js";
 
 // `agentAccentVar` is the one bit of pure logic in agentVisuals.tsx (the

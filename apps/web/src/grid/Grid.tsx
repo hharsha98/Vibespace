@@ -1,6 +1,6 @@
 import { Allotment } from "allotment";
 import "allotment/dist/style.css";
-import type { AgentId, SessionInfo, SshProfile, Workspace } from "@vibedeck/shared";
+import type { AgentId, SessionInfo, SshProfile, Workspace } from "@vibespace/shared";
 import PaneView, { type AgentOption } from "./PaneView.js";
 import type { Theme } from "../themes/themes.js";
 import { findPane, type Direction, type GridNode, type PaneId } from "./tree.js";

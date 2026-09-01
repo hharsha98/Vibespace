@@ -1,7 +1,7 @@
 /**
  * Tests the board MCP tool handlers directly (see this module's top
  * comment for why they're extracted as plain exported functions) against a
- * real temp-dir SQLite database — same `mkdtempSync` + `VIBEDECK_DATA_DIR`
+ * real temp-dir SQLite database — same `mkdtempSync` + `VIBESPACE_DATA_DIR`
  * pattern as `db/board.test.ts`. No stdio transport, no MCP client, no
  * protocol framing: this exercises exactly the logic a real MCP client's
  * `tools/call` would trigger, just called directly, same philosophy
@@ -20,14 +20,14 @@ let boardStore: BoardStore;
 const WORKSPACE_A = "workspace-a";
 
 beforeEach(() => {
-  dataDir = mkdtempSync(join(tmpdir(), "vibedeck-board-mcp-test-"));
-  process.env.VIBEDECK_DATA_DIR = dataDir;
+  dataDir = mkdtempSync(join(tmpdir(), "vibespace-board-mcp-test-"));
+  process.env.VIBESPACE_DATA_DIR = dataDir;
   boardStore = new BoardStore();
 });
 
 afterEach(() => {
   boardStore.close();
-  delete process.env.VIBEDECK_DATA_DIR;
+  delete process.env.VIBESPACE_DATA_DIR;
   rmSync(dataDir, { recursive: true, force: true });
 });
 

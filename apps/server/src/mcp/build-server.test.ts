@@ -1,5 +1,5 @@
 /**
- * Tests `buildVibedeckMcpServer` two ways:
+ * Tests `buildVibespaceMcpServer` two ways:
  *
  * 1. The same "builds without throwing" smoke check `memory/mcp.test.ts`
  *    does for `createMemoryMcpServer` — including for a workspace root
@@ -23,33 +23,33 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { WorkspaceStore } from "../db/workspaces.js";
-import { buildVibedeckMcpServer, type VibedeckMcpServer } from "./build-server.js";
+import { buildVibespaceMcpServer, type VibespaceMcpServer } from "./build-server.js";
 import { DEVELOPER_GUIDE_PROMPT_NAME } from "./developer-guide.js";
 
 let dataDir: string;
 let workspaceRoot: string;
 
 beforeEach(() => {
-  dataDir = mkdtempSync(join(tmpdir(), "vibedeck-build-server-test-"));
-  process.env.VIBEDECK_DATA_DIR = dataDir;
-  workspaceRoot = mkdtempSync(join(tmpdir(), "vibedeck-build-server-workspace-"));
+  dataDir = mkdtempSync(join(tmpdir(), "vibespace-build-server-test-"));
+  process.env.VIBESPACE_DATA_DIR = dataDir;
+  workspaceRoot = mkdtempSync(join(tmpdir(), "vibespace-build-server-workspace-"));
 });
 
 afterEach(() => {
-  delete process.env.VIBEDECK_DATA_DIR;
+  delete process.env.VIBESPACE_DATA_DIR;
   rmSync(dataDir, { recursive: true, force: true });
   rmSync(workspaceRoot, { recursive: true, force: true });
 });
 
-describe("buildVibedeckMcpServer", () => {
+describe("buildVibespaceMcpServer", () => {
   it("builds without throwing for a registered workspace root", () => {
     const workspaceStore = new WorkspaceStore();
     workspaceStore.create({ name: "test", rootPath: workspaceRoot });
     workspaceStore.close();
 
-    let built: VibedeckMcpServer | undefined;
+    let built: VibespaceMcpServer | undefined;
     expect(() => {
-      built = buildVibedeckMcpServer(workspaceRoot);
+      built = buildVibespaceMcpServer(workspaceRoot);
     }).not.toThrow();
     expect(built!.server).toBeInstanceOf(McpServer);
     built!.close();
@@ -58,16 +58,16 @@ describe("buildVibedeckMcpServer", () => {
   it("builds without throwing even for an UNREGISTERED workspace root", () => {
     // Every tool must still register — resolution failure is a per-call
     // concern (see ./workspace-resolver.ts), not a build-time one.
-    let built: VibedeckMcpServer | undefined;
+    let built: VibespaceMcpServer | undefined;
     expect(() => {
-      built = buildVibedeckMcpServer(workspaceRoot);
+      built = buildVibespaceMcpServer(workspaceRoot);
     }).not.toThrow();
     built!.close();
   });
 });
 
-describe("buildVibedeckMcpServer end-to-end (InMemoryTransport)", () => {
-  let built: VibedeckMcpServer;
+describe("buildVibespaceMcpServer end-to-end (InMemoryTransport)", () => {
+  let built: VibespaceMcpServer;
   let client: Client;
 
   beforeEach(async () => {
@@ -75,7 +75,7 @@ describe("buildVibedeckMcpServer end-to-end (InMemoryTransport)", () => {
     workspaceStore.create({ name: "test", rootPath: workspaceRoot });
     workspaceStore.close();
 
-    built = buildVibedeckMcpServer(workspaceRoot);
+    built = buildVibespaceMcpServer(workspaceRoot);
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     client = new Client({ name: "test-client", version: "1.0.0" });
     await Promise.all([client.connect(clientTransport), built.server.connect(serverTransport)]);
@@ -159,7 +159,7 @@ describe("buildVibedeckMcpServer end-to-end (InMemoryTransport)", () => {
     expect(JSON.parse(content[0].text)).toEqual({ prompts: [] });
   });
 
-  it("serves the vibedeck_developer_guide prompt, mentioning taskKnowledge and swarm claims", async () => {
+  it("serves the vibespace_developer_guide prompt, mentioning taskKnowledge and swarm claims", async () => {
     const { prompts } = await client.listPrompts();
     expect(prompts.map((p) => p.name)).toContain(DEVELOPER_GUIDE_PROMPT_NAME);
 
@@ -172,10 +172,10 @@ describe("buildVibedeckMcpServer end-to-end (InMemoryTransport)", () => {
   });
 });
 
-describe("buildVibedeckMcpServer end-to-end against an UNREGISTERED workspace", () => {
+describe("buildVibespaceMcpServer end-to-end against an UNREGISTERED workspace", () => {
   it("board/agent tools return a clear error result; memory and list_prompts still work", async () => {
     // Deliberately do NOT register workspaceRoot as a workspace.
-    const built = buildVibedeckMcpServer(workspaceRoot);
+    const built = buildVibespaceMcpServer(workspaceRoot);
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     const client = new Client({ name: "test-client", version: "1.0.0" });
     await Promise.all([client.connect(clientTransport), built.server.connect(serverTransport)]);

@@ -1,7 +1,7 @@
 [package]
-name = "vibedeck-desktop"
+name = "vibespace-desktop"
 version = "0.1.2"
-description = "vibedeck — native desktop wrapper (Phase 11a, PARITY #50)"
+description = "vibespace — native desktop wrapper (Phase 11a, PARITY #50)"
 edition = "2021"
 # Not published; this crate only ever builds into the .app bundle.
 publish = false
@@ -36,7 +36,7 @@ tauri-plugin-process = "2"
 # through Tauri's own event loop (`on_window_event`/`.run`'s RunEvent, both
 # already handled in main.rs) and never touches this. But hand-testing this
 # phase found a real gap those two alone don't cover: `kill <pid>` (a bare
-# SIGTERM, e.g. from `pkill vibedeck` or a process manager) bypasses
+# SIGTERM, e.g. from `pkill vibespace` or a process manager) bypasses
 # Cocoa's termination lifecycle entirely — no Rust code runs at all, and
 # the sidecar Node process is orphaned holding its port. `signal-hook` runs
 # the handler on an ordinary background thread (not inside actual signal
@@ -47,5 +47,5 @@ libc = "0.2"
 signal-hook = "0.3"
 
 [[bin]]
-name = "vibedeck-desktop"
+name = "vibespace-desktop"
 path = "src/main.rs"

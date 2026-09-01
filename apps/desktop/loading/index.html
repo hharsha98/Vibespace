@@ -1,7 +1,7 @@
 <!doctype html>
 <!--
   The desktop app's `frontendDist` (see ../src-tauri/tauri.conf.json) — the
-  very first thing the window shows, before the real vibedeck UI exists
+  very first thing the window shows, before the real vibespace UI exists
   anywhere. It stays on screen only for the second or two it takes the Node
   sidecar server to come up; main.rs polls the server's stdout for its
   readiness line and then calls `window.navigate()` to replace this page
@@ -18,7 +18,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>vibedeck</title>
+    <title>vibespace</title>
     <style>
       /* Matches docs/DESIGN.md's dark palette (--bg/--text/--accent) so this
          loading screen doesn't flash a different theme than the real app
@@ -70,7 +70,7 @@
   <body>
     <div class="wrap">
       <div class="spinner" id="spinner"></div>
-      <div id="status">Starting the vibedeck server…</div>
+      <div id="status">Starting the vibespace server…</div>
     </div>
   </body>
 </html>

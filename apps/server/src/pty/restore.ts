@@ -11,7 +11,7 @@
  * `SessionManager`/the stores/`node-pty`, so those two stay trivially
  * unit-testable and this one is where the actual spawning risk lives.
  */
-import type { DeferredPane, RestoredPane, SessionInfo, SessionRecord } from "@vibedeck/shared";
+import type { DeferredPane, RestoredPane, SessionInfo, SessionRecord } from "@vibespace/shared";
 import type { SessionManager } from "./session-manager.js";
 import type { SessionRecordsStore } from "../db/session-records.js";
 import type { SshProfileStore } from "../ssh/store.js";

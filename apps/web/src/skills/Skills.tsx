@@ -281,7 +281,7 @@ export default function Skills({ workspaceId, visible, panes, onFocusSession }: 
                 title="No skills found"
                 description={
                   <>
-                    Skills live in <code>.agents/skills/</code>, <code>.vibedeck/skills/</code>, or{" "}
+                    Skills live in <code>.agents/skills/</code>, <code>.vibespace/skills/</code>, or{" "}
                     <code>.claude/skills/</code>, under either this workspace or your home directory.
                   </>
                 }
@@ -310,7 +310,7 @@ export default function Skills({ workspaceId, visible, panes, onFocusSession }: 
                   boundary section: a project skill came from the repository
                   itself — content nobody has necessarily reviewed, e.g. right
                   after a fresh `git clone` — not from the person running
-                  vibedeck. This is a plain note, not a scare banner: the
+                  vibespace. This is a plain note, not a scare banner: the
                   scope grouping above already makes the distinction visible
                   at a glance; this just names WHY it's worth noticing. */}
               <p style={trustNoteStyle}>

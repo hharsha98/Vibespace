@@ -26,7 +26,7 @@ import {
   COLUMN_IDS,
   type CardPriority,
   type ColumnId,
-} from "@vibedeck/shared";
+} from "@vibespace/shared";
 import type { BoardStore, UpdateCardOptions } from "../db/board.js";
 import { jsonResult, errorResult } from "../mcp/result.js";
 

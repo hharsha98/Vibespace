@@ -1,12 +1,12 @@
 /**
- * The WebSocket message protocol shared between the vibedeck server and web
+ * The WebSocket message protocol shared between the vibespace server and web
  * client. Both sides import these types so their messages can never drift
  * apart — if one side changes the shape of a message, TypeScript will fail
  * to compile the other side until it's updated too.
  */
 
 /**
- * The set of coding agents vibedeck knows how to run in a terminal session.
+ * The set of coding agents vibespace knows how to run in a terminal session.
  *
  * Expanded from the original four (`claude`/`cursor-agent`/`codex`/`shell`)
  * to match BridgeSpace V3's agent picker (10 entries: 9 named CLIs +
@@ -90,7 +90,7 @@ export interface SessionInfo {
    * SSH connection profiles (see `SshProfile` below): the id of the profile
    * this session was launched from, or `null`/`undefined` for every ordinary
    * local session. Deliberately NOT a new `AgentId` — an SSH profile is a
-   * user-stored record (host/user/port/etc), not a fixed CLI vibedeck knows
+   * user-stored record (host/user/port/etc), not a fixed CLI vibespace knows
    * how to launch, so it doesn't belong in the closed `AgentId` union or any
    * of the `Record<AgentId, ...>` tables keyed off it (AGENT_SPECS,
    * INSTALL_HINTS, the picker's glyph map...). An SSH session's `agent`
@@ -125,12 +125,12 @@ export interface SessionInfo {
  * comment for the UNIQUE-on-`name` constraint this implies.
  *
  * --- The auth trade-off, stated plainly ---
- * vibedeck does NOT implement SSH itself and does NOT store credentials.
+ * vibespace does NOT implement SSH itself and does NOT store credentials.
  * Connecting spawns the system's real `ssh` binary in a pty (exactly how a
  * local `shell`/`claude`/etc session is already spawned — see
  * `apps/server/src/pty/session-manager.ts`), so authentication is entirely
  * whatever the user's own `ssh-agent`, keys, and `~/.ssh/config` already do
- * for them in a normal terminal. vibedeck never sees, stores, or transmits
+ * for them in a normal terminal. vibespace never sees, stores, or transmits
  * a password or key. The honest downside: a host that only accepts password
  * auth will prompt for one INSIDE the pane, exactly like any terminal would
  * — there is no keychain-backed autofill (BridgeSpace has one; this is the
@@ -529,7 +529,7 @@ export interface BoardCard {
 
 /**
  * Phase 8 (shared agent memory) types. A `MemoryNote` is a markdown file on
- * disk at `<workspace>/.vibedeck/memory/<slug>.md` — see
+ * disk at `<workspace>/.vibespace/memory/<slug>.md` — see
  * `apps/server/src/memory/store.ts` for the store and `docs/MEMORY.md` for
  * the wikilink convention and MCP server that expose these same notes to
  * coding agents. Every field here is what's stored in the file's
@@ -879,7 +879,7 @@ export interface SessionRecord {
   sessionId: string | null;
   agent: AgentId;
   sshProfileId: string | null;
-  /** A stable per-agent-CLI session handle vibedeck controls itself at
+  /** A stable per-agent-CLI session handle vibespace controls itself at
    * spawn time (today: Claude's `--session-id <uuid>` — see
    * `apps/server/src/pty/resume.ts`'s research notes for why codex/
    * cursor-agent don't get one). Survives every resume, unlike `sessionId`. */

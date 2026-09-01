@@ -16,14 +16,14 @@
  */
 
 /** Workspace-relative directory pasted images land in — the SAME
- * `.vibedeck` dot-directory the workspace already owns for tool-generated,
+ * `.vibespace` dot-directory the workspace already owns for tool-generated,
  * workspace-scoped state that isn't meant to be hand-edited (see
- * `memory/store.ts`'s `MEMORY_DIR_NAME`, `.vibedeck/memory`, for the
+ * `memory/store.ts`'s `MEMORY_DIR_NAME`, `.vibespace/memory`, for the
  * existing precedent this follows). Keeping pasted images here — not the
  * workspace root itself — means they don't clutter a file-tree browse, sit
  * next to the memory notes that already live under the same dot-dir, and
  * are easy for a project to `.gitignore` as one group if it wants to. */
-export const PASTE_IMAGE_DIR_NAME = ".vibedeck/pastes";
+export const PASTE_IMAGE_DIR_NAME = ".vibespace/pastes";
 
 /** Small, deliberate allowlist — an image MIME type not in this map is
  * refused outright (see `pickPasteImagePath` below) rather than written

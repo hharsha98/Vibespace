@@ -18,7 +18,7 @@
  * so keyboard-only use works exactly like clicking a suggestion would.
  */
 import { useMemo, useRef, useState } from "react";
-import type { MissionAgent } from "@vibedeck/shared";
+import type { MissionAgent } from "@vibespace/shared";
 import { RADIUS, SHADOW_VAR, SPACE } from "../shell/tokens.js";
 import { mentionQueryAt, parseMention, roleColorVar, roleGlyph } from "./logic.js";
 

@@ -39,7 +39,7 @@ export default function Preview() {
     // Bumping the iframe's `key` forces a full remount, which reliably
     // reloads it — `iframe.contentWindow.location.reload()` throws for a
     // cross-origin frame, which most previewed dev servers are (different
-    // port than vibedeck's own web UI).
+    // port than vibespace's own web UI).
     setReloadNonce((n) => n + 1);
   };
 

@@ -26,20 +26,20 @@
  * preference says "finishes or goes idle (waiting for input)", not just
  * "finishes", precisely because the heuristic can't tell those apart.
  */
+import { readWithLegacyFallback } from "./legacyStorage.js";
 
-const NOTIFY_KEY = "vibedeck.notifyOnAgentIdle";
+const NOTIFY_KEY = "vibespace.notifyOnAgentIdle";
+// The pre-rename key this project shipped under as vibedeck — see
+// `legacyStorage.ts`'s top comment for why every persisted preference in
+// this app reads a legacy key as a fallback.
+const LEGACY_NOTIFY_KEY = "vibedeck.notifyOnAgentIdle";
 
 /** Whether the "notify when an agent finishes" preference is turned on.
  * Defaults to off — this is a new preference, and opting a returning user
  * into desktop notifications without them ever having touched Settings
  * would be a surprise, not a convenience. */
 export function loadNotifyOnAgentIdle(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    return window.localStorage.getItem(NOTIFY_KEY) === "true";
-  } catch {
-    return false; // Private-browsing Safari throws on access, not just on write.
-  }
+  return readWithLegacyFallback(NOTIFY_KEY, LEGACY_NOTIFY_KEY) === "true";
 }
 
 export function saveNotifyOnAgentIdle(value: boolean): void {
@@ -88,7 +88,7 @@ export function notifyAgentIdle(agentLabel: string): void {
   if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
   if (typeof document !== "undefined" && !document.hidden) return;
   try {
-    new Notification("vibedeck", { body: `${agentLabel} is idle — finished, or waiting for input.` });
+    new Notification("vibespace", { body: `${agentLabel} is idle — finished, or waiting for input.` });
   } catch {
     // Some platforms throw synchronously from the constructor itself rather
     // than just not supporting it — never worth crashing a pane's status

@@ -1,10 +1,10 @@
-# vibedeck shell integration — OSC 133 command-block markers.
+# vibespace shell integration — OSC 133 command-block markers.
 #
 # This file is sourced (never copied into a real dotfile — see zdotdir.ts's
 # top comment for the ZDOTDIR trick that gets it loaded without touching the
-# user's own ~/.zshrc) by the generated .zshrc inside vibedeck's throwaway
+# user's own ~/.zshrc) by the generated .zshrc inside vibespace's throwaway
 # ZDOTDIR. Its only job: print four small, invisible-to-the-eye escape
-# sequences ("OSC 133") that let the vibedeck terminal UI figure out where
+# sequences ("OSC 133") that let the vibespace terminal UI figure out where
 # each command starts and ends, and whether it succeeded — without that,
 # a terminal only ever sees one long undifferentiated stream of characters.
 #
@@ -14,7 +14,7 @@
 #   ESC ] 133 ; D ; N BEL — the command finished, exit code N
 #
 # This is a de facto standard (also used by VS Code's, iTerm2's, and
-# WezTerm's own shell integrations) — vibedeck isn't inventing it, just
+# WezTerm's own shell integrations) — vibespace isn't inventing it, just
 # implementing our own reading of it in zsh.
 
 # Guard against being sourced somewhere that isn't actually zsh (harmless,
@@ -24,7 +24,7 @@ if [[ -n "$ZSH_VERSION" ]]; then
 
 # Fires right before zsh actually executes a typed command — this is the
 # "C" (command-started) marker.
-_vibedeck_preexec() {
+_vibespace_preexec() {
   printf '\033]133;C\007'
 }
 
@@ -33,15 +33,15 @@ _vibedeck_preexec() {
 # code — grabbing it into `ret` as the very first statement matters,
 # because printf/local themselves would otherwise reset `$?` before we get
 # a chance to read it.
-_vibedeck_precmd() {
+_vibespace_precmd() {
   local ret=$?
   printf '\033]133;D;%s\007' "$ret"
   printf '\033]133;A\007'
 }
 
 autoload -Uz add-zsh-hook
-add-zsh-hook preexec _vibedeck_preexec
-add-zsh-hook precmd _vibedeck_precmd
+add-zsh-hook preexec _vibespace_preexec
+add-zsh-hook precmd _vibespace_precmd
 
 # Mark the END of the prompt (right before the user's typed input begins).
 # This is APPENDED after the real prompt text ($PS1), not prepended — B

@@ -9,20 +9,32 @@ import {
 } from "./runtime-config.js";
 
 describe("resolveServerPort", () => {
-  it("defaults to 4317 when VIBEDECK_PORT is unset", () => {
+  it("defaults to 4317 when neither VIBESPACE_PORT nor VIBEDECK_PORT is set", () => {
     expect(resolveServerPort({})).toBe(DEFAULT_PORT);
   });
 
-  it("uses VIBEDECK_PORT when it's a valid port number", () => {
-    expect(resolveServerPort({ VIBEDECK_PORT: "45317" })).toBe(45317);
+  it("uses VIBESPACE_PORT when it's a valid port number", () => {
+    expect(resolveServerPort({ VIBESPACE_PORT: "45317" })).toBe(45317);
   });
 
   it.each(["0", "-1", "not-a-number", "70000", "3.5", ""])(
-    "falls back to the default for an invalid VIBEDECK_PORT %j",
+    "falls back to the default for an invalid VIBESPACE_PORT %j",
     (value) => {
-      expect(resolveServerPort({ VIBEDECK_PORT: value })).toBe(DEFAULT_PORT);
+      expect(resolveServerPort({ VIBESPACE_PORT: value })).toBe(DEFAULT_PORT);
     }
   );
+
+  it("uses the legacy VIBEDECK_PORT when VIBESPACE_PORT is unset", () => {
+    expect(resolveServerPort({ VIBEDECK_PORT: "45318" })).toBe(45318);
+  });
+
+  it("falls back to the default for an invalid legacy VIBEDECK_PORT", () => {
+    expect(resolveServerPort({ VIBEDECK_PORT: "not-a-number" })).toBe(DEFAULT_PORT);
+  });
+
+  it("prefers VIBESPACE_PORT over VIBEDECK_PORT when both are set", () => {
+    expect(resolveServerPort({ VIBESPACE_PORT: "45317", VIBEDECK_PORT: "45318" })).toBe(45317);
+  });
 });
 
 describe("resolveStaticDir", () => {
@@ -49,23 +61,51 @@ describe("resolveStaticDir", () => {
     expect(seen).toEqual(["/repo/apps/web/dist"]);
   });
 
-  it("prefers VIBEDECK_STATIC_DIR when set and it exists", () => {
+  it("prefers VIBESPACE_STATIC_DIR when set and it exists", () => {
     const result = resolveStaticDir({
-      env: { VIBEDECK_STATIC_DIR: "/custom/dist" },
+      env: { VIBESPACE_STATIC_DIR: "/custom/dist" },
       moduleDir: "/repo/apps/server/dist",
       exists: (path) => path === "/custom/dist",
     });
     expect(result).toBe("/custom/dist");
   });
 
-  it("throws when VIBEDECK_STATIC_DIR is set but doesn't exist, instead of silently serving nothing", () => {
+  it("throws when VIBESPACE_STATIC_DIR is set but doesn't exist, instead of silently serving nothing", () => {
     expect(() =>
       resolveStaticDir({
-        env: { VIBEDECK_STATIC_DIR: "/missing/dist" },
+        env: { VIBESPACE_STATIC_DIR: "/missing/dist" },
+        moduleDir: "/repo/apps/server/dist",
+        exists: () => false,
+      })
+    ).toThrow(/VIBESPACE_STATIC_DIR/);
+  });
+
+  it("uses the legacy VIBEDECK_STATIC_DIR when VIBESPACE_STATIC_DIR is unset", () => {
+    const result = resolveStaticDir({
+      env: { VIBEDECK_STATIC_DIR: "/custom/legacy-dist" },
+      moduleDir: "/repo/apps/server/dist",
+      exists: (path) => path === "/custom/legacy-dist",
+    });
+    expect(result).toBe("/custom/legacy-dist");
+  });
+
+  it("throws naming VIBEDECK_STATIC_DIR (not VIBESPACE_STATIC_DIR) when that's the one that was actually set", () => {
+    expect(() =>
+      resolveStaticDir({
+        env: { VIBEDECK_STATIC_DIR: "/missing/legacy-dist" },
         moduleDir: "/repo/apps/server/dist",
         exists: () => false,
       })
     ).toThrow(/VIBEDECK_STATIC_DIR/);
+  });
+
+  it("prefers VIBESPACE_STATIC_DIR over VIBEDECK_STATIC_DIR when both are set", () => {
+    const result = resolveStaticDir({
+      env: { VIBESPACE_STATIC_DIR: "/custom/dist", VIBEDECK_STATIC_DIR: "/custom/legacy-dist" },
+      moduleDir: "/repo/apps/server/dist",
+      exists: (path) => path === "/custom/dist" || path === "/custom/legacy-dist",
+    });
+    expect(result).toBe("/custom/dist");
   });
 
   it("resolves the same apps/web/dist whether moduleDir is src/ (dev) or dist/ (built)", () => {
@@ -85,7 +125,7 @@ describe("formatReadyLine / parseReadyLine", () => {
   });
 
   it("returns null for a line without the expected prefix", () => {
-    expect(parseReadyLine("vibedeck server listening on http://localhost:4317")).toBeNull();
+    expect(parseReadyLine("vibespace server listening on http://localhost:4317")).toBeNull();
   });
 
   it("returns null for a malformed port after a valid prefix", () => {

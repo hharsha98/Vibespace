@@ -1,7 +1,7 @@
 /**
  * CRUD + lifecycle tests for SessionRecordsStore, run against a real SQLite
  * file — but always inside a fresh `mkdtempSync` temp directory, never the
- * developer's real `~/.vibedeck`. Same pattern as `workspaces.test.ts`.
+ * developer's real `~/.vibespace`. Same pattern as `workspaces.test.ts`.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -13,14 +13,14 @@ let dataDir: string;
 let store: SessionRecordsStore;
 
 beforeEach(() => {
-  dataDir = mkdtempSync(join(tmpdir(), "vibedeck-session-records-test-"));
-  process.env.VIBEDECK_DATA_DIR = dataDir;
+  dataDir = mkdtempSync(join(tmpdir(), "vibespace-session-records-test-"));
+  process.env.VIBESPACE_DATA_DIR = dataDir;
   store = new SessionRecordsStore();
 });
 
 afterEach(() => {
   store.close();
-  delete process.env.VIBEDECK_DATA_DIR;
+  delete process.env.VIBESPACE_DATA_DIR;
   rmSync(dataDir, { recursive: true, force: true });
 });
 

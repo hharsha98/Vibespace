@@ -15,6 +15,9 @@ import {
 // value back" round trip that "persists across a remount" actually means
 // at the mechanism level (there is no React tree to literally remount
 // without jsdom, so this is what checking that promise looks like here).
+// `removeItem` is needed on top of the original getItem/setItem shape
+// because `loadSettingsSection` now goes through `readWithLegacyFallback`
+// (legacyStorage.ts), which removes the legacy key once it's migrated.
 function stubLocalStorage() {
   const store = new Map<string, string>();
   vi.stubGlobal("window", {
@@ -23,8 +26,12 @@ function stubLocalStorage() {
       setItem: (key: string, value: string) => {
         store.set(key, value);
       },
+      removeItem: (key: string) => {
+        store.delete(key);
+      },
     },
   });
+  return store;
 }
 
 afterEach(() => {
@@ -69,7 +76,7 @@ describe("loadSettingsSection / saveSettingsSection", () => {
 
   it("falls back to the default for a stale/unknown stored id", () => {
     stubLocalStorage();
-    window.localStorage.setItem("vibedeck.settings.section", "not-a-real-section");
+    window.localStorage.setItem("vibespace.settings.section", "not-a-real-section");
     expect(loadSettingsSection()).toBe(DEFAULT_SETTINGS_SECTION);
   });
 
@@ -79,6 +86,16 @@ describe("loadSettingsSection / saveSettingsSection", () => {
       saveSettingsSection(section.id);
       expect(loadSettingsSection()).toBe(section.id);
     }
+  });
+
+  it("falls back to a legacy vibedeck.settings.section value when the new key is unset, and migrates it forward", () => {
+    const store = stubLocalStorage();
+    store.set("vibedeck.settings.section", "terminal");
+
+    expect(loadSettingsSection()).toBe("terminal");
+    // The migration actually happened, not just a lucky read.
+    expect(store.get("vibespace.settings.section")).toBe("terminal");
+    expect(store.has("vibedeck.settings.section")).toBe(false);
   });
 });
 

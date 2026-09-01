@@ -6,7 +6,7 @@
  * `groupSkillsByScope` is deliberately modelled on).
  *
  * The server side of Phase 10 (`apps/server/src/skills/*`) has no matching
- * types in `@vibedeck/shared` — skills are the one REST surface in this
+ * types in `@vibespace/shared` — skills are the one REST surface in this
  * app that never grew a shared-package type, presumably because they're
  * addressed by filesystem root rather than a SQLite-backed resource (see
  * `docs/SKILLS.md`'s "Unlike the board/agent/prompt tools..." note). So
@@ -17,7 +17,7 @@
  * other REST response this codebase types on the client side without a
  * shared package (e.g. `HealthResponse` in App.tsx).
  */
-import type { AgentId, SessionInfo } from "@vibedeck/shared";
+import type { AgentId, SessionInfo } from "@vibespace/shared";
 
 export type SkillScopeKind = "user" | "project";
 
@@ -74,9 +74,9 @@ export function filterSkills(skills: readonly SkillCatalogEntry[], query: string
 export interface GroupedSkills {
   /** Scoped to the repository being worked on — see docs/SKILLS.md's
    * "trust boundary" section: this is content a `git clone` brought in,
-   * not necessarily reviewed by the person running vibedeck. */
+   * not necessarily reviewed by the person running vibespace. */
   project: SkillCatalogEntry[];
-  /** Scoped to the user's own machine (`~/.agents`, `~/.vibedeck`,
+  /** Scoped to the user's own machine (`~/.agents`, `~/.vibespace`,
    * `~/.claude`) — not tied to whichever repo happens to be open. */
   user: SkillCatalogEntry[];
 }

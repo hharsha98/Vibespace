@@ -23,7 +23,7 @@
  * testable — same "logic file" convention as term/pendingCommand.ts or
  * this very directory's own logic.ts.
  */
-import type { SessionInfo } from "@vibedeck/shared";
+import type { SessionInfo } from "@vibespace/shared";
 
 /**
  * A dedicated MIME type for the drag payload — deliberately NOT
@@ -33,13 +33,13 @@ import type { SessionInfo } from "@vibedeck/shared";
  * and treated whatever text landed there as a skill name, dragging any
  * innocuous piece of text from somewhere else on the OS onto a running pane
  * would silently attempt to type it in as if it were a chosen skill.
- * Scoping the payload to a type only vibedeck itself ever writes means a
+ * Scoping the payload to a type only vibespace itself ever writes means a
  * pane's drop handler can trust that if this type is present in
  * `dataTransfer`, the drag genuinely originated from the skills dock —
  * anything else is ignored outright, never guessed at from its text
  * content.
  */
-export const SKILL_DRAG_MIME_TYPE = "application/x-vibedeck-skill";
+export const SKILL_DRAG_MIME_TYPE = "application/x-vibespace-skill";
 
 /**
  * The shape carried in `dataTransfer` under `SKILL_DRAG_MIME_TYPE` —

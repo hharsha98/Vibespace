@@ -10,7 +10,7 @@
  */
 import { access, constants } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
-import { AGENT_IDS, AGENT_SPECS, type AgentId } from "@vibedeck/shared";
+import { AGENT_IDS, AGENT_SPECS, type AgentId } from "@vibespace/shared";
 
 /**
  * Resolve an AgentId to the command + args node-pty should spawn.
@@ -95,7 +95,7 @@ export async function detectAllAgents(): Promise<Record<AgentId, boolean>> {
  * without an `index.ts` <-> `board/routes.ts` import cycle.
  *
  * Research notes (BridgeSpace-parity expansion from 4 to 10 agents) — every
- * binary name in `@vibedeck/shared`'s `AGENT_SPECS` and every install hint
+ * binary name in `@vibespace/shared`'s `AGENT_SPECS` and every install hint
  * below was checked against a real source before being written down, not
  * guessed blind. Confidence varies a lot per agent, so it's recorded here
  * explicitly rather than presented as uniform certainty:

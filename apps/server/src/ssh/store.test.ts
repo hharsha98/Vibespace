@@ -2,7 +2,7 @@
  * CRUD + duplicate-name + Duplicate() tests for SshProfileStore, run against
  * a real SQLite file inside a fresh `mkdtempSync` temp directory — same
  * pattern as `agents/store.test.ts`/`db/board.test.ts`. NEVER the
- * developer's real `~/.vibedeck/vibedeck.db`.
+ * developer's real `~/.vibespace/vibespace.db`.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -14,14 +14,14 @@ let dataDir: string;
 let store: SshProfileStore;
 
 beforeEach(() => {
-  dataDir = mkdtempSync(join(tmpdir(), "vibedeck-ssh-store-test-"));
-  process.env.VIBEDECK_DATA_DIR = dataDir;
+  dataDir = mkdtempSync(join(tmpdir(), "vibespace-ssh-store-test-"));
+  process.env.VIBESPACE_DATA_DIR = dataDir;
   store = new SshProfileStore();
 });
 
 afterEach(() => {
   store.close();
-  delete process.env.VIBEDECK_DATA_DIR;
+  delete process.env.VIBESPACE_DATA_DIR;
   rmSync(dataDir, { recursive: true, force: true });
 });
 

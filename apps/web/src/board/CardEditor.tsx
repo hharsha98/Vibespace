@@ -17,7 +17,7 @@
  * clearly separate, clearly labelled fields per the phase spec, each with
  * its own live character counter against the shared
  * `CARD_DESCRIPTION_MAX_LENGTH`/`CARD_TASK_KNOWLEDGE_MAX_LENGTH` caps
- * (`@vibedeck/shared` — never hard-coded here) — same
+ * (`@vibespace/shared` — never hard-coded here) — same
  * `textLimits.ts`/`AGENT_PROFILE_SYSTEM_PROMPT_MAX_LENGTH` counter pattern
  * Agents.tsx uses for its system prompt.
  */
@@ -28,7 +28,7 @@ import {
   CARD_TASK_KNOWLEDGE_MAX_LENGTH,
   type BoardCard,
   type CardPriority,
-} from "@vibedeck/shared";
+} from "@vibespace/shared";
 import { charCountColor, charCountStatus } from "../shell/textLimits.js";
 import { SHADOW_VAR } from "../shell/tokens.js";
 

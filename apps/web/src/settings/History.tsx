@@ -20,7 +20,7 @@
  * a pane-local restore.
  */
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
-import type { ResumeSessionResponse, SessionInfo, SessionRecord, Workspace } from "@vibedeck/shared";
+import type { ResumeSessionResponse, SessionInfo, SessionRecord, Workspace } from "@vibespace/shared";
 import { AgentGlyph } from "../grid/agentVisuals.js";
 import { Button, EmptyState, Pill, StatusDot } from "../shell/ui.js";
 import { FONT, RADIUS, SPACE } from "../shell/tokens.js";

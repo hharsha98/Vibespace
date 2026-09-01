@@ -4,7 +4,7 @@ import { SHADOW_VAR } from "./shell/tokens.js";
 
 /**
  * The shared visual/interaction shell behind every "centered search overlay"
- * in vibedeck: the Cmd+K command palette (`CommandPalette.tsx`) and, as of
+ * in vibespace: the Cmd+K command palette (`CommandPalette.tsx`) and, as of
  * Phase 6, the Cmd+P quick-open file finder (`files/QuickOpen.tsx`). Both
  * are "type to filter a list, arrow to move, Enter to run, click also
  * runs, Escape closes" — extracted here once (per the Phase 6 spec's own

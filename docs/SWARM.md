@@ -12,7 +12,7 @@ The server listens on `http://localhost:4317` by default.
 
 ## The three layers of file ownership, and what each one is honestly for
 
-A swarm's whole risk is two agents corrupting the same file. vibedeck
+A swarm's whole risk is two agents corrupting the same file. Vibespace
 addresses that with **three separate, complementary mechanisms** — not one
 mechanism with three names. Understand which one you're relying on:
 
@@ -156,7 +156,7 @@ close the race window entirely.
 GET /api/swarm/missions/:id/conflicts   -> { conflicts: [{ path, holderAgentId, detectedAt }, ...] }
 ```
 
-While a mission is `running`, vibedeck watches its workspace (the same
+While a mission is `running`, Vibespace watches its workspace (the same
 chokidar mechanism the file tree's live-update feature uses). If a claimed
 path changes on disk, a conflict row is recorded naming the path and
 whoever currently holds the claim on it. Read this as a trip-wire for a

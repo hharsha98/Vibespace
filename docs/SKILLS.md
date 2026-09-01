@@ -3,12 +3,12 @@
 A **skill** is a reusable instruction pack — a directory containing a
 `SKILL.md` file that tells an agent how to do something specific well
 ("how to audit a feature against our parity checklist", "how to write a
-migration for this project's ORM", etc). vibedeck implements the **open
+migration for this project's ORM", etc). Vibespace implements the **open
 [agentskills.io](https://agentskills.io) standard** rather than a private
 format — see `docs/RESEARCH.md` §4 for why: it's the one place in this
 project's whole feature set where an interoperable public format already
 exists, so a skill written for another agentskills.io-compatible client
-works here unmodified, and a skill you write for vibedeck works elsewhere
+works here unmodified, and a skill you write for Vibespace works elsewhere
 too.
 
 This document covers the **server half** only: discovery, parsing, the
@@ -100,10 +100,10 @@ silently failing to appear.
 | # | Scope | Path |
 |---|---|---|
 | 1 | User | `~/.agents/skills/` (cross-client convention) |
-| 2 | User | `~/.vibedeck/skills/` (vibedeck's own) |
+| 2 | User | `~/.vibespace/skills/` (Vibespace's own) |
 | 3 | User | `~/.claude/skills/` (pragmatic compatibility — many existing skills already live here) |
 | 4 | Project | `<workspace root>/.agents/skills/` |
-| 5 | Project | `<workspace root>/.vibedeck/skills/` |
+| 5 | Project | `<workspace root>/.vibespace/skills/` |
 | 6 | Project | `<workspace root>/.claude/skills/` |
 
 Project scopes are listed last so "project overrides user" — the universal
@@ -129,7 +129,7 @@ yet — and a `SKILL.md` is prose an agent is meant to read and act on. A
 malicious repo could ship a skill whose description or body tries to steer
 a connected agent into doing something the user never asked for. This is
 the same class of risk as any other prompt injection, just delivered as a
-"skill" instead of a code comment, and vibedeck does **not** solve it —
+"skill" instead of a code comment, and Vibespace does **not** solve it —
 nothing short of not reading the file would.
 
 What this phase *does* do:
@@ -211,8 +211,8 @@ than re-deriving it:
 
 ## An example skill
 
-`.agents/skills/vibedeck-parity-audit/SKILL.md`, shipped in this repo, is a
+`.agents/skills/vibespace-parity-audit/SKILL.md`, shipped in this repo, is a
 real, working skill — not a placeholder — that walks an agent through
-checking one of vibedeck's own features against `docs/PARITY.md`. It's a
+checking one of Vibespace's own features against `docs/PARITY.md`. It's a
 useful worked example of everything above: valid frontmatter, a project
 scope, and a body worth actually reading.

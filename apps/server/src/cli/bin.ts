@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * The runnable `vibedeck` bin entry — `node dist/cli/bin.js [path]` after
- * `pnpm build` (what the `"vibedeck"` field in package.json's `bin` points
- * at), or `pnpm --filter @vibedeck/server exec vibedeck [path]` once pnpm
+ * The runnable `vibespace` bin entry — `node dist/cli/bin.js [path]` after
+ * `pnpm build` (what the `"vibespace"` field in package.json's `bin` points
+ * at), or `pnpm --filter @vibespace/server exec vibespace [path]` once pnpm
  * has linked that bin. All the actual decision-making lives in
- * `./vibedeck.ts`'s `runVibedeckCli` (unit-testable with fake deps, no real
+ * `./vibespace.ts`'s `runVibespaceCli` (unit-testable with fake deps, no real
  * process/network involved); this file's only job is wiring REAL
  * implementations of those deps — an actual `fetch`, an actual detached
  * `child_process.spawn`, an actual platform "open a URL" command — and
@@ -22,7 +22,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveRootPath } from "../workspace-path.js";
 import { resolveServerPort, DESKTOP_SIDECAR_PORT } from "../runtime-config.js";
-import { runVibedeckCli, ensureWorkspace, type VibedeckCliDeps } from "./vibedeck.js";
+import { runVibespaceCli, ensureWorkspace, type VibespaceCliDeps } from "./vibespace.js";
 
 /** Fetches `/api/health` with a short timeout — used both to decide "is a
  * server already up on this port" and, while waiting for a freshly-started
@@ -55,14 +55,14 @@ async function waitForServerUpReal(port: number, timeoutMs: number): Promise<boo
  * Spawns `dist/index.js` (this CLI's own sibling once built — see the
  * package layout comment below) as a detached, backgrounded process, the
  * same "just run node on the built server" a plain `node dist/index.js`
- * deployment does. `VIBEDECK_PORT` is set explicitly to `port` even though
+ * deployment does. `VIBESPACE_PORT` is set explicitly to `port` even though
  * it usually already resolves to the same default — makes the spawned
  * process's port a hard guarantee rather than "whatever it happens to
  * compute", in case `bin.ts` and the spawned server ever see a different
  * environment for any reason.
  *
  * `detached: true` + `child.unref()` is what lets the started server
- * outlive THIS short-lived CLI process — `vibedeck .` should hand off to a
+ * outlive THIS short-lived CLI process — `vibespace .` should hand off to a
  * long-running server and exit, not stay attached to it like a foreground
  * `pnpm dev` would.
  */
@@ -74,14 +74,14 @@ function startServerReal(port: number): void {
   const serverEntry = resolve(moduleDir, "../index.js");
   if (!existsSync(serverEntry)) {
     throw new Error(
-      `Cannot find the built server at "${serverEntry}". Run "pnpm --filter @vibedeck/server build" first ` +
-        `(the vibedeck CLI needs a built server to start — it doesn't run one from TypeScript source).`
+      `Cannot find the built server at "${serverEntry}". Run "pnpm --filter @vibespace/server build" first ` +
+        `(the vibespace CLI needs a built server to start — it doesn't run one from TypeScript source).`
     );
   }
   const child = spawn(process.execPath, [serverEntry], {
     detached: true,
     stdio: "ignore",
-    env: { ...process.env, VIBEDECK_PORT: String(port) },
+    env: { ...process.env, VIBESPACE_PORT: String(port) },
   });
   child.unref();
 }
@@ -96,7 +96,7 @@ function startServerReal(port: number): void {
  * window title rather than the thing to open), `xdg-open` on Linux/BSD.
  * Failure to launch a browser (missing command, no display, headless box)
  * is caught and swallowed rather than failing the whole CLI — the URL was
- * already printed to stdout by `runVibedeckCli`, so the user can still open
+ * already printed to stdout by `runVibespaceCli`, so the user can still open
  * it by hand; the workspace itself was already created/found either way.
  */
 async function openUrlReal(url: string): Promise<void> {
@@ -118,11 +118,11 @@ async function openUrlReal(url: string): Promise<void> {
 
 async function main(): Promise<void> {
   const defaultPort = resolveServerPort(process.env);
-  // De-duped in case VIBEDECK_PORT happens to already equal the desktop
+  // De-duped in case VIBESPACE_PORT happens to already equal the desktop
   // sidecar's port (unlikely, but `new Set` makes it harmless either way).
   const candidatePorts = [...new Set([defaultPort, DESKTOP_SIDECAR_PORT])];
 
-  const deps: VibedeckCliDeps = {
+  const deps: VibespaceCliDeps = {
     resolvePath: resolveRootPath,
     candidatePorts,
     defaultPort,
@@ -135,10 +135,10 @@ async function main(): Promise<void> {
     logError: (message) => console.error(message),
   };
 
-  process.exitCode = await runVibedeckCli(process.argv.slice(2), deps);
+  process.exitCode = await runVibespaceCli(process.argv.slice(2), deps);
 }
 
 main().catch((err: unknown) => {
-  console.error("vibedeck: fatal error", err);
+  console.error("vibespace: fatal error", err);
   process.exitCode = 1;
 });

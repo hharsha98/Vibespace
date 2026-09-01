@@ -1,4 +1,4 @@
-# vibedeck design language
+# Vibespace design language
 
 The target look is the class of agentic development environments that
 BridgeSpace popularised: a dark, dense, three-column workroom where terminals,
@@ -6,7 +6,7 @@ tasks and context sit side by side.
 
 This document describes **our** implementation of that design language. It is a
 functional style guide, not a copy of anyone's assets. We do not use another
-product's name, logo, wordmark, or brand colours, and vibedeck never presents
+product's name, logo, wordmark, or brand colours, and Vibespace never presents
 itself as that product.
 
 Observed reference: bridgemind.ai/products/bridgespace product screenshots,
@@ -18,7 +18,7 @@ reviewed 2026-08-11.
 
 ```
 ┌────────────────────────────────────────────────────────────────────┐
-│  ▮ vibedeck        workspace › project                    ⚙ ? ◑    │  top bar (36px)
+│  ▮ Vibespace        workspace › project                    ⚙ ? ◑    │  top bar (36px)
 ├──────────┬──────────────────────────────────────┬──────────────────┤
 │WORKSPACES│                                      │  right dock      │
 │      + ⌄ │                                      │                  │

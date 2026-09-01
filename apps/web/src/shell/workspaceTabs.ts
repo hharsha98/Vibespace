@@ -10,7 +10,7 @@
  * tested here). Same "logic in its own pure module, component just renders
  * it" split `term/fitIfVisible.ts` and `settings/sections.ts` already use.
  */
-import type { Workspace } from "@vibedeck/shared";
+import type { Workspace } from "@vibespace/shared";
 
 /** One tab's derived display data — a thin, testable projection of a
  * `Workspace`. Tab order is exactly `workspaces`' own order (the order the

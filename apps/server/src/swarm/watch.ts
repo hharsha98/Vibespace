@@ -89,7 +89,7 @@ export function startMissionWatcher(
   // every workspace over one of them is not a trade anyone would choose.
   watcher.on("error", (err: unknown) => {
     console.warn(
-      `vibedeck: mission ${missionId} watcher error under "${workspaceRoot}" (continuing to watch): ` +
+      `vibespace: mission ${missionId} watcher error under "${workspaceRoot}" (continuing to watch): ` +
         `${err instanceof Error ? err.message : String(err)}`
     );
   });

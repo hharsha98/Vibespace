@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AGENT_IDS } from "@vibedeck/shared";
+import { AGENT_IDS } from "@vibespace/shared";
 import { GENERIC_LOGIN_NOTE, loginNoteFor } from "./accounts.js";
 
 describe("loginNoteFor", () => {

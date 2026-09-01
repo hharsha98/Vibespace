@@ -19,7 +19,7 @@ import type { FastifyInstance } from "fastify";
 import {
   SSH_PROFILE_FIELD_MAX_LENGTH,
   SSH_PROFILE_STARTUP_COMMAND_MAX_LENGTH,
-} from "@vibedeck/shared";
+} from "@vibespace/shared";
 import type { SshProfileStore, UpdateSshProfileOptions } from "./store.js";
 
 export interface SshRoutesDeps {

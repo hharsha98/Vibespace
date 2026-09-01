@@ -16,7 +16,7 @@ describe("resolveRootPath", () => {
   });
 
   it("rejects a path that doesn't exist", () => {
-    const result = resolveRootPath("/definitely/does/not/exist/vibedeck-test");
+    const result = resolveRootPath("/definitely/does/not/exist/vibespace-test");
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error).toContain("does not exist");
@@ -24,7 +24,7 @@ describe("resolveRootPath", () => {
   });
 
   it("rejects a path that exists but is a file, not a directory", () => {
-    const dir = mkdtempSync(join(tmpdir(), "vibedeck-path-test-"));
+    const dir = mkdtempSync(join(tmpdir(), "vibespace-path-test-"));
     const filePath = join(dir, "not-a-directory.txt");
     writeFileSync(filePath, "hello");
 
@@ -36,7 +36,7 @@ describe("resolveRootPath", () => {
   });
 
   it("accepts an existing absolute directory", () => {
-    const dir = mkdtempSync(join(tmpdir(), "vibedeck-path-test-"));
+    const dir = mkdtempSync(join(tmpdir(), "vibespace-path-test-"));
     const result = resolveRootPath(dir);
     expect(result).toEqual({ ok: true, path: dir });
   });
@@ -47,7 +47,7 @@ describe("resolveRootPath", () => {
   });
 
   it("trims surrounding whitespace before resolving", () => {
-    const dir = mkdtempSync(join(tmpdir(), "vibedeck-path-test-"));
+    const dir = mkdtempSync(join(tmpdir(), "vibespace-path-test-"));
     const result = resolveRootPath(`  ${dir}  `);
     expect(result).toEqual({ ok: true, path: dir });
   });

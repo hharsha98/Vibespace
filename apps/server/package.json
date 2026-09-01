@@ -1,12 +1,12 @@
 {
-  "name": "@vibedeck/server",
+  "name": "@vibespace/server",
   "version": "0.1.2",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
   "bin": {
-    "vibedeck-memory-mcp": "./dist/memory/mcp-server.js",
-    "vibedeck": "./dist/cli/bin.js"
+    "vibespace-memory-mcp": "./dist/memory/mcp-server.js",
+    "vibespace": "./dist/cli/bin.js"
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",
@@ -20,7 +20,7 @@
     "@fastify/static": "^10.1.3",
     "@fastify/websocket": "^11.3.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "@vibedeck/shared": "workspace:*",
+    "@vibespace/shared": "workspace:*",
     "better-sqlite3": "^11.8.1",
     "chokidar": "^4.0.3",
     "fastify": "^5.2.1",

@@ -21,8 +21,8 @@ let fakeHomeDir: string;
 let realHome: string | undefined;
 
 beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), "vibedeck-skills-mcp-test-"));
-  fakeHomeDir = mkdtempSync(join(tmpdir(), "vibedeck-skills-mcp-fake-home-"));
+  root = mkdtempSync(join(tmpdir(), "vibespace-skills-mcp-test-"));
+  fakeHomeDir = mkdtempSync(join(tmpdir(), "vibespace-skills-mcp-fake-home-"));
   realHome = process.env.HOME;
   process.env.HOME = fakeHomeDir;
 });

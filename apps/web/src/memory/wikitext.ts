@@ -9,8 +9,8 @@
  *
  * This deliberately mirrors `apps/server/src/memory/links.ts`'s
  * `stripCode`/`extractLinks` regexes rather than importing them: the web
- * app only depends on `@vibedeck/shared` (browser-safe), not
- * `@vibedeck/server`, so a server-side module isn't reachable here at all —
+ * app only depends on `@vibespace/shared` (browser-safe), not
+ * `@vibespace/server`, so a server-side module isn't reachable here at all —
  * see that file's top comment for the shared reasoning behind the regexes
  * themselves.
  */

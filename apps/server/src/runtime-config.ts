@@ -34,31 +34,34 @@ import { resolve } from "node:path";
 export const DEFAULT_PORT = 4317;
 
 /**
- * The fixed port the desktop app's Tauri sidecar always sets `VIBEDECK_PORT`
+ * The fixed port the desktop app's Tauri sidecar always sets `VIBESPACE_PORT`
  * to (`apps/desktop/src-tauri/src/main.rs`'s `DESKTOP_PORT` constant — kept
  * in sync with this value by hand, since Rust and TypeScript can't share a
  * literal across the process boundary; grep both if you ever change either
- * one). The `vibedeck` CLI (`./cli/vibedeck.ts`) checks this port, in
+ * one). The `vibespace` CLI (`./cli/vibespace.ts`) checks this port, in
  * addition to `resolveServerPort`'s result, when deciding whether a server
  * is already running — a user with the desktop app open already has a
  * perfectly good server + database to reuse, and starting a second one on
  * `DEFAULT_PORT` would be redundant (both would share the same
- * `~/.vibedeck/vibedeck.db`, since the desktop sidecar never overrides
- * `VIBEDECK_DATA_DIR`, but would mean two Fastify processes and two
+ * `~/.vibespace/vibespace.db`, since the desktop sidecar never overrides
+ * `VIBESPACE_DATA_DIR`, but would mean two Fastify processes and two
  * `node-pty` session managers alive at once for no reason).
  */
 export const DESKTOP_SIDECAR_PORT = 45317;
 
 /**
- * Resolves the port to listen on: `VIBEDECK_PORT` if it's set to a valid
- * positive integer, otherwise `DEFAULT_PORT`. `pnpm dev`/tests never set
- * this variable, so they get the exact same 4317 as before this phase —
- * only the desktop app's sidecar wrapper sets it (to a different, fixed
- * port — see apps/desktop's README for why 4317 itself is unsafe to reuse:
- * a user could have `pnpm dev` running in a terminal at the same time).
+ * Resolves the port to listen on: `VIBESPACE_PORT` if it's set to a valid
+ * positive integer, else the legacy `VIBEDECK_PORT` (still accepted for
+ * back-compat — a script or Docker setup exported it before the rename and
+ * has no reason to know it needs updating), otherwise `DEFAULT_PORT`.
+ * `pnpm dev`/tests never set either variable, so they get the exact same
+ * 4317 as before this phase — only the desktop app's sidecar wrapper sets
+ * `VIBESPACE_PORT` (to a different, fixed port — see apps/desktop's README
+ * for why 4317 itself is unsafe to reuse: a user could have `pnpm dev`
+ * running in a terminal at the same time).
  */
 export function resolveServerPort(env: NodeJS.ProcessEnv): number {
-  const raw = env.VIBEDECK_PORT;
+  const raw = env.VIBESPACE_PORT ?? env.VIBEDECK_PORT;
   if (!raw) return DEFAULT_PORT;
   const parsed = Number(raw);
   if (!Number.isInteger(parsed) || parsed <= 0 || parsed > 65535) return DEFAULT_PORT;
@@ -66,7 +69,8 @@ export function resolveServerPort(env: NodeJS.ProcessEnv): number {
 }
 
 export interface ResolveStaticDirOptions {
-  /** Process env to read `VIBEDECK_STATIC_DIR` from. */
+  /** Process env to read `VIBESPACE_STATIC_DIR` (or its legacy name,
+   * `VIBEDECK_STATIC_DIR`) from. */
   env: NodeJS.ProcessEnv;
   /** The directory this module itself lives in (`src/` under tsx/vitest,
    * `dist/` after `pnpm build`) — used to locate `apps/web/dist` by
@@ -88,13 +92,15 @@ export interface ResolveStaticDirOptions {
  *
  * Two ways a directory gets chosen:
  *
- *   - `VIBEDECK_STATIC_DIR` is set: use it verbatim. This is what the
- *     desktop sidecar wrapper sets (see apps/desktop/src-tauri/src/main.rs)
- *     — explicit and unambiguous, no guessing. If the directory doesn't
- *     exist, this throws rather than silently falling back to "no UI at
- *     all" — a desktop build that explicitly asked for static serving and
- *     can't find the build it asked for is a packaging bug that should
- *     fail loudly, not serve a blank app.
+ *   - `VIBESPACE_STATIC_DIR` (or its legacy name, `VIBEDECK_STATIC_DIR` —
+ *     back-compat for a packaging script written before the rename) is
+ *     set: use it verbatim. This is what the desktop sidecar wrapper sets
+ *     (see apps/desktop/src-tauri/src/main.rs) — explicit and unambiguous,
+ *     no guessing. If the directory doesn't exist, this throws rather than
+ *     silently falling back to "no UI at all" — a desktop build that
+ *     explicitly asked for static serving and can't find the build it
+ *     asked for is a packaging bug that should fail loudly, not serve a
+ *     blank app.
  *   - Unset: auto-detect `apps/web/dist` by its position relative to this
  *     module (`../../web/dist` — true both from `apps/server/src/` under
  *     tsx and `apps/server/dist/` after `tsc`, since both sit exactly one
@@ -110,12 +116,21 @@ export interface ResolveStaticDirOptions {
 export function resolveStaticDir(options: ResolveStaticDirOptions): string | null {
   const exists = options.exists ?? existsSync;
 
-  const override = options.env.VIBEDECK_STATIC_DIR;
+  // Whichever variable was actually set is the one named in the thrown
+  // error below — a user who set the legacy `VIBEDECK_STATIC_DIR` and
+  // mistyped the path should see THAT name in the error, not be sent
+  // hunting for a `VIBESPACE_STATIC_DIR` they never set.
+  const overrideVarName = options.env.VIBESPACE_STATIC_DIR
+    ? "VIBESPACE_STATIC_DIR"
+    : options.env.VIBEDECK_STATIC_DIR
+      ? "VIBEDECK_STATIC_DIR"
+      : null;
+  const override = options.env.VIBESPACE_STATIC_DIR ?? options.env.VIBEDECK_STATIC_DIR;
   if (override) {
     if (!exists(override)) {
       throw new Error(
-        `VIBEDECK_STATIC_DIR was set to "${override}", but that directory doesn't exist. ` +
-          `Build the web app first (pnpm --filter @vibedeck/web build).`
+        `${overrideVarName} was set to "${override}", but that directory doesn't exist. ` +
+          `Build the web app first (pnpm --filter @vibespace/web build).`
       );
     }
     return override;
@@ -128,7 +143,7 @@ export function resolveStaticDir(options: ResolveStaticDirOptions): string | nul
 /** The exact stdout line prefix the desktop sidecar wrapper looks for.
  * Exported so both `formatReadyLine` and the Rust side's own comment (it
  * can't import this, but points back here) agree on one source of truth. */
-export const READY_LINE_PREFIX = "VIBEDECK_SERVER_READY:";
+export const READY_LINE_PREFIX = "VIBESPACE_SERVER_READY:";
 
 /**
  * The line the server prints to stdout exactly once, right after

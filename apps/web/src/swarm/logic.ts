@@ -7,7 +7,7 @@
  * lookups, progress arithmetic, elapsed-time formatting, and @mention
  * parsing for the command bar.
  */
-import type { MissionAgentStatus, MissionRole, MissionStatus, MissionTaskStatus } from "@vibedeck/shared";
+import type { MissionAgentStatus, MissionRole, MissionStatus, MissionTaskStatus } from "@vibespace/shared";
 import type { StatusKind } from "../shell/ui.js";
 
 // --- Node layout ------------------------------------------------------------

@@ -16,14 +16,14 @@ const WORKSPACE_A = "workspace-a";
 const WORKSPACE_B = "workspace-b";
 
 beforeEach(() => {
-  dataDir = mkdtempSync(join(tmpdir(), "vibedeck-prompts-store-test-"));
-  process.env.VIBEDECK_DATA_DIR = dataDir;
+  dataDir = mkdtempSync(join(tmpdir(), "vibespace-prompts-store-test-"));
+  process.env.VIBESPACE_DATA_DIR = dataDir;
   store = new SavedPromptStore();
 });
 
 afterEach(() => {
   store.close();
-  delete process.env.VIBEDECK_DATA_DIR;
+  delete process.env.VIBESPACE_DATA_DIR;
   rmSync(dataDir, { recursive: true, force: true });
 });
 

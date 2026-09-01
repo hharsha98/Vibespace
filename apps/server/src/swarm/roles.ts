@@ -20,7 +20,7 @@
  * "execute" it — harmless, and exactly what you'd expect from asking a
  * shell to be a coordinator.
  */
-import type { MissionAgent, MissionRole } from "@vibedeck/shared";
+import type { MissionAgent, MissionRole } from "@vibespace/shared";
 import { toSingleLine } from "../board/dispatch.js";
 
 /** What each role means, and — for builder — the one rule that matters
@@ -51,7 +51,7 @@ export function buildRolePreamble(agent: MissionAgent, missionPrompt: string, se
     `Read the mailbox with GET ${base}/messages, and send with POST ${base}/messages and body ` +
     `{"fromAgentId":"${agent.id}","toAgentId":"<another agent id, or omit to broadcast>","body":"..."}.`;
   const preamble =
-    `[vibedeck swarm] You are "${agent.label}" (agent id "${agent.id}"), ${roleText} ${mailboxHint} ` +
+    `[vibespace swarm] You are "${agent.label}" (agent id "${agent.id}"), ${roleText} ${mailboxHint} ` +
     `The mission: ${missionPrompt}`;
   return `${toSingleLine(preamble)}\n`;
 }

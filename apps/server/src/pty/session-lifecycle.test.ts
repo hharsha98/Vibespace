@@ -35,8 +35,8 @@ let manager: SessionManager;
 let store: SessionRecordsStore;
 
 function setup() {
-  dataDir = mkdtempSync(join(tmpdir(), "vibedeck-session-lifecycle-test-"));
-  process.env.VIBEDECK_DATA_DIR = dataDir;
+  dataDir = mkdtempSync(join(tmpdir(), "vibespace-session-lifecycle-test-"));
+  process.env.VIBESPACE_DATA_DIR = dataDir;
   manager = new SessionManager();
   store = new SessionRecordsStore();
 }
@@ -44,7 +44,7 @@ function setup() {
 afterEach(() => {
   manager?.disposeAll();
   store?.close();
-  delete process.env.VIBEDECK_DATA_DIR;
+  delete process.env.VIBESPACE_DATA_DIR;
   if (dataDir) rmSync(dataDir, { recursive: true, force: true });
 });
 

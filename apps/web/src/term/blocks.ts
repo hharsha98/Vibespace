@@ -2,7 +2,7 @@
  * Pure data model for "command blocks" — Phase 5's grouping of a shell
  * pane's history into per-command chunks, driven by the OSC 133 markers a
  * shell pane's pty emits (see
- * `apps/server/src/pty/shell-integration/vibedeck-integration.zsh` for what
+ * `apps/server/src/pty/shell-integration/vibespace-integration.zsh` for what
  * sends them, and `Terminal.tsx` for where they're parsed off the wire and
  * fed into a `BlockTracker`).
  *
@@ -182,7 +182,7 @@ export type Osc133Event =
   | { marker: "B" }
   | { marker: "C" }
   | { marker: "D"; exitCode: number | null }
-  /** Not one of A/B/C/D at all — some other OSC 133 sub-command vibedeck
+  /** Not one of A/B/C/D at all — some other OSC 133 sub-command vibespace
    * doesn't (yet) understand, or plain garbage. Callers should treat this
    * the same as "ignore," not as an error. */
   | null;

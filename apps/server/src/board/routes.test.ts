@@ -1,7 +1,7 @@
 /**
  * Route tests for the Phase 7 board endpoints, exercised via `app.inject()`
  * (in-process, no real network port) — same pattern as `index.test.ts`.
- * `VIBEDECK_DATA_DIR` is pointed at a fresh temp directory per test, same
+ * `VIBESPACE_DATA_DIR` is pointed at a fresh temp directory per test, same
  * reasoning as every other SQLite-backed test in this repo.
  *
  * Every dispatch test below uses the "shell" agent ONLY — CI runs on
@@ -13,18 +13,18 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { BoardCard } from "@vibedeck/shared";
+import type { BoardCard } from "@vibespace/shared";
 import { buildApp } from "../index.js";
 
 let dataDir: string;
 
 beforeEach(() => {
-  dataDir = mkdtempSync(join(tmpdir(), "vibedeck-board-routes-test-"));
-  process.env.VIBEDECK_DATA_DIR = dataDir;
+  dataDir = mkdtempSync(join(tmpdir(), "vibespace-board-routes-test-"));
+  process.env.VIBESPACE_DATA_DIR = dataDir;
 });
 
 afterEach(() => {
-  delete process.env.VIBEDECK_DATA_DIR;
+  delete process.env.VIBESPACE_DATA_DIR;
   rmSync(dataDir, { recursive: true, force: true });
 });
 
@@ -42,7 +42,7 @@ async function waitFor(condition: () => boolean, timeoutMs = 10_000): Promise<vo
 /** Creates a throwaway workspace (via the real REST route) for tests that
  * need a valid workspaceId to hang cards off of. */
 async function createWorkspace(app: ReturnType<typeof buildApp>) {
-  const projectDir = mkdtempSync(join(tmpdir(), "vibedeck-board-workspace-"));
+  const projectDir = mkdtempSync(join(tmpdir(), "vibespace-board-workspace-"));
   const response = await app.inject({
     method: "POST",
     url: "/api/workspaces",

@@ -9,7 +9,7 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
-import type { FileEntry, FileTreeResponse } from "@vibedeck/shared";
+import type { FileEntry, FileTreeResponse } from "@vibespace/shared";
 
 interface FileTreeProps {
   /** The active workspace's id, or null if none is active. Resetting to a

@@ -23,7 +23,7 @@
  *    updates it — so the picker and this page can never drift apart.
  */
 import { useCallback, useState, type CSSProperties } from "react";
-import type { SshProfile } from "@vibedeck/shared";
+import type { SshProfile } from "@vibespace/shared";
 import { charCountColor, charCountStatus } from "../shell/textLimits.js";
 import { Button, EmptyState, ListRow, Pill } from "../shell/ui.js";
 import { FONT, RADIUS, SPACE } from "../shell/tokens.js";
@@ -339,7 +339,7 @@ export default function SshProfiles({
                 packages/shared/src/protocol.ts for the full reasoning. */}
             <p style={authNoteStyle}>
               Authentication uses your own SSH keys/agent (whatever <code>ssh</code> in a normal terminal
-              already uses) — vibedeck never stores a password. A host that only accepts password auth will
+              already uses) — vibespace never stores a password. A host that only accepts password auth will
               prompt for one inside the pane, like any terminal.
             </p>
 

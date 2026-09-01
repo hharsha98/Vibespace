@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
-import type { SessionInfo, Workspace } from "@vibedeck/shared";
+import type { SessionInfo, Workspace } from "@vibespace/shared";
 import type { AgentOption } from "../grid/PaneView.js";
 import { formatBlockDuration, type CommandBlock } from "../term/blocks.js";
 import { scrollSessionToLine, useSessionBlocks } from "../term/blockStore.js";
@@ -331,7 +331,7 @@ function BlocksPanel({ session }: { session: SessionInfo | null }) {
   if (session.agent !== "shell") {
     return (
       <EmptyNote>
-        Command blocks need vibedeck's shell integration, which only runs in "shell" panes — not{" "}
+        Command blocks need vibespace's shell integration, which only runs in "shell" panes — not{" "}
         {session.title}.
       </EmptyNote>
     );

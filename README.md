@@ -1,6 +1,6 @@
-# vibedeck
+# Vibespace
 
-**vibedeck** is an open-source *agentic development environment* — a home base
+**Vibespace** is an open-source *agentic development environment* — a home base
 for running multiple AI coding agents (like Claude, Cursor, or Codex) at the
 same time, side by side, instead of juggling them in separate terminal
 windows.
@@ -25,7 +25,7 @@ just answering questions.
 
 ## See it work
 
-![vibedeck demo — launching a shell and Claude Code side by side, splitting panes, the task board, and settings](./docs/vibedeck-demo.gif)
+![Vibespace demo — launching a shell and Claude Code side by side, splitting panes, the task board, and settings](./docs/vibespace-demo.gif)
 
 Recorded from a real session, not a mockup — every pane is a real pty, and
 every agent listed is one actually installed on the machine that recorded
@@ -53,17 +53,17 @@ It ends where it started: both agents still running.
 
 ## Download
 
-**[Get v0.1.2 →](https://github.com/hharsha98/vibedeck/releases/latest)**
+**[Get v0.1.2 →](https://github.com/hharsha98/Vibespace/releases/latest)**
 
 | Platform | File |
 |---|---|
-| macOS (Apple Silicon) | `vibedeck_0.1.2_aarch64.dmg` |
-| Windows | `vibedeck_0.1.2_x64-setup.exe` |
+| macOS (Apple Silicon) | `Vibespace_0.1.2_aarch64.dmg` |
+| Windows | `Vibespace_0.1.2_x64-setup.exe` |
 | Linux | `.deb`, `.rpm`, or `.AppImage` |
 
 Two things to know before you install:
 
-- **You need [Node.js 22+](https://nodejs.org) installed.** vibedeck runs
+- **You need [Node.js 22+](https://nodejs.org) installed.** Vibespace runs
   real terminals and a real database through Node, and the installer does
   not bundle a Node runtime.
 - **The app is not code-signed**, so the first launch is blocked. On macOS,
@@ -108,7 +108,7 @@ Honest about testing: **macOS is verified end-to-end** — the released DMG
 was downloaded, installed, launched, and used to spawn real terminals. The
 Windows and Linux packages build cleanly in CI but nobody has launched
 them yet. If you are the first, and something breaks,
-[open an issue](https://github.com/hharsha98/vibedeck/issues) — that is
+[open an issue](https://github.com/hharsha98/Vibespace/issues) — that is
 genuinely useful information.
 
 Prefer to run from source? See [Quickstart](#quickstart) below.
@@ -167,7 +167,7 @@ young project moving quickly; expect rough edges.
       starts an agent working on it — see
       [docs/AGENT-API.md](./docs/AGENT-API.md) for how an agent moves its
       own card.
-- [x] **Phase 8 — Shared memory**: plain markdown notes in `.vibedeck/memory/`,
+- [x] **Phase 8 — Shared memory**: plain markdown notes in `.vibespace/memory/`,
       linked into a graph and shared with every agent over MCP, so what one
       agent learns the next one starts with — see
       [docs/MEMORY.md](./docs/MEMORY.md).
@@ -189,7 +189,7 @@ young project moving quickly; expect rough edges.
       simply aren't drop targets. There's a keyboard route too, since
       dragging needs a mouse. One thing to be clear about: "sent" means the
       skill was **typed into that pane** — whether the agent then acts on
-      it is up to the agent, and not something vibedeck can see. See
+      it is up to the agent, and not something Vibespace can see. See
       [docs/SKILLS.md](./docs/SKILLS.md).
 - [x] **Phase 11a — Desktop app shell**: a real native macOS window (Tauri
       2) wrapping the same web app, spawning the Node server as a sidecar —
@@ -236,20 +236,42 @@ directory. From there: pick an agent for a pane, press `⌘K` for the command
 palette, or `?` for the full keyboard shortcut list.
 
 Whichever agents you want to run need to be installed and on your `PATH`
-already — vibedeck launches `claude`, `cursor-agent` and `codex`, it does not
+already — Vibespace launches `claude`, `cursor-agent` and `codex`, it does not
 bundle them. Anything missing is shown as "not installed" rather than
 failing when you click it.
 
-## The `vibedeck` CLI
+## Upgrading from vibedeck
 
-Once you have a build, `vibedeck [path]` opens any directory as a workspace
+This project used to be called **vibedeck**. If you already have it
+installed, upgrading to Vibespace is mostly automatic:
+
+- **Your data moves on its own.** The first time Vibespace starts, it finds
+  your old `~/.vibedeck` folder (workspaces, memory notes, pasted images)
+  and renames it to `~/.vibespace` for you — nothing to copy or export by
+  hand, and nothing is deleted.
+- **Old environment variables still work.** If you (or a script, or a
+  Docker setup) already export `VIBEDECK_DATA_DIR`, `VIBEDECK_PORT`, or
+  `VIBEDECK_STATIC_DIR`, Vibespace still reads them — no need to rename
+  anything right away.
+- **The one thing that is NOT automatic: the desktop app.** Vibespace's
+  desktop build has a new bundle identifier (macOS/Windows' way of
+  recognizing "this is the same app as before"), so an installed vibedeck
+  app has no way to auto-update into Vibespace — the two look like
+  completely different apps to your OS. Grab a fresh copy from
+  [Download](#download) above and install it the normal way; your data
+  will still be there once it starts, thanks to the automatic migration
+  above.
+
+## The `vibespace` CLI
+
+Once you have a build, `vibespace [path]` opens any directory as a workspace
 straight from the terminal — the equivalent of `cd`-ing into a project and
 running `bridgespace .` — instead of opening the app and adding it by hand.
 
 ```bash
-pnpm --filter @vibedeck/server build   # the CLI runs the built server, not TS source
-pnpm --filter @vibedeck/server exec vibedeck .          # this directory
-pnpm --filter @vibedeck/server exec vibedeck ~/code/foo # any other directory
+pnpm --filter @vibespace/server build   # the CLI runs the built server, not TS source
+pnpm --filter @vibespace/server exec vibespace .          # this directory
+pnpm --filter @vibespace/server exec vibespace ~/code/foo # any other directory
 ```
 
 What it does, in order:
@@ -278,19 +300,19 @@ wrapper (`apps/desktop/src-tauri/src/main.rs`) takes no CLI arguments and
 registers no URL scheme today, so there'd be nothing for it to open *at* —
 launching it would just show whatever workspace it last had selected, not
 necessarily the one you asked for. If you already have it open, step 2
-above finds and reuses its sidecar; vibedeck just doesn't know how to start
+above finds and reuses its sidecar; Vibespace just doesn't know how to start
 it pointed at a specific workspace yet.
 
 **Putting it on your PATH** is up to you — nothing in this repo does it
 automatically. Two common ways:
 
 ```bash
-# Option A: pnpm link, so `vibedeck` resolves globally
+# Option A: pnpm link, so `vibespace` resolves globally
 cd apps/server && pnpm link --global
 
 # Option B: add pnpm's per-project bin dir to PATH yourself, e.g. in
 # ~/.zshrc (only if you already know you want this):
-export PATH="/absolute/path/to/vibedeck/apps/server/node_modules/.bin:$PATH"
+export PATH="/absolute/path/to/vibespace/apps/server/node_modules/.bin:$PATH"
 ```
 
 ## Releasing
@@ -311,7 +333,7 @@ This is a **pnpm workspace monorepo** — one git repository containing
 several separate npm packages that can depend on each other locally.
 
 ```
-vibedeck/
+vibespace/
 ├── apps/
 │   ├── server/    # Fastify backend (port 4317)
 │   └── web/       # React + Vite frontend (port 5317)

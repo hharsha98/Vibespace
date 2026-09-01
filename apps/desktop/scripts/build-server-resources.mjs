@@ -19,7 +19,7 @@
 // plain `node` does not) — see main.rs's top doc comment for the full
 // history. The obvious-looking fix — changing `packages/shared/package.json`
 // itself to point `main` at `./dist/index.js` — was deliberately NOT done:
-// every package in the workspace resolves `@vibedeck/shared` through that
+// every package in the workspace resolves `@vibespace/shared` through that
 // same field, including `pnpm dev`'s `tsx watch`, which relies on `dist/`
 // NOT being required to exist for live-editing to work. Changing it
 // repo-wide risks breaking the "no build step needed between edits" dev
@@ -33,7 +33,7 @@
 // directory can contain files that are HARDLINKS into pnpm's
 // content-addressable store, not independent copies — confirmed by hand:
 // after a `pnpm deploy --legacy` locally, `stat -f "dev=%d inode=%i
-// links=%l"` on the deployed copy's `@vibedeck/shared/package.json` showed
+// links=%l"` on the deployed copy's `@vibespace/shared/package.json` showed
 // the SAME device+inode as the real `packages/shared/package.json`, with a
 // link count of 2. A plain `fs.writeFileSync` on that path (which opens the
 // existing inode and truncates it) would have silently rewritten the REAL
@@ -48,14 +48,14 @@
 //
 // `pnpm deploy`'s DEFAULT output — even the "self-contained" `--legacy`
 // target — is NOT symlink-free: `node_modules/fastify`,
-// `node_modules/@vibedeck/shared`, `node_modules/better-sqlite3`, etc. are
+// `node_modules/@vibespace/shared`, `node_modules/better-sqlite3`, etc. are
 // all symlinks into a `node_modules/.pnpm/<name>@<version>/node_modules/
 // <name>` virtual store that DOES contain real files. That's fine for
 // running the bundle directly — but Tauri's own resource-bundling step
 // (`tauri build` copying `bundle.resources` into the `.app`) was
 // confirmed, by hand, to NOT preserve those top-level symlinks: the built
 // `.app`'s `Resources/resources/server-bundle/node_modules/` ends up with
-// `.pnpm/` (the real content) but WITHOUT `fastify`, `@vibedeck/shared`,
+// `.pnpm/` (the real content) but WITHOUT `fastify`, `@vibespace/shared`,
 // or any other top-level package symlink — so the packaged server
 // immediately fails with `ERR_MODULE_NOT_FOUND: Cannot find package
 // 'fastify'` the moment it starts. Caught by actually launching a
@@ -91,7 +91,7 @@
 //     instead of symlinks into a pnpm store that won't exist on whatever
 //     machine installs the app).
 //   - `web/` — apps/web's built static assets (`apps/web/dist`), served by
-//     the bundled server via `VIBEDECK_STATIC_DIR`.
+//     the bundled server via `VIBESPACE_STATIC_DIR`.
 //
 // Real cost, stated plainly: this adds roughly 100-150MB to the installer
 // (mostly `node-pty`, which ships prebuilt binaries for every platform
@@ -144,24 +144,24 @@ function freshDir(dir) {
 }
 
 /**
- * Rewrites the deployed copy's `@vibedeck/shared/package.json` to resolve
+ * Rewrites the deployed copy's `@vibespace/shared/package.json` to resolve
  * through its own already-built `dist/` instead of the TypeScript `src/`
  * the live monorepo's copy points at (see this file's top comment). Reads
  * PLUS unlinks-then-writes, deliberately never a plain overwrite — see
  * "The hardlink trap" above for exactly why that distinction matters.
  */
 function patchSharedPackageJson(deployDir) {
-  const pkgPath = join(deployDir, "node_modules/@vibedeck/shared/package.json");
+  const pkgPath = join(deployDir, "node_modules/@vibespace/shared/package.json");
   if (!existsSync(pkgPath)) {
     throw new Error(
-      `Expected a deployed @vibedeck/shared at ${pkgPath} — pnpm deploy's output shape may have ` +
+      `Expected a deployed @vibespace/shared at ${pkgPath} — pnpm deploy's output shape may have ` +
         `changed. Refusing to guess; fix this script's assumptions before packaging."`
     );
   }
-  const distEntry = join(deployDir, "node_modules/@vibedeck/shared/dist/index.js");
+  const distEntry = join(deployDir, "node_modules/@vibespace/shared/dist/index.js");
   if (!existsSync(distEntry)) {
     throw new Error(
-      `${distEntry} doesn't exist — packages/shared must be built (\`pnpm --filter @vibedeck/shared build\`) ` +
+      `${distEntry} doesn't exist — packages/shared must be built (\`pnpm --filter @vibespace/shared build\`) ` +
         "before deploying, or the patched package.json below would point at nothing."
     );
   }
@@ -279,15 +279,15 @@ console.log("--- Phase 11b: building the relocatable server bundle ---");
 //    is part of the existing `apps/desktop` build chain (which only builds
 //    apps/web) — both are needed here specifically so `pnpm deploy` below
 //    has real `dist/` output to carry into the bundle.
-run("pnpm --filter @vibedeck/shared build", REPO_ROOT);
-run("pnpm --filter @vibedeck/server build", REPO_ROOT);
+run("pnpm --filter @vibespace/shared build", REPO_ROOT);
+run("pnpm --filter @vibespace/server build", REPO_ROOT);
 
 // 2. Fresh output directories.
 freshDir(SERVER_BUNDLE_DIR);
 freshDir(WEB_RESOURCE_DIR);
 
 // 3. `pnpm deploy` — NOT a plain copy — specifically because apps/server's
-//    own `node_modules/@vibedeck/shared`, `node_modules/better-sqlite3`,
+//    own `node_modules/@vibespace/shared`, `node_modules/better-sqlite3`,
 //    and `node_modules/node-pty` are pnpm-symlinked into a shared store
 //    that plainly does not exist on whichever machine ends up installing
 //    this app; `deploy` produces a self-contained tree instead (verified by
@@ -306,7 +306,7 @@ freshDir(WEB_RESOURCE_DIR);
 //    story, including why a first attempt at fixing this with a hand-
 //    rolled recursive symlink copier was worse — bigger AND still wrong).
 run(
-  `pnpm --filter @vibedeck/server deploy --prod --legacy --config.node-linker=hoisted "${SERVER_BUNDLE_DIR}"`,
+  `pnpm --filter @vibespace/server deploy --prod --legacy --config.node-linker=hoisted "${SERVER_BUNDLE_DIR}"`,
   REPO_ROOT
 );
 
@@ -340,7 +340,7 @@ patchSharedPackageJson(SERVER_BUNDLE_DIR);
 const webDist = join(REPO_ROOT, "apps/web/dist");
 if (!existsSync(webDist)) {
   throw new Error(
-    `${webDist} doesn't exist — run \`pnpm --filter @vibedeck/web build\` (or this package's own ` +
+    `${webDist} doesn't exist — run \`pnpm --filter @vibespace/web build\` (or this package's own ` +
       "\"build\" script) before build-server-resources.mjs."
   );
 }

@@ -112,7 +112,7 @@ describe("notifyAgentIdle", () => {
     vi.stubGlobal("document", { hidden: true });
     notifyAgentIdle("Claude Code");
     expect(ctor).toHaveBeenCalledTimes(1);
-    expect(ctor.mock.calls[0][0]).toBe("vibedeck");
+    expect(ctor.mock.calls[0][0]).toBe("vibespace");
     expect(ctor.mock.calls[0][1]).toEqual({ body: expect.stringContaining("Claude Code") });
   });
 });

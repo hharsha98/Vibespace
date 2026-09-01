@@ -1,5 +1,5 @@
 /**
- * Injects vibedeck's shell integration (see `vibedeck-integration.zsh`)
+ * Injects vibespace's shell integration (see `vibespace-integration.zsh`)
  * into a spawned "shell" agent's pty — WITHOUT ever writing to, or even
  * reading-and-modifying, the user's real dotfiles (`~/.zshrc` etc). Getting
  * this wrong would corrupt a real person's shell setup, so here's exactly
@@ -9,16 +9,16 @@
  * from a single environment variable, `ZDOTDIR` (falling back to `$HOME` if
  * it's unset). So instead of touching the user's real files at all, we:
  *
- *   1. Create a throwaway temp directory (`os.tmpdir()/vibedeck-zdotdir-*`).
+ *   1. Create a throwaway temp directory (`os.tmpdir()/vibespace-zdotdir-*`).
  *   2. Write our OWN `.zshenv`/`.zprofile`/`.zshrc`/`.zlogin` into it. Each
  *      one's entire job is "source the user's REAL file of the same name
  *      first, if it exists" — so their actual aliases, PATH exports, prompt
  *      customizations, etc. all still load exactly as before. `.zshrc`
- *      additionally sources `vibedeck-integration.zsh` (also copied into
+ *      additionally sources `vibespace-integration.zsh` (also copied into
  *      this same temp dir) AFTER the real one, so our hooks layer on top of
  *      (not instead of) whatever prompt the user already has.
  *   3. Spawn the pty with `ZDOTDIR` pointed at that temp dir, and
- *      `_VIBEDECK_REAL_ZDOTDIR` set to where their REAL dotfiles actually
+ *      `_VIBESPACE_REAL_ZDOTDIR` set to where their REAL dotfiles actually
  *      live (their real `$ZDOTDIR` if they'd already customized it,
  *      otherwise `$HOME` — the normal zsh default).
  *
@@ -27,7 +27,7 @@
  * every `writeFileSync` call in it targets a path built from the temp dir
  * this module itself created a moment earlier.
  *
- * `VIBEDECK_DISABLE_SHELL_INTEGRATION=1` skips all of this — `getEnvForShell`
+ * `VIBESPACE_DISABLE_SHELL_INTEGRATION=1` skips all of this — `getEnvForShell`
  * just returns `null`, and the caller (SessionManager) spawns the shell
  * exactly as it would have before this phase existed.
  */
@@ -37,29 +37,29 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** The four zsh startup files ZDOTDIR redirects, in the order zsh itself
- * reads them (zshenv always first, zlogin only for login shells — vibedeck
+ * reads them (zshenv always first, zlogin only for login shells — vibespace
  * spawns shells with `-l`, so all four actually run). */
 const RC_FILE_NAMES = [".zshenv", ".zprofile", ".zshrc", ".zlogin"] as const;
 type RcFileName = (typeof RC_FILE_NAMES)[number];
 
-const INTEGRATION_SCRIPT_FILENAME = "vibedeck-integration.zsh";
+const INTEGRATION_SCRIPT_FILENAME = "vibespace-integration.zsh";
 
 /** Absolute path to this module's own directory, resolved the ESM way
- * (no `__dirname` global available). `vibedeck-integration.zsh` always
+ * (no `__dirname` global available). `vibespace-integration.zsh` always
  * lives right next to the compiled/transpiled version of THIS file — in
  * `src/` under `tsx`/`vitest`, or in `dist/` after `pnpm build` (the
  * server's `build` script copies the .zsh file alongside the compiled JS
  * for exactly this reason) — so this resolves correctly in both places. */
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 
-/** The real, on-disk path to `vibedeck-integration.zsh` this process should
+/** The real, on-disk path to `vibespace-integration.zsh` this process should
  * read from. A named export (not just used internally) so tests can point
  * `createShellIntegrationDir` at a fixture script instead of the real one. */
 export const INTEGRATION_SCRIPT_PATH = join(MODULE_DIR, INTEGRATION_SCRIPT_FILENAME);
 
 /** The escape-hatch env var: set to exactly `"1"` to skip shell integration
  * entirely (no ZDOTDIR override, no temp dir, shell spawns unchanged). */
-export const DISABLE_ENV_VAR = "VIBEDECK_DISABLE_SHELL_INTEGRATION";
+export const DISABLE_ENV_VAR = "VIBESPACE_DISABLE_SHELL_INTEGRATION";
 
 /**
  * Where the user's REAL dotfiles live — their own `$ZDOTDIR` if they've
@@ -78,26 +78,26 @@ export function resolveRealZdotdir(env: NodeJS.ProcessEnv, fallbackHomedir: stri
  * happens later, when zsh itself runs this content; nothing here touches
  * the filesystem.
  *
- * Every file sources its real counterpart first (via `$_VIBEDECK_REAL_ZDOTDIR`,
+ * Every file sources its real counterpart first (via `$_VIBESPACE_REAL_ZDOTDIR`,
  * an env var the pty is spawned with — see the module doc comment above).
- * Only `.zshrc` also appends the vibedeck integration hooks, since that's
+ * Only `.zshrc` also appends the vibespace integration hooks, since that's
  * the one file that's guaranteed to run for both interactive login AND
  * non-login shells, and it's the conventional place for hook/prompt setup.
  */
 export function generateRcFileContent(fileName: RcFileName, includeIntegration: boolean): string {
   const lines = [
-    `# vibedeck: generated ZDOTDIR shim for ${fileName}.`,
+    `# vibespace: generated ZDOTDIR shim for ${fileName}.`,
     "# This file is NOT the user's real config — it lives in a throwaway temp",
     "# directory (see zdotdir.ts) and exists purely to source the user's real",
     `# ${fileName} (if they have one) so their normal shell setup still loads.`,
-    `if [[ -f "$_VIBEDECK_REAL_ZDOTDIR/${fileName}" ]]; then`,
-    `  source "$_VIBEDECK_REAL_ZDOTDIR/${fileName}"`,
+    `if [[ -f "$_VIBESPACE_REAL_ZDOTDIR/${fileName}" ]]; then`,
+    `  source "$_VIBESPACE_REAL_ZDOTDIR/${fileName}"`,
     "fi",
   ];
   if (includeIntegration) {
     lines.push(
       "",
-      "# vibedeck shell integration — OSC 133 command-block markers. Sourced",
+      "# vibespace shell integration — OSC 133 command-block markers. Sourced",
       "# AFTER the real .zshrc above, so it layers on top of (never replaces)",
       "# whatever prompt/hooks the user already has.",
       `if [[ -f "$ZDOTDIR/${INTEGRATION_SCRIPT_FILENAME}" ]]; then`,
@@ -115,7 +115,7 @@ export function generateRcFileContent(fileName: RcFileName, includeIntegration: 
  * it just created — nothing here can ever write outside that directory.
  *
  * @param integrationScriptPath Where to read the real integration script
- *   from (defaults to the actual `vibedeck-integration.zsh` next to this
+ *   from (defaults to the actual `vibespace-integration.zsh` next to this
  *   module; overridable so tests can use a small fixture instead).
  * @returns The absolute path to the new temp ZDOTDIR.
  */
@@ -125,7 +125,7 @@ export function createShellIntegrationDir(
   // `mkdtempSync` appends random characters to this prefix and creates the
   // directory atomically — it's the standard safe way to get a private
   // scratch directory, and it's always placed directly under `os.tmpdir()`.
-  const dir = mkdtempSync(join(tmpdir(), "vibedeck-zdotdir-"));
+  const dir = mkdtempSync(join(tmpdir(), "vibespace-zdotdir-"));
 
   const scriptContent = readFileSync(integrationScriptPath, "utf8");
   writeFileSync(join(dir, INTEGRATION_SCRIPT_FILENAME), scriptContent, "utf8");
@@ -165,7 +165,7 @@ export class ShellIntegrationManager {
     if (!this.zdotdir) {
       this.zdotdir = createShellIntegrationDir();
     }
-    return { ZDOTDIR: this.zdotdir, _VIBEDECK_REAL_ZDOTDIR: this.realZdotdir };
+    return { ZDOTDIR: this.zdotdir, _VIBESPACE_REAL_ZDOTDIR: this.realZdotdir };
   }
 
   /**
@@ -202,7 +202,7 @@ export class ShellIntegrationManager {
         rmSync(this.zdotdir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
       } catch (err) {
         console.warn(
-          `vibedeck: could not remove the temporary shell-integration directory "${this.zdotdir}" ` +
+          `vibespace: could not remove the temporary shell-integration directory "${this.zdotdir}" ` +
             `(${err instanceof Error ? err.message : String(err)}). It will be cleaned up by the OS.`
         );
       }

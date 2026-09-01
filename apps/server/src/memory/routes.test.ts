@@ -1,9 +1,9 @@
 /**
  * Route tests for the Phase 8 memory endpoints, exercised via `app.inject()`
- * — same pattern as board/routes.test.ts. `VIBEDECK_DATA_DIR` redirects the
+ * — same pattern as board/routes.test.ts. `VIBESPACE_DATA_DIR` redirects the
  * workspace SQLite db to a temp dir (workspaces are still DB-backed); a
  * SEPARATE temp dir stands in for the workspace's own project directory,
- * which is where `.vibedeck/memory/*.md` actually gets written — same two-
+ * which is where `.vibespace/memory/*.md` actually gets written — same two-
  * temp-dir split files/routes.test.ts uses.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -15,12 +15,12 @@ import { buildApp } from "../index.js";
 let dataDir: string;
 
 beforeEach(() => {
-  dataDir = mkdtempSync(join(tmpdir(), "vibedeck-memory-routes-test-"));
-  process.env.VIBEDECK_DATA_DIR = dataDir;
+  dataDir = mkdtempSync(join(tmpdir(), "vibespace-memory-routes-test-"));
+  process.env.VIBESPACE_DATA_DIR = dataDir;
 });
 
 afterEach(() => {
-  delete process.env.VIBEDECK_DATA_DIR;
+  delete process.env.VIBESPACE_DATA_DIR;
   rmSync(dataDir, { recursive: true, force: true });
 });
 
@@ -28,7 +28,7 @@ afterEach(() => {
  * need a valid workspaceId to hang notes off of — same helper shape as
  * board/routes.test.ts's `createWorkspace`. */
 async function createWorkspace(app: ReturnType<typeof buildApp>) {
-  const projectDir = mkdtempSync(join(tmpdir(), "vibedeck-memory-workspace-"));
+  const projectDir = mkdtempSync(join(tmpdir(), "vibespace-memory-workspace-"));
   const response = await app.inject({
     method: "POST",
     url: "/api/workspaces",
@@ -118,7 +118,7 @@ describe("POST /api/memory/notes", () => {
     await app.close();
   });
 
-  it("actually writes a real .md file under <workspace>/.vibedeck/memory/", async () => {
+  it("actually writes a real .md file under <workspace>/.vibespace/memory/", async () => {
     const app = buildApp();
     const workspace = await createWorkspace(app);
     await app.inject({
@@ -126,7 +126,7 @@ describe("POST /api/memory/notes", () => {
       url: "/api/memory/notes",
       payload: { workspaceId: workspace.id, title: "On disk note", body: "Some content." },
     });
-    const raw = readFileSync(join(workspace.rootPath, ".vibedeck", "memory", "on-disk-note.md"), "utf8");
+    const raw = readFileSync(join(workspace.rootPath, ".vibespace", "memory", "on-disk-note.md"), "utf8");
     expect(raw).toContain("title: On disk note");
     expect(raw).toContain("Some content.");
     await app.close();

@@ -4,7 +4,7 @@
  * the real `os.homedir()`, per this module's own dependency-injection
  * comment and the "never touch the user's real home directory" rule.
  */
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -14,8 +14,8 @@ let homeDir: string;
 let workspaceRoot: string;
 
 beforeEach(() => {
-  homeDir = mkdtempSync(join(tmpdir(), "vibedeck-skills-home-"));
-  workspaceRoot = mkdtempSync(join(tmpdir(), "vibedeck-skills-workspace-"));
+  homeDir = mkdtempSync(join(tmpdir(), "vibespace-skills-home-"));
+  workspaceRoot = mkdtempSync(join(tmpdir(), "vibespace-skills-workspace-"));
 });
 
 afterEach(() => {
@@ -199,7 +199,7 @@ describe("discoverSkills", () => {
     // same shape a malicious project skill's `leak -> /etc` symlink would
     // take (see discover.ts's top-comment trust boundary). This must be
     // silently skipped, not followed and not an error.
-    const outsideDir = mkdtempSync(join(tmpdir(), "vibedeck-skills-outside-"));
+    const outsideDir = mkdtempSync(join(tmpdir(), "vibespace-skills-outside-"));
     writeFileSync(
       join(outsideDir, "SKILL.md"),
       ["---", "name: escaped-skill", "description: Should never be reachable", "---", "Body."].join("\n"),
@@ -211,5 +211,66 @@ describe("discoverSkills", () => {
     expect(result.skills).toEqual([]);
 
     rmSync(outsideDir, { recursive: true, force: true });
+  });
+
+  describe("legacy .vibedeck/skills back-compat", () => {
+    it("finds a user-scoped skill under the legacy ~/.vibedeck/skills directory, labelled honestly", () => {
+      writeSkill(join(homeDir, ".vibedeck", "skills"), "old-user-skill");
+
+      const result = discoverSkills(null, homeDir);
+      expect(result.skills).toHaveLength(1);
+      expect(result.skills[0].scope).toEqual({
+        kind: "user",
+        dirLabel: ".vibedeck/skills",
+        rootDir: join(homeDir, ".vibedeck", "skills"),
+      });
+    });
+
+    it("finds a project-scoped skill under the legacy <workspaceRoot>/.vibedeck/skills directory, labelled honestly", () => {
+      writeSkill(join(workspaceRoot, ".vibedeck", "skills"), "old-project-skill");
+
+      const result = discoverSkills(workspaceRoot, homeDir);
+      expect(result.skills).toHaveLength(1);
+      expect(result.skills[0].scope).toEqual({
+        kind: "project",
+        dirLabel: ".vibedeck/skills",
+        rootDir: join(workspaceRoot, ".vibedeck", "skills"),
+      });
+    });
+
+    it("finds skills in both the legacy and current directory at once, when they have different names", () => {
+      writeSkill(join(homeDir, ".vibedeck", "skills"), "old-skill");
+      writeSkill(join(homeDir, ".vibespace", "skills"), "new-skill");
+
+      const result = discoverSkills(null, homeDir);
+      const byName = new Map(result.skills.map((s) => [s.skill.name, s]));
+      expect(byName.size).toBe(2);
+      expect(byName.get("old-skill")?.scope.dirLabel).toBe(".vibedeck/skills");
+      expect(byName.get("new-skill")?.scope.dirLabel).toBe(".vibespace/skills");
+    });
+
+    it("prefers .vibespace/skills over .vibedeck/skills on a same-name collision, and records it", () => {
+      const legacyDir = writeSkill(join(homeDir, ".vibedeck", "skills"), "shared-name", "The old version");
+      const newDir = writeSkill(join(homeDir, ".vibespace", "skills"), "shared-name", "The new version");
+
+      const result = discoverSkills(null, homeDir);
+      expect(result.skills).toHaveLength(1);
+      expect(result.skills[0].skill.description).toBe("The new version");
+      expect(result.skills[0].scope.dirLabel).toBe(".vibespace/skills");
+
+      const collision = result.diagnostics.find((d) => d.message.includes("shadows"));
+      expect(collision).toBeDefined();
+      expect(collision?.message).toContain(newDir);
+      expect(collision?.message).toContain(legacyDir);
+    });
+
+    it("does not touch the filesystem — a legacy skills directory is never renamed by discovery", () => {
+      writeSkill(join(workspaceRoot, ".vibedeck", "skills"), "old-project-skill");
+
+      discoverSkills(workspaceRoot, homeDir);
+
+      expect(existsSync(join(workspaceRoot, ".vibedeck", "skills"))).toBe(true);
+      expect(existsSync(join(workspaceRoot, ".vibespace", "skills"))).toBe(false);
+    });
   });
 });

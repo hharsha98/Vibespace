@@ -2,7 +2,7 @@
  * Route tests for the Phase 10 skills endpoints, exercised via
  * `app.inject()` — same pattern as `memory/routes.test.ts` and
  * `board/routes.test.ts`. Two temp-dir concerns, same split
- * `memory/routes.test.ts` uses: `VIBEDECK_DATA_DIR` redirects the
+ * `memory/routes.test.ts` uses: `VIBESPACE_DATA_DIR` redirects the
  * workspace/session SQLite db, and a SEPARATE temp dir stands in for the
  * workspace's own project directory, where `.agents/skills/` etc. actually
  * live on disk.
@@ -22,7 +22,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { SessionInfo } from "@vibedeck/shared";
+import type { SessionInfo } from "@vibespace/shared";
 import type { SessionManager } from "../pty/session-manager.js";
 import { SKILL_INJECT_MAX_LENGTH } from "./inject.js";
 import { buildApp } from "../index.js";
@@ -32,8 +32,8 @@ let fakeHomeDir: string;
 let realHome: string | undefined;
 
 beforeEach(() => {
-  dataDir = mkdtempSync(join(tmpdir(), "vibedeck-skills-routes-test-"));
-  process.env.VIBEDECK_DATA_DIR = dataDir;
+  dataDir = mkdtempSync(join(tmpdir(), "vibespace-skills-routes-test-"));
+  process.env.VIBESPACE_DATA_DIR = dataDir;
 
   // skills/routes.ts calls discoverSkills(workspace.rootPath) with NO
   // homeDir override — it always scans the real os.homedir(), same as
@@ -43,15 +43,15 @@ beforeEach(() => {
   // environment has real GSD skills there). Node's os.homedir() reads
   // $HOME on POSIX before falling back to a system call, so redirecting it
   // here isolates every USER scope without touching production code at
-  // all — the same "env var the test controls" trick VIBEDECK_DATA_DIR
+  // all — the same "env var the test controls" trick VIBESPACE_DATA_DIR
   // uses above.
-  fakeHomeDir = mkdtempSync(join(tmpdir(), "vibedeck-skills-fake-home-"));
+  fakeHomeDir = mkdtempSync(join(tmpdir(), "vibespace-skills-fake-home-"));
   realHome = process.env.HOME;
   process.env.HOME = fakeHomeDir;
 });
 
 afterEach(() => {
-  delete process.env.VIBEDECK_DATA_DIR;
+  delete process.env.VIBESPACE_DATA_DIR;
   rmSync(dataDir, { recursive: true, force: true });
   if (realHome === undefined) {
     delete process.env.HOME;
@@ -65,7 +65,7 @@ afterEach(() => {
  * need a valid workspaceId — same helper shape every other routes.test.ts
  * in this repo uses. */
 async function createWorkspace(app: ReturnType<typeof buildApp>) {
-  const projectDir = mkdtempSync(join(tmpdir(), "vibedeck-skills-workspace-"));
+  const projectDir = mkdtempSync(join(tmpdir(), "vibespace-skills-workspace-"));
   const response = await app.inject({
     method: "POST",
     url: "/api/workspaces",

@@ -1,12 +1,12 @@
 /**
  * Resolves the MCP server's own workspace ROOT (an absolute filesystem
  * path, the one CLI argument `memory/mcp-server.ts` has always taken) into
- * a vibedeck workspace ID — the thing `BoardStore`/`AgentProfileStore`/
+ * a vibespace workspace ID — the thing `BoardStore`/`AgentProfileStore`/
  * `SavedPromptStore` actually key their rows on.
  *
  * --- Why this lookup has to exist at all ---
  * Memory tools never needed this: `memory/store.ts` reads/writes markdown
- * files directly under `<root>/.vibedeck/memory/`, so a bare filesystem
+ * files directly under `<root>/.vibespace/memory/`, so a bare filesystem
  * path is the whole address. The board/agents/prompts tables, by contrast,
  * are keyed by `workspace_id` — a UUID assigned when a workspace is
  * created through the app (`POST /api/workspaces`), not derivable from the
@@ -17,9 +17,9 @@
  * --- Why this resolves fresh on every tool call, not once at startup ---
  * An MCP stdio server is long-running — a coding agent's CLI can hold the
  * connection open for an entire session. The workspace it's rooted at may
- * not exist in vibedeck's database YET when the agent connects (e.g. a
+ * not exist in vibespace's database YET when the agent connects (e.g. a
  * user opens their coding agent before ever opening this directory in
- * vibedeck itself), or may be created moments later. Caching the
+ * vibespace itself), or may be created moments later. Caching the
  * resolution (or its failure) at server-build time would mean a
  * permanently-broken board/agent/prompt surface for the rest of that
  * process's life even after the user fixes the underlying problem —
@@ -37,8 +37,8 @@ export function resolveWorkspaceId(workspaceStore: WorkspaceStore, root: string)
     return {
       ok: false,
       error:
-        `"${root}" is not a registered vibedeck workspace yet. Open this directory as a workspace in ` +
-        `the vibedeck app first (Add Workspace), then retry — the board/agents/prompts tools need a ` +
+        `"${root}" is not a registered vibespace workspace yet. Open this directory as a workspace in ` +
+        `the vibespace app first (Add Workspace), then retry — the board/agents/prompts tools need a ` +
         `workspace id to look up. Memory tools are unaffected and work regardless.`,
     };
   }

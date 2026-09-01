@@ -2,7 +2,7 @@
  * The MCP (Model Context Protocol) surface for Phase 8's shared memory —
  * the actual point of this phase: Claude Code, cursor-agent, and Codex can
  * all connect to the SAME `McpServer` instance (one per workspace, pointed
- * at that workspace's `.vibedeck/memory/` directory) and read/write the
+ * at that workspace's `.vibespace/memory/` directory) and read/write the
  * SAME notes the Memory tab and Graph view show. See docs/MEMORY.md for the
  * exact config each agent's CLI needs to paste in.
  *
@@ -233,7 +233,7 @@ export async function handleSuggestConnections(
  * takes a `workspaceId`/`root` argument itself the way the REST routes do.
  */
 export function createMemoryMcpServer(root: string): McpServer {
-  const server = new McpServer({ name: "vibedeck-memory", version: "1.0.0" });
+  const server = new McpServer({ name: "vibespace-memory", version: "1.0.0" });
 
   server.registerTool(
     "memory_list",

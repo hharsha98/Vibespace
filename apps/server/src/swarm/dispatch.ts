@@ -7,7 +7,7 @@
  * `writePromptWhenReady` for the same "don't type into a pty before it's
  * ready to receive input" reason `board/dispatch.ts`'s top comment explains.
  */
-import type { AgentId, Mission, MissionAgent, MissionRole } from "@vibedeck/shared";
+import type { AgentId, Mission, MissionAgent, MissionRole } from "@vibespace/shared";
 import type { SessionManager } from "../pty/session-manager.js";
 import { writePromptWhenReady } from "../board/dispatch.js";
 import type { MissionsStore } from "./missions.js";

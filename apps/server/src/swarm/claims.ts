@@ -51,7 +51,7 @@
 import type { Database } from "better-sqlite3";
 import { randomUUID } from "node:crypto";
 import { relative, sep } from "node:path";
-import type { FileClaim, ClaimConflict } from "@vibedeck/shared";
+import type { FileClaim, ClaimConflict } from "@vibespace/shared";
 import { openDatabase } from "../db/schema.js";
 import { safeResolve } from "../files/safe-path.js";
 

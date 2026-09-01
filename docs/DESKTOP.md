@@ -1,7 +1,7 @@
 # Desktop app (Phase 11a, PARITY #50, closes #48; auto-updates and
 # relocatable installers added by Phase 11b, PARITY #51/#52)
 
-vibedeck's desktop app is a **Tauri 2** window wrapped around the exact same
+Vibespace's desktop app is a **Tauri 2** window wrapped around the exact same
 web app the browser build serves. It is not a rewrite: the terminal grid,
 the board, memory, swarm, skills — everything — is the same React app,
 loaded from the same Fastify server. What Tauri adds is a real native
@@ -17,7 +17,7 @@ rather than a feature, that's deliberate.
 
 ## The central problem, and how this solves it
 
-vibedeck's backend (`apps/server`) is a Node process with two native
+Vibespace's backend (`apps/server`) is a Node process with two native
 addons — `node-pty` (spawns real ptys) and `better-sqlite3` (the
 workspace/board/memory database). Neither can be rewritten in Rust; Tauri
 only produces a Rust binary. So the desktop app does not reimplement the
@@ -32,14 +32,14 @@ implementation; the summary:
    `tsx` (the same mechanism `pnpm dev` already uses — not the compiled
    `dist/index.js`; see "Why `tsx`, not the compiled server" below for why).
 2. The server prints one exact line to stdout the instant it's actually
-   listening: `VIBEDECK_SERVER_READY:<port>` (see
+   listening: `VIBESPACE_SERVER_READY:<port>` (see
    `apps/server/src/runtime-config.ts`'s `formatReadyLine`). Rust reads
    stdout looking for that line — not a fixed sleep, not polling a port
    (which can't tell "not up yet" apart from "something else is listening
    there"). A 20-second timeout swaps the loading screen for a real error
    message if it never shows up.
 3. Once ready, Rust calls `window.navigate()` to the real
-   `http://127.0.0.1:<port>/?vibedeckDesktop=1` URL. The `?vibedeckDesktop=1`
+   `http://127.0.0.1:<port>/?vibespaceDesktop=1` URL. The `?vibespaceDesktop=1`
    marker is how the web app tells the desktop build apart from the browser
    build (`hasDesktopMarker`/`isTauriApp` in `apps/web/src/keys/keymap.ts`)
    — see that file's comment for why a URL marker we control, rather than
@@ -85,9 +85,9 @@ at its TypeScript **source** (`./src/index.ts`), not a compiled `dist/`.
 That resolves fine everywhere the rest of the monorepo runs it (`tsx`,
 Vite, and Vitest all transpile on the fly), but a plain `node
 dist/index.js` fails immediately with `ERR_MODULE_NOT_FOUND` trying to
-import `@vibedeck/shared` — confirmed by hand while building this phase.
+import `@vibespace/shared` — confirmed by hand while building this phase.
 
-Fixing that repo-wide (giving `@vibedeck/shared` a real build output every
+Fixing that repo-wide (giving `@vibespace/shared` a real build output every
 consumer resolves through, in both dev and "packaged" modes) was
 deliberately NOT done in Phase 11a — every package in the workspace
 resolves that import today, and dev's whole point is "no build step needed
@@ -111,7 +111,7 @@ with the response's own `cwd` field confirming it was running from the
 relocated copy, not silently falling back to the original checkout.
 
 The fix has two parts, both in `apps/desktop/scripts/build-server-resources.mjs`
-(run by `pnpm --filter @vibedeck/desktop run package` before `tauri build`,
+(run by `pnpm --filter @vibespace/desktop run package` before `tauri build`,
 never by `cargo tauri dev`):
 
 1. **A real, deployed copy of `apps/server` and its production
@@ -125,7 +125,7 @@ never by `cargo tauri dev`):
    `packages/shared/package.json` in the live monorepo.** That file is
    deliberately untouched (see "Why `tsx`, not the compiled server"
    above) — every other consumer (`pnpm dev`, Vite, Vitest, `tsx`) keeps
-   resolving `@vibedeck/shared` exactly as it always has.
+   resolving `@vibespace/shared` exactly as it always has.
 
 `apps/desktop/src-tauri/src/main.rs`'s `resolve_server_source` picks
 between this bundled copy and the original `tsx`-against-source mechanism
@@ -139,7 +139,7 @@ mechanism; a packaged build always has it, so it always uses the new one.
 about if this script is ever touched again:**
 
 - **pnpm's content-addressable store can hardlink files — even for a
-  local, `file:`-referenced workspace package like `@vibedeck/shared` —
+  local, `file:`-referenced workspace package like `@vibespace/shared` —
   not just symlink them.** A first attempt at patching the deployed
   copy's `package.json` with a plain `fs.writeFileSync` silently rewrote
   the REAL `packages/shared/package.json` in the live repo through a
@@ -150,7 +150,7 @@ about if this script is ever touched again:**
 - **`pnpm deploy`'s default output is NOT symlink-free**, and **Tauri's
   own resource-bundling step does not preserve the symlinks it does
   contain** — a built `.app` was found, by actually launching a relocated
-  copy of it, to be missing `fastify`, `@vibedeck/shared`, and every other
+  copy of it, to be missing `fastify`, `@vibespace/shared`, and every other
   top-level package from `node_modules` (while still carrying their real
   content under a now-unreachable `.pnpm/` store), failing immediately
   with `ERR_MODULE_NOT_FOUND`. The fix: `pnpm deploy --config.node-linker=
@@ -203,15 +203,15 @@ unrelated to Apple, no developer account needed. The public key lives
 inline in `apps/desktop/src-tauri/tauri.conf.json`'s `plugins.updater.
 pubkey` (safe to commit — it can only verify signatures, not create them).
 The endpoint points at this repo's GitHub Releases `latest.json`
-(`https://github.com/hharsha98/vibedeck/releases/latest/download/
+(`https://github.com/hharsha98/Vibespace/releases/latest/download/
 latest.json`), which `.github/workflows/release.yml` publishes.
 
-**Where the private key lives, and why it must never move**: `~/.vibedeck/
+**Where the private key lives, and why it must never move**: `~/.vibespace/
 updater.key`, outside this repo, mode 600, with no password. It is ALSO
 stored as the `TAURI_SIGNING_PRIVATE_KEY` secret on this GitHub repo,
 which is what `.github/workflows/release.yml` actually signs releases
 with — nothing in this repo's source or history ever contains it.
-**If this key is lost, every already-installed copy of vibedeck becomes
+**If this key is lost, every already-installed copy of Vibespace becomes
 permanently unable to verify (and therefore install) any future update.**
 The public key baked into already-shipped installers can only verify
 signatures made by the matching private key; a new keypair would mean
@@ -227,10 +227,10 @@ than folding it into the updater or core.
 
 ## Port: why 45317, not 4317
 
-Hardcoding vibedeck's normal port (4317) would mean launching the desktop
+Hardcoding Vibespace's normal port (4317) would mean launching the desktop
 app while `pnpm dev` is running in a terminal — a completely ordinary thing
-to do while developing vibedeck itself — collides. The desktop app sets
-`VIBEDECK_PORT=45317` when it spawns the sidecar; `apps/server`'s
+to do while developing Vibespace itself — collides. The desktop app sets
+`VIBESPACE_PORT=45317` when it spawns the sidecar; `apps/server`'s
 `resolveServerPort` (in `runtime-config.ts`) reads that override, falling
 back to 4317 for everyone else (dev, tests, a plain `node dist/index.js`).
 45317 isn't registered for anything else and doesn't collide with either
@@ -274,7 +274,7 @@ if it hasn't exited):
 1. **Closing the window** — `on_window_event`'s `CloseRequested`.
 2. **Quitting the app** (Cmd+Q, Dock > Quit, the menu's Quit item) —
    `.run`'s `RunEvent::Exit`.
-3. **A bare `kill <pid>`** (`pkill vibedeck`, a process manager) — this one
+3. **A bare `kill <pid>`** (`pkill vibespace`, a process manager) — this one
    is NOT covered by paths 1/2: a raw Unix signal bypasses Cocoa's
    termination lifecycle entirely, so neither Tauri event fires. Confirmed
    by hand while building this phase — killing the dev binary directly left
@@ -288,15 +288,15 @@ All three were tested by hand: `pgrep -f "node.*apps/server"` (and
 ## The native menu, and the shortcuts it does (and doesn't) bind
 
 `apps/desktop/src-tauri/src/main.rs`'s `setup` builds a small menu:
-**vibedeck** (About, Quit), **Edit** (Undo/Redo/Cut/Copy/Paste), **Pane**
+**Vibespace** (About, Quit), **Edit** (Undo/Redo/Cut/Copy/Paste), **Pane**
 (New Pane, Close Pane, Theme Picker). Two things worth knowing:
 
 - Tauri's built-in default macOS menu is explicitly disabled
   (`enable_macos_default_menu(false)`). It includes a "Close Window" item
   on the standard ⌘W accelerator — which would intercept ⌘W at the OS level
-  and close the whole window, fighting directly with vibedeck's own ⌘W
+  and close the whole window, fighting directly with Vibespace's own ⌘W
   ("close the focused pane"). Same reasoning kept `select_all` (⌘A) out of
-  the Edit menu: ⌘A is vibedeck's own "View: Agents" shortcut.
+  the Edit menu: ⌘A is Vibespace's own "View: Agents" shortcut.
 - The **Pane** menu's three items deliberately have **no accelerator set**.
   A real OS-level menu accelerator is intercepted before the webview's own
   keydown listener ever sees it — binding one would make
@@ -318,7 +318,7 @@ DOM required.
 
 ## Icon
 
-Generated from vibedeck's own mark (`apps/web/public/favicon.svg` — same
+Generated from Vibespace's own mark (`apps/web/public/favicon.svg` — same
 rounded dark tile, same three shapes as `apps/web/src/shell/Logo.tsx`) via
 `tauri icon`, not invented or placeholder. Only the macOS-relevant sizes
 were kept (`apps/desktop/src-tauri/icons/`); the `tauri icon` command also
@@ -328,10 +328,10 @@ this phase targets macOS only.
 ## Running in dev
 
 ```bash
-pnpm --filter @vibedeck/desktop run tauri:dev
+pnpm --filter @vibespace/desktop run tauri:dev
 ```
 
-This first builds `apps/web/dist` (`pnpm --filter @vibedeck/web build` —
+This first builds `apps/web/dist` (`pnpm --filter @vibespace/web build` —
 there's no Vite dev server in the desktop build, so the sidecar always
 serves a real build, not source), then runs `tauri dev`, which compiles the
 Rust binary (a full first build pulls and compiles ~340 crates — expect a
@@ -346,7 +346,7 @@ app's fixed port (45317) never collides with the dev server's 4317.
 ## Building a package locally
 
 ```bash
-pnpm --filter @vibedeck/desktop run package:mac    # or package:win / package:linux —
+pnpm --filter @vibespace/desktop run package:mac    # or package:win / package:linux —
                                                       # all three are the same command;
                                                       # tauri build picks the targets
                                                       # valid for whatever OS you're on
@@ -371,9 +371,9 @@ refuses to finish without `TAURI_SIGNING_PRIVATE_KEY` set, even on a
 machine that never intends to publish anything:
 
 ```bash
-TAURI_SIGNING_PRIVATE_KEY="$HOME/.vibedeck/updater.key" \
+TAURI_SIGNING_PRIVATE_KEY="$HOME/.vibespace/updater.key" \
 TAURI_SIGNING_PRIVATE_KEY_PASSWORD="" \
-CI=true pnpm --filter @vibedeck/desktop run package:mac
+CI=true pnpm --filter @vibespace/desktop run package:mac
 ```
 
 The app itself is still genuinely unsigned in the Apple/Microsoft/Linux
@@ -397,7 +397,7 @@ session on a real desktop shouldn't hit this at all.
 ### Gatekeeper, on first launch
 
 Because the app itself is unsigned, macOS Gatekeeper blocks a plain
-double-click on first launch ("vibedeck can't be opened because Apple
+double-click on first launch ("Vibespace can't be opened because Apple
 cannot check it for malicious software" or similar). Workaround:
 right-click (or Control-click) the app in Finder → **Open** → **Open** in
 the confirmation dialog. Only needed once per machine; after that first
@@ -437,11 +437,11 @@ relocated copy** — not by checking that the app opens.
 - **Requires system Node**, not bundled. See "What a user actually needs
   installed." This is the one requirement Phase 11b did NOT remove.
 - **Local packaging exits non-zero without the signing key.** `pnpm
-  --filter @vibedeck/desktop run package` builds the `.app` and `.dmg`
+  --filter @vibespace/desktop run package` builds the `.app` and `.dmg`
   fine, then fails at the updater-signing step with "A public key has been
   found, but no private key" — because the key lives in CI, not on your
   machine. The artifacts are still produced and usable. To sign locally,
-  export `TAURI_SIGNING_PRIVATE_KEY_PATH=~/.vibedeck/updater.key` first.
+  export `TAURI_SIGNING_PRIVATE_KEY_PATH=~/.vibespace/updater.key` first.
 - **`resolve_node_dir`'s fallback list is not exhaustive** — notably, nvm's
   per-version directories aren't covered.
 - **Fixed port (45317), not dynamically chosen.** Fine for one instance;
@@ -521,7 +521,7 @@ at least once successfully (it hasn't yet — see "Known limitations" above):
    click).
 
 **Where the private signing key lives, and what losing it means**:
-`~/.vibedeck/updater.key`, outside this repo (never committed, mode 600,
+`~/.vibespace/updater.key`, outside this repo (never committed, mode 600,
 no password), and mirrored as the `TAURI_SIGNING_PRIVATE_KEY` GitHub
 Actions secret on this repo — that secret is the ONLY thing
 `.github/workflows/release.yml` actually signs releases with; nothing

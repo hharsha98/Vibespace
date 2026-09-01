@@ -7,7 +7,7 @@
 //
 // # The UX decision this file exists to support, and why
 //
-// vibedeck's desktop app hosts long-lived terminal sessions — real agent
+// vibespace's desktop app hosts long-lived terminal sessions — real agent
 // work that can run for hours. An update that silently restarts the app
 // would kill every one of those sessions' underlying processes without
 // warning (see docs/DESKTOP.md's "Shutdown" section: closing the window
@@ -26,6 +26,7 @@
 //  3. Only downloads/installs/restarts when the user clicks "Update &
 //     Restart" — an explicit, one-click action, never automatic. There is
 //     no code path in this app that restarts it without that click.
+import { readWithLegacyFallback } from "../settings/legacyStorage.js";
 
 /** How often to re-check for updates while the app stays open — long
  * enough not to hammer GitHub Releases on every launch of a session that
@@ -33,7 +34,11 @@
  * nobody's seen the banner" doesn't happen either. */
 export const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4 hours
 
-const DISMISSED_VERSION_KEY = "vibedeck.updater.dismissedVersion";
+const DISMISSED_VERSION_KEY = "vibespace.updater.dismissedVersion";
+// The pre-rename key this project shipped under as vibedeck — see
+// `legacyStorage.ts`'s top comment for why every persisted preference in
+// this app reads a legacy key as a fallback.
+const LEGACY_DISMISSED_VERSION_KEY = "vibedeck.updater.dismissedVersion";
 
 /** Same try/catch-around-localStorage pattern as themes.ts's
  * `loadStoredThemeId`/`saveThemeId` and App.tsx's `loadBoolPref`/
@@ -42,12 +47,7 @@ const DISMISSED_VERSION_KEY = "vibedeck.updater.dismissedVersion";
  * desktop build's webview specifically, but there's no reason to invent a
  * second pattern for the one localStorage read/write this file needs. */
 export function loadDismissedVersion(): string | null {
-  if (typeof window === "undefined") return null;
-  try {
-    return window.localStorage.getItem(DISMISSED_VERSION_KEY);
-  } catch {
-    return null;
-  }
+  return readWithLegacyFallback(DISMISSED_VERSION_KEY, LEGACY_DISMISSED_VERSION_KEY);
 }
 
 export function saveDismissedVersion(version: string): void {

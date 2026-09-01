@@ -24,7 +24,7 @@
  *    CPU leak with nothing to show for it.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { AgentId, Mission, MissionAgent, MissionDetail, MissionRole } from "@vibedeck/shared";
+import type { AgentId, Mission, MissionAgent, MissionDetail, MissionRole } from "@vibespace/shared";
 import type { AgentOption } from "../grid/PaneView.js";
 import MissionBar from "./MissionBar.js";
 import MissionCanvas from "./MissionCanvas.js";

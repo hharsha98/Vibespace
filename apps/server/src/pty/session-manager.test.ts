@@ -177,13 +177,13 @@ describe("SessionManager", () => {
         if (event.type === "output") collected += event.data;
       });
 
-      manager.write(info.id, "echo ZDOTDIR_IS:$ZDOTDIR:REAL_IS:$_VIBEDECK_REAL_ZDOTDIR:END\n");
+      manager.write(info.id, "echo ZDOTDIR_IS:$ZDOTDIR:REAL_IS:$_VIBESPACE_REAL_ZDOTDIR:END\n");
 
       // The pty echoes the TYPED line back first (with $ZDOTDIR still
       // literal, unresolved) — waiting on the RESOLVED pattern (real
       // slashes where the variables were) is what actually proves the env
       // vars reached the shell, not just that our keystrokes were echoed.
-      const resolved = /ZDOTDIR_IS:\/.*vibedeck-zdotdir-.*:REAL_IS:\/.*:END/;
+      const resolved = /ZDOTDIR_IS:\/.*vibespace-zdotdir-.*:REAL_IS:\/.*:END/;
       await waitFor(() => resolved.test(collected));
       expect(collected).toMatch(resolved);
     },
@@ -193,11 +193,11 @@ describe("SessionManager", () => {
 
 describe("buildSpawnEnv", () => {
   it("applies shell-integration env only for the 'shell' agent", () => {
-    const integrationEnv = { ZDOTDIR: "/tmp/some-zdotdir", _VIBEDECK_REAL_ZDOTDIR: "/Users/example" };
+    const integrationEnv = { ZDOTDIR: "/tmp/some-zdotdir", _VIBESPACE_REAL_ZDOTDIR: "/Users/example" };
 
     const shellEnv = buildSpawnEnv("shell", {}, integrationEnv);
     expect(shellEnv.ZDOTDIR).toBe("/tmp/some-zdotdir");
-    expect(shellEnv._VIBEDECK_REAL_ZDOTDIR).toBe("/Users/example");
+    expect(shellEnv._VIBESPACE_REAL_ZDOTDIR).toBe("/Users/example");
 
     // claude/cursor-agent/codex are full-screen TUIs, not shells — they
     // must spawn exactly as before, even if shell-integration env happens
@@ -206,7 +206,7 @@ describe("buildSpawnEnv", () => {
     for (const agent of ["claude", "cursor-agent", "codex"] as const) {
       const env = buildSpawnEnv(agent, {}, integrationEnv);
       expect(env.ZDOTDIR).toBeUndefined();
-      expect(env._VIBEDECK_REAL_ZDOTDIR).toBeUndefined();
+      expect(env._VIBESPACE_REAL_ZDOTDIR).toBeUndefined();
     }
   });
 

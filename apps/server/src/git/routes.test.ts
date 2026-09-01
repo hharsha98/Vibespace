@@ -1,6 +1,6 @@
 /**
  * Route tests for `GET /api/git/branch`, exercised via `app.inject()` —
- * same pattern as `agents/routes.test.ts`. `VIBEDECK_DATA_DIR` points at a
+ * same pattern as `agents/routes.test.ts`. `VIBESPACE_DATA_DIR` points at a
  * fresh temp directory per test, same reasoning as every other
  * SQLite-backed test.
  */
@@ -9,18 +9,18 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { GitBranchResponse } from "@vibedeck/shared";
+import type { GitBranchResponse } from "@vibespace/shared";
 import { buildApp } from "../index.js";
 
 let dataDir: string;
 
 beforeEach(() => {
-  dataDir = mkdtempSync(join(tmpdir(), "vibedeck-git-routes-test-"));
-  process.env.VIBEDECK_DATA_DIR = dataDir;
+  dataDir = mkdtempSync(join(tmpdir(), "vibespace-git-routes-test-"));
+  process.env.VIBESPACE_DATA_DIR = dataDir;
 });
 
 afterEach(() => {
-  delete process.env.VIBEDECK_DATA_DIR;
+  delete process.env.VIBESPACE_DATA_DIR;
   rmSync(dataDir, { recursive: true, force: true });
 });
 
@@ -50,7 +50,7 @@ describe("GET /api/git/branch", () => {
 
   it("returns a clean isRepo:false for a workspace directory that isn't a git repo", async () => {
     const app = buildApp();
-    const projectDir = mkdtempSync(join(tmpdir(), "vibedeck-git-notrepo-"));
+    const projectDir = mkdtempSync(join(tmpdir(), "vibespace-git-notrepo-"));
     const workspace = await createWorkspace(app, projectDir);
 
     const response = await app.inject({
@@ -66,7 +66,7 @@ describe("GET /api/git/branch", () => {
 
   it("returns the current branch for a workspace that IS a git repo", async () => {
     const app = buildApp();
-    const projectDir = mkdtempSync(join(tmpdir(), "vibedeck-git-isrepo-"));
+    const projectDir = mkdtempSync(join(tmpdir(), "vibespace-git-isrepo-"));
     execFileSync("git", ["init", "-q", "-b", "main"], { cwd: projectDir });
     execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: projectDir });
     execFileSync("git", ["config", "user.name", "Test"], { cwd: projectDir });
@@ -88,7 +88,7 @@ describe("GET /api/git/branch", () => {
 
   it("403s a path that escapes the workspace root, same as files/tree", async () => {
     const app = buildApp();
-    const projectDir = mkdtempSync(join(tmpdir(), "vibedeck-git-escape-"));
+    const projectDir = mkdtempSync(join(tmpdir(), "vibespace-git-escape-"));
     const workspace = await createWorkspace(app, projectDir);
 
     const response = await app.inject({

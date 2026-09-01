@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "vibedeck",
+  "productName": "Vibespace",
   "version": "0.1.2",
-  "identifier": "dev.vibedeck.desktop",
+  "identifier": "dev.vibespace.desktop",
   "build": {
     "frontendDist": "../loading"
   },
@@ -10,7 +10,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "vibedeck",
+        "title": "Vibespace",
         "width": 1360,
         "height": 860,
         "minWidth": 900,
@@ -41,7 +41,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDY1RDIzNEJFMjBGQUI3NkUKUldSdXQvb2d2alRTWlJvNXV3bEFhQ0VGSVZ5bngvV3ptVm9lakpUZE5wOXZnRUF0SjRKSy9GSzIK",
       "endpoints": [
-        "https://github.com/hharsha98/vibedeck/releases/latest/download/latest.json"
+        "https://github.com/hharsha98/Vibespace/releases/latest/download/latest.json"
       ]
     }
   }

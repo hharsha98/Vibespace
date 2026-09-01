@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { WORKSPACE_COLORS } from "@vibedeck/shared";
+import { WORKSPACE_COLORS } from "@vibespace/shared";
 import { SHADOW_VAR } from "./tokens.js";
 
 /**

@@ -19,7 +19,7 @@ import type {
   MissionAgentStatus,
   MissionRole,
   MissionStatus,
-} from "@vibedeck/shared";
+} from "@vibespace/shared";
 import { openDatabase } from "../db/schema.js";
 
 interface MissionRow {

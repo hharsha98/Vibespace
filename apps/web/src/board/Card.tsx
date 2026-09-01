@@ -18,7 +18,7 @@
 import { useState, type CSSProperties } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { AgentId, BoardCard, CardPriority, ColumnId, SessionInfo } from "@vibedeck/shared";
+import type { AgentId, BoardCard, CardPriority, ColumnId, SessionInfo } from "@vibespace/shared";
 import type { AgentOption } from "../grid/PaneView.js";
 import { Pill, StatusDot, sessionStatusKind, type StatusKind } from "../shell/ui.js";
 import CardEditor from "./CardEditor.js";

@@ -9,13 +9,14 @@
  * The list mirrors BridgeSpace v3.2.1's nine-section Settings sidebar
  * (Appearance · Terminal · Shortcuts · Agents · Accounts · API Keys ·
  * Billing · Notifications · About), with one addition: `history`. Session
- * recovery has no BridgeSpace equivalent slot, but it's a real vibedeck
+ * recovery has no BridgeSpace equivalent slot, but it's a real vibespace
  * feature that already lived inside Settings.tsx before this rail existed
  * (see History.tsx's own top comment) — dropping it to make the count line
  * up with BridgeSpace's nine would remove working functionality for the
  * sake of parity theatre, so it stays, placed next to Agents (its existing
  * neighbour on the old single-scroll page).
  */
+import { readWithLegacyFallback } from "./legacyStorage.js";
 
 export type SettingsSectionId =
   | "appearance"
@@ -56,26 +57,25 @@ function isSettingsSectionId(value: string | null): value is SettingsSectionId {
   return value !== null && SETTINGS_SECTION_IDS.has(value);
 }
 
-// Same "vibedeck.<owner>.<thing>" dotted-key convention as
-// RAIL_COLLAPSED_KEY ("vibedeck.rail.collapsed") / DOCK_COLLAPSED_KEY
-// ("vibedeck.dock.collapsed") in App.tsx, and the same try/catch-around-
+// Same "vibespace.<owner>.<thing>" dotted-key convention as
+// RAIL_COLLAPSED_KEY ("vibespace.rail.collapsed") / DOCK_COLLAPSED_KEY
+// ("vibespace.dock.collapsed") in App.tsx, and the same try/catch-around-
 // localStorage shape every persisted preference in this app already uses
 // (themes.ts's loadStoredThemeId/saveThemeId is the canonical one) —
 // private-browsing Safari throws on ANY localStorage access, not just
 // writes, so both directions need a guard.
-const SETTINGS_SECTION_KEY = "vibedeck.settings.section";
+const SETTINGS_SECTION_KEY = "vibespace.settings.section";
+// The pre-rename key this project shipped under as vibedeck — see
+// `legacyStorage.ts`'s top comment for why every persisted preference in
+// this app reads a legacy key as a fallback.
+const LEGACY_SETTINGS_SECTION_KEY = "vibedeck.settings.section";
 
 /** The last section the user had open, or the default if nothing's stored
  * (first visit) or the stored value doesn't name a section this build still
  * has (e.g. left over from a renamed/removed one). */
 export function loadSettingsSection(): SettingsSectionId {
-  if (typeof window === "undefined") return DEFAULT_SETTINGS_SECTION;
-  try {
-    const raw = window.localStorage.getItem(SETTINGS_SECTION_KEY);
-    return isSettingsSectionId(raw) ? raw : DEFAULT_SETTINGS_SECTION;
-  } catch {
-    return DEFAULT_SETTINGS_SECTION; // Private-browsing Safari throws on access, not just on write.
-  }
+  const raw = readWithLegacyFallback(SETTINGS_SECTION_KEY, LEGACY_SETTINGS_SECTION_KEY);
+  return isSettingsSectionId(raw) ? raw : DEFAULT_SETTINGS_SECTION;
 }
 
 /** Persists the selected section so reopening Settings (or reloading the

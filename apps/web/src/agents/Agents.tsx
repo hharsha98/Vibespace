@@ -2,7 +2,7 @@
  * The Agents page (Phase 9.5b, PARITY #26): CRUD for this workspace's saved
  * agent "personas" — a name, which underlying CLI it runs as (`baseAgent`),
  * and a system prompt typed into that CLI's pty ahead of a dispatched task
- * (see `@vibedeck/shared`'s `AgentProfile` doc comment for the full idea).
+ * (see `@vibespace/shared`'s `AgentProfile` doc comment for the full idea).
  * A new centre view (Terminals | Editor | Preview | Board | Graph | Swarm |
  * Agents | Prompts, see App.tsx's `CenterView`), following the same "fetch
  * and own its own data given just a workspaceId" pattern as
@@ -23,7 +23,7 @@ import {
   AGENT_SPECS,
   type AgentId,
   type AgentProfile,
-} from "@vibedeck/shared";
+} from "@vibespace/shared";
 import { charCountColor, charCountStatus } from "../shell/textLimits.js";
 import { Button, EmptyState, ListRow, Pill } from "../shell/ui.js";
 import { FONT, RADIUS, SPACE } from "../shell/tokens.js";

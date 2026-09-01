@@ -5,7 +5,7 @@
  */
 import type { Database } from "better-sqlite3";
 import { randomUUID } from "node:crypto";
-import type { Workspace } from "@vibedeck/shared";
+import type { Workspace } from "@vibespace/shared";
 import { openDatabase } from "./schema.js";
 
 /** The raw shape a row comes back as from better-sqlite3 (snake_case, as SQLite gave it to us). */
@@ -183,7 +183,7 @@ export class WorkspaceStore {
    *
    * `this.db` is `WorkspaceStore`'s own handle (`openDatabase()`), and every
    * other `*Store` in this directory opens its own handle too — but they
-   * all point at the SAME on-disk `vibedeck.db` file (see `schema.ts`), so
+   * all point at the SAME on-disk `vibespace.db` file (see `schema.ts`), so
    * deleting `board_cards`/`missions`/etc. rows from THIS handle is not a
    * layering violation; it's the same file on disk, just reached through a
    * different `openDatabase()` call, with no separate "BoardStore.remove()"

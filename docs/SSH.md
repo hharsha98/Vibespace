@@ -2,22 +2,22 @@
 
 A pane doesn't have to run on this machine. An **SSH profile** is a saved
 `{host, user, port, defaultDirectory, startupCommand}` record — open a pane
-on it and vibedeck connects out over `ssh` instead of spawning a local
+on it and Vibespace connects out over `ssh` instead of spawning a local
 shell or agent CLI.
 
-This closes a real capability gap: vibedeck had no remote support at all
+This closes a real capability gap: Vibespace had no remote support at all
 before this. BridgeSpace shipped the equivalent in v3.2.1 ("SSH profiles
 carry their workspace" — a per-profile default directory and startup
 command, applied after connect, plus one-click Duplicate).
 
 ## The security decision, stated plainly
 
-**vibedeck does not implement SSH itself, and it does not store
+**Vibespace does not implement SSH itself, and it does not store
 credentials.** Opening a remote pane spawns the system's real `ssh` binary
 inside a pty — the exact same mechanism that already spawns `claude`,
 `codex`, or a plain `shell` pane (`apps/server/src/pty/session-manager.ts`).
 Authentication is entirely your own `ssh-agent`, keys, and `~/.ssh/config`
-— the same setup your terminal already uses. vibedeck never sees, stores,
+— the same setup your terminal already uses. Vibespace never sees, stores,
 or transmits a password or a private key.
 
 BridgeSpace stores passwords in a keychain. We deliberately don't: storing
@@ -26,7 +26,7 @@ key/agent auth is both safer and what most developers already have set up.
 
 **The honest downside:** a host that only accepts password authentication
 will prompt for one *inside the pane*, exactly like it would in any
-terminal — vibedeck cannot pre-fill it, and has no plan to. If you need
+terminal — Vibespace cannot pre-fill it, and has no plan to. If you need
 that host, either switch it to key-based auth or type the password when
 prompted, same as you always would.
 
@@ -88,7 +88,7 @@ startup command:
 
 ```
 ssh -t -p 2200 ci@build.internal \
-  "cd -- '/srv/ci/workspace' || echo 'vibedeck: ...' >&2; source .venv/bin/activate; exec \"\${SHELL:-/bin/sh}\" -l"
+  "cd -- '/srv/ci/workspace' || echo 'Vibespace: ...' >&2; source .venv/bin/activate; exec \"\${SHELL:-/bin/sh}\" -l"
 ```
 
 ### How this stays injection-safe

@@ -3,7 +3,7 @@
  * under plain Node/vitest, same reasoning as every other pure-logic module
  * in this app (see keymap.ts's top comment).
  */
-import type { SavedPrompt } from "@vibedeck/shared";
+import type { SavedPrompt } from "@vibespace/shared";
 
 export interface GroupedPrompts {
   /** `workspaceId === null` — available in every workspace. */

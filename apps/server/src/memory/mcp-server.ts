@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * The runnable MCP entry point: `node dist/memory/mcp-server.js <workspace-root>`
- * (after `pnpm build`), or `pnpm --filter @vibedeck/server exec tsx
+ * (after `pnpm build`), or `pnpm --filter @vibespace/server exec tsx
  * src/memory/mcp-server.ts <workspace-root>` for local development without
  * building first. This is the exact command docs/MEMORY.md and
  * docs/AGENT-API.md tell users to paste into Claude Code / Cursor / Codex's
@@ -9,9 +9,9 @@
  *
  * Despite living under `memory/` (its original Phase 8 home, kept as-is so
  * existing MCP configs pointing at this exact path keep working), this
- * process exposes the FULL vibedeck MCP surface as of Phase 9.5b: memory
+ * process exposes the FULL vibespace MCP surface as of Phase 9.5b: memory
  * tools, board tools, agent-profile tools, the saved-prompts tool, and the
- * `vibedeck_developer_guide` prompt — see `../mcp/build-server.ts`'s top
+ * `vibespace_developer_guide` prompt — see `../mcp/build-server.ts`'s top
  * comment for the composition and the architecture decision behind how the
  * board/agent/prompt tools reach the shared SQLite database from this
  * separate process.
@@ -24,7 +24,7 @@
 import { existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { buildVibedeckMcpServer } from "../mcp/build-server.js";
+import { buildVibespaceMcpServer } from "../mcp/build-server.js";
 
 async function main(): Promise<void> {
   const rawRoot = process.argv[2];
@@ -33,20 +33,20 @@ async function main(): Promise<void> {
     // reserved for the JSON-RPC protocol stream itself) — writing the usage
     // message anywhere else would corrupt that stream for a client that
     // did manage to connect.
-    console.error("Usage: vibedeck-memory-mcp <workspace-root>");
-    console.error("  <workspace-root> is the absolute path to a vibedeck workspace's project directory.");
+    console.error("Usage: vibespace-memory-mcp <workspace-root>");
+    console.error("  <workspace-root> is the absolute path to a vibespace workspace's project directory.");
     process.exitCode = 1;
     return;
   }
 
   const root = resolve(rawRoot);
   if (!existsSync(root) || !statSync(root).isDirectory()) {
-    console.error(`vibedeck-memory-mcp: "${root}" is not a directory.`);
+    console.error(`vibespace-memory-mcp: "${root}" is not a directory.`);
     process.exitCode = 1;
     return;
   }
 
-  const { server, close } = buildVibedeckMcpServer(root);
+  const { server, close } = buildVibespaceMcpServer(root);
 
   // Close the shared SQLite handle on a normal shutdown so the process
   // doesn't leave a database file handle open after the client disconnects
@@ -64,6 +64,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err: unknown) => {
-  console.error("vibedeck-memory-mcp: fatal error", err);
+  console.error("vibespace-memory-mcp: fatal error", err);
   process.exitCode = 1;
 });

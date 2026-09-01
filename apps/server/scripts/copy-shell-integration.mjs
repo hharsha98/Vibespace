@@ -2,7 +2,7 @@
 /**
  * Copies the OSC 133 shell-integration script into `dist/` after `tsc`.
  *
- * `tsc` only emits from `.ts` sources, so `vibedeck-integration.zsh` —
+ * `tsc` only emits from `.ts` sources, so `vibespace-integration.zsh` —
  * which the pty layer reads at runtime to inject shell integration (see
  * `src/pty/shell-integration/`) — has to be carried across separately.
  *
@@ -24,7 +24,7 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const packageRoot = join(here, "..");
 
-const relativePath = join("pty", "shell-integration", "vibedeck-integration.zsh");
+const relativePath = join("pty", "shell-integration", "vibespace-integration.zsh");
 const source = join(packageRoot, "src", relativePath);
 const destination = join(packageRoot, "dist", relativePath);
 

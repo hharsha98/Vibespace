@@ -1,5 +1,5 @@
 /**
- * vibedeck's own mark.
+ * vibespace's own mark.
  *
  * The logo is the product: a pane grid with one pane filled. That filled
  * pane is the *focused* pane — the same idea the app expresses everywhere
@@ -11,7 +11,7 @@
  *  - Four shapes only, so it stays legible at 16px as a favicon.
  *  - Drawn in `currentColor`, so it inherits whatever the active theme's
  *    text colour is instead of fighting 26 different palettes.
- *  - No wordmark inside the SVG — the word "vibedeck" is set in live text
+ *  - No wordmark inside the SVG — the word "vibespace" is set in live text
  *    beside it, so it stays selectable and themeable.
  */
 
@@ -30,7 +30,7 @@ export default function Logo({ size = 16, accent = "var(--vd-accent)" }: LogoPro
       viewBox="0 0 24 24"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      // Decorative: the adjacent "vibedeck" text already names the app, so
+      // Decorative: the adjacent "vibespace" text already names the app, so
       // announcing it twice to a screen reader would just be noise.
       aria-hidden="true"
       focusable="false"

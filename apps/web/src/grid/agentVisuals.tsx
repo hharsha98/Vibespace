@@ -23,7 +23,7 @@
  *    WITH one deliberate exception: **real product logos are used for the
  *    agents that name an actual third-party tool** (nominative use — the
  *    mark identifies which tool a row launches, same as any IDE/launcher's
- *    "open with X" list; it never appears in vibedeck's own branding —
+ *    "open with X" list; it never appears in vibespace's own branding —
  *    Logo.tsx, favicon.svg, the Tauri app icons are untouched by this
  *    file). Every path below is the exact `d` geometry published by one of
  *    two source-of-truth icon sets, copied verbatim, not hand-traced:
@@ -33,7 +33,7 @@
  *        actively maintained AI/LLM-brand-logo set used for every mark
  *        simple-icons doesn't (yet) carry: Claude Code, Codex, Gemini CLI,
  *        DeepSeek, Antigravity, Grok/xAI. Two products have NO published
- *        mark in either set — Factory's Droid and vibedeck's own plain
+ *        mark in either set — Factory's Droid and vibespace's own plain
  *        shell — those two glyphs are still hand-drawn approximations, and
  *        say so in their own comments below.
  *    A brand mark is allowed to use its own real brand colour INSIDE its
@@ -55,7 +55,7 @@
  * data-in/data-out and therefore trivially unit testable.
  */
 import { useId } from "react";
-import type { AgentId } from "@vibedeck/shared";
+import type { AgentId } from "@vibespace/shared";
 
 /**
  * Maps an agent to the CSS custom property that should colour its glyph,
@@ -66,7 +66,7 @@ import type { AgentId } from "@vibedeck/shared";
 export function agentAccentVar(id: AgentId): string {
   switch (id) {
     case "claude":
-      // The app's own primary accent — Claude is vibedeck's default/first
+      // The app's own primary accent — Claude is vibespace's default/first
       // agent (see App.tsx's "first available" fallback), so it gets the
       // one colour every theme treats as "the" accent.
       return "var(--vd-accent)";

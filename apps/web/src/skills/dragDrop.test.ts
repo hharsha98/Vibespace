@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AgentId, SessionInfo } from "@vibedeck/shared";
+import type { AgentId, SessionInfo } from "@vibespace/shared";
 import {
   SKILL_DRAG_MIME_TYPE,
   canPaneAcceptSkill,
@@ -25,15 +25,15 @@ describe("SKILL_DRAG_MIME_TYPE", () => {
     // The whole point (see this module's top comment): a foreign text drag
     // must never be mistaken for a skill, which only works if nothing else
     // on the OS/browser ever populates this exact type by accident.
-    expect(SKILL_DRAG_MIME_TYPE).toBe("application/x-vibedeck-skill");
+    expect(SKILL_DRAG_MIME_TYPE).toBe("application/x-vibespace-skill");
     expect(SKILL_DRAG_MIME_TYPE).not.toBe("text/plain");
   });
 });
 
 describe("serializeSkillDragPayload / parseSkillDragPayload round-trip", () => {
   it("parses back exactly what was serialised", () => {
-    const raw = serializeSkillDragPayload({ name: "vibedeck-parity-audit" });
-    expect(parseSkillDragPayload(raw)).toEqual({ name: "vibedeck-parity-audit" });
+    const raw = serializeSkillDragPayload({ name: "vibespace-parity-audit" });
+    expect(parseSkillDragPayload(raw)).toEqual({ name: "vibespace-parity-audit" });
   });
 
   it("ignores extra fields on the input object but still round-trips the name", () => {

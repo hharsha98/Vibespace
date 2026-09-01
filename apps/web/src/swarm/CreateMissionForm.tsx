@@ -7,7 +7,7 @@
  * the canvas once a mission comes back.
  */
 import { useState } from "react";
-import { MISSION_ROLES, type AgentId, type MissionRole } from "@vibedeck/shared";
+import { MISSION_ROLES, type AgentId, type MissionRole } from "@vibespace/shared";
 import type { AgentOption } from "../grid/PaneView.js";
 import { Button, EMPTY_SURFACE_BACKGROUND, EmptyState } from "../shell/ui.js";
 import { FONT, RADIUS, SPACE } from "../shell/tokens.js";

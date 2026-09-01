@@ -1,7 +1,7 @@
 /**
  * CRUD tests for WorkspaceStore, run against a real SQLite file — but always
  * inside a fresh `mkdtempSync` temp directory, never the developer's real
- * `~/.vibedeck`. `VIBEDECK_DATA_DIR` is what `schema.ts`'s `getDataDir()`
+ * `~/.vibespace`. `VIBESPACE_DATA_DIR` is what `schema.ts`'s `getDataDir()`
  * reads, so setting it before each `new WorkspaceStore()` is what redirects
  * every test here.
  */
@@ -17,14 +17,14 @@ let dataDir: string;
 let store: WorkspaceStore;
 
 beforeEach(() => {
-  dataDir = mkdtempSync(join(tmpdir(), "vibedeck-test-"));
-  process.env.VIBEDECK_DATA_DIR = dataDir;
+  dataDir = mkdtempSync(join(tmpdir(), "vibespace-test-"));
+  process.env.VIBESPACE_DATA_DIR = dataDir;
   store = new WorkspaceStore();
 });
 
 afterEach(() => {
   store.close();
-  delete process.env.VIBEDECK_DATA_DIR;
+  delete process.env.VIBESPACE_DATA_DIR;
   rmSync(dataDir, { recursive: true, force: true });
 });
 
@@ -34,13 +34,13 @@ describe("WorkspaceStore", () => {
   });
 
   it("creates a workspace with a generated id, ISO timestamps, and no layout", () => {
-    const workspace = store.create({ name: "vibedeck", rootPath: "/tmp/vibedeck" });
+    const workspace = store.create({ name: "vibespace", rootPath: "/tmp/vibespace" });
 
     expect(workspace.id).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
     );
-    expect(workspace.name).toBe("vibedeck");
-    expect(workspace.rootPath).toBe("/tmp/vibedeck");
+    expect(workspace.name).toBe("vibespace");
+    expect(workspace.rootPath).toBe("/tmp/vibespace");
     expect(workspace.layout).toBeNull();
     // ISO 8601 UTC strings round-trip through Date without throwing/NaN.
     expect(Number.isNaN(new Date(workspace.createdAt).getTime())).toBe(false);
@@ -160,7 +160,7 @@ describe("WorkspaceStore", () => {
     store.update(created.id, { layout: JSON.stringify({ kind: "leaf", id: "x", sessionId: null }) });
     store.close();
 
-    // A brand-new store, same VIBEDECK_DATA_DIR — simulates the server
+    // A brand-new store, same VIBESPACE_DATA_DIR — simulates the server
     // process restarting and re-opening the same on-disk database file.
     const reopened = new WorkspaceStore();
     const found = reopened.get(created.id);
@@ -438,7 +438,7 @@ describe("WorkspaceStore.remove() cascade", () => {
 
   it("rows with a NULL workspace_id (global saved_prompts / session_records) survive a workspace deletion", () => {
     // agent_profiles.workspace_id is NOT NULL in the live schema (migration
-    // 4 in migrations.ts, confirmed against the real ~/.vibedeck/vibedeck.db
+    // 4 in migrations.ts, confirmed against the real ~/.vibespace/vibespace.db
     // via PRAGMA table_info) — there is no "global agent profile" case to
     // test, unlike its two siblings below, which ARE genuinely nullable.
     const ws = store.create({ name: "with-globals", rootPath: "/tmp/with-globals" });

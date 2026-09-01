@@ -1,5 +1,5 @@
 /**
- * Builds a CodeMirror 6 theme from vibedeck's own `Theme` tokens — the
+ * Builds a CodeMirror 6 theme from vibespace's own `Theme` tokens — the
  * editor's equivalent of `Terminal.tsx` assigning `theme.terminal` straight
  * to xterm. Two pieces come back, bundled into one `Extension[]`:
  *

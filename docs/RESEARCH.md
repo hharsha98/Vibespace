@@ -1,6 +1,6 @@
 # What BridgeMind publishes, and how to use it
 
-vibedeck is built to match BridgeSpace. This file records everything BridgeMind
+Vibespace is built to match BridgeSpace. This file records everything BridgeMind
 actually publishes, so design decisions draw on their documented behaviour
 rather than on guesswork — and so we know, in advance, which questions their
 docs can answer and which they can't.
@@ -87,7 +87,7 @@ BridgeAgent's docs: the agent "creates new skills on the fly and shares them via
 the **open `agentskills.io` standard**", with a public Skills Hub.
 
 This matters for Phase 10. Skills are the one place where an interoperable
-public format exists — so vibedeck should **implement that standard** rather
+public format exists — so Vibespace should **implement that standard** rather
 than invent a private one. Read `agentskills.io` before starting Phase 10.
 
 ## 5. Gaps this research uncovered
@@ -110,7 +110,7 @@ the same server is the natural next step and is what their agents actually use.
 
 | Them | Us | Why |
 |---|---|---|
-| Account, API key, hosted MCP at `mcp.bridgemind.ai` | Local-first, no account, stdio MCP | vibedeck runs entirely on your machine |
+| Account, API key, hosted MCP at `mcp.bridgemind.ai` | Local-first, no account, stdio MCP | Vibespace runs entirely on your machine |
 | Pro tier gates workspace tabs, kanban, agent config, prompts library | Everything free | No licensing model |
 | Their theme set and brand | Community palettes, our own mark | Matching a design language is fair; copying a brand is not |
 

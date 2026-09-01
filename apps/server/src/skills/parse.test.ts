@@ -11,7 +11,7 @@ describe("parseSkill", () => {
       "compatibility: Requires bash and python3",
       "allowed-tools: bash python",
       "metadata:",
-      "  author: vibedeck",
+      "  author: vibespace",
       "  version: 1.0",
       "---",
       "# PDF Helper",
@@ -26,7 +26,7 @@ describe("parseSkill", () => {
       description: "Helps with PDF files",
       license: "MIT",
       compatibility: "Requires bash and python3",
-      metadata: { author: "vibedeck", version: "1.0" },
+      metadata: { author: "vibespace", version: "1.0" },
       allowedTools: "bash python",
       body: "# PDF Helper\n\nDo the thing.",
     });

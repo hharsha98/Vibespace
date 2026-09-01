@@ -1,9 +1,9 @@
 /**
- * vibedeck's theme engine: the `Theme` shape, the built-in theme catalogue,
+ * vibespace's theme engine: the `Theme` shape, the built-in theme catalogue,
  * and small helpers for persisting/applying the active one.
  *
  * Two independent palettes live inside every `Theme`:
- *  - `ui`: colours for vibedeck's own chrome (header, tabs, panes, buttons),
+ *  - `ui`: colours for vibespace's own chrome (header, tabs, panes, buttons),
  *    applied as CSS custom properties on `:root` (see `applyThemeCssVars`)
  *    so every component just reads `var(--vd-*)` instead of a hard-coded
  *    hex value.
@@ -29,10 +29,11 @@
  * of its own (see its own top comment), so pulling the elevation-shadow
  * scale in for `applyThemeCssVars` (below) doesn't change that.
  */
+import { readWithLegacyFallback } from "../settings/legacyStorage.js";
 import { LIGHT_SHADOW, SHADOW } from "../shell/tokens.js";
 
 /**
- * vibedeck's own UI chrome colours — applied as CSS custom properties.
+ * vibespace's own UI chrome colours — applied as CSS custom properties.
  *
  * Phase 4.5 (the visual overhaul, see docs/DESIGN.md §2) grew this from 7
  * fields to 14: the original `background/surface/border/text/textMuted/
@@ -232,7 +233,7 @@ function deriveUi(base: UIBase, terminal: TerminalPalette, isDark: boolean): UIP
 }
 
 /**
- * The built-in catalogue: "Void" (vibedeck's own original look, carried over
+ * The built-in catalogue: "Void" (vibespace's own original look, carried over
  * unchanged from Phases 0-3), then long-established community editor and
  * terminal palettes — Dracula, Synthwave, Nord, Gruvbox, Tokyo Night,
  * Solarized and friends — plus five light options (Solarized Light, and
@@ -1418,17 +1419,17 @@ export function getThemeById(id: string | null | undefined): Theme {
   return THEMES.find((t) => t.id === DEFAULT_THEME_ID) ?? THEMES[0];
 }
 
-const THEME_STORAGE_KEY = "vibedeck.theme";
+const THEME_STORAGE_KEY = "vibespace.theme";
+// The pre-rename key this project shipped under as vibedeck — read as a
+// fallback so a returning user's saved theme isn't lost on upgrade; see
+// `legacyStorage.ts`'s top comment for the full "why" shared by all eight
+// of this app's persisted preferences.
+const LEGACY_THEME_STORAGE_KEY = "vibedeck.theme";
 
 /** Reads the persisted theme id, or null if none is stored / storage isn't
  * available (e.g. a browser with localStorage disabled). */
 export function loadStoredThemeId(): string | null {
-  if (typeof window === "undefined") return null;
-  try {
-    return window.localStorage.getItem(THEME_STORAGE_KEY);
-  } catch {
-    return null; // Private-browsing Safari throws on access, not just on write.
-  }
+  return readWithLegacyFallback(THEME_STORAGE_KEY, LEGACY_THEME_STORAGE_KEY);
 }
 
 /** Persists the chosen theme id so it survives a page reload. */

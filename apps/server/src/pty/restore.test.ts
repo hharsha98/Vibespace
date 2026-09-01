@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentId } from "@vibedeck/shared";
+import type { AgentId } from "@vibespace/shared";
 import { SessionManager } from "./session-manager.js";
 import { SessionRecordsStore } from "../db/session-records.js";
 import { SshProfileStore } from "../ssh/store.js";
@@ -24,8 +24,8 @@ let recordsStore: SessionRecordsStore;
 let sshStore: SshProfileStore;
 
 function setup() {
-  dataDir = mkdtempSync(join(tmpdir(), "vibedeck-restore-test-"));
-  process.env.VIBEDECK_DATA_DIR = dataDir;
+  dataDir = mkdtempSync(join(tmpdir(), "vibespace-restore-test-"));
+  process.env.VIBESPACE_DATA_DIR = dataDir;
   manager = new SessionManager();
   recordsStore = new SessionRecordsStore();
   sshStore = new SshProfileStore();
@@ -35,7 +35,7 @@ afterEach(() => {
   manager?.disposeAll();
   recordsStore?.close();
   sshStore?.close();
-  delete process.env.VIBEDECK_DATA_DIR;
+  delete process.env.VIBESPACE_DATA_DIR;
   if (dataDir) rmSync(dataDir, { recursive: true, force: true });
 });
 

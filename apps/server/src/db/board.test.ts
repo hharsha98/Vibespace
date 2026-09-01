@@ -1,9 +1,9 @@
 /**
  * CRUD + ordering tests for BoardStore, run against a real SQLite file —
  * always inside a fresh `mkdtempSync` temp directory, same pattern as
- * `workspaces.test.ts`. `VIBEDECK_DATA_DIR` is what `schema.ts`'s
+ * `workspaces.test.ts`. `VIBESPACE_DATA_DIR` is what `schema.ts`'s
  * `getDataDir()` reads, so setting it before each `new BoardStore()` is
- * what redirects every test here away from a developer's real `~/.vibedeck`.
+ * what redirects every test here away from a developer's real `~/.vibespace`.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -18,14 +18,14 @@ const WORKSPACE_A = "workspace-a";
 const WORKSPACE_B = "workspace-b";
 
 beforeEach(() => {
-  dataDir = mkdtempSync(join(tmpdir(), "vibedeck-board-test-"));
-  process.env.VIBEDECK_DATA_DIR = dataDir;
+  dataDir = mkdtempSync(join(tmpdir(), "vibespace-board-test-"));
+  process.env.VIBESPACE_DATA_DIR = dataDir;
   store = new BoardStore();
 });
 
 afterEach(() => {
   store.close();
-  delete process.env.VIBEDECK_DATA_DIR;
+  delete process.env.VIBESPACE_DATA_DIR;
   rmSync(dataDir, { recursive: true, force: true });
 });
 

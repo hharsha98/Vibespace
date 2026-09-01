@@ -1,32 +1,32 @@
 /**
  * Route tests for the Phase 9.5b agent-profile endpoints, exercised via
  * `app.inject()` (in-process, no real network port) — same pattern as
- * `board/routes.test.ts`. `VIBEDECK_DATA_DIR` is pointed at a fresh temp
+ * `board/routes.test.ts`. `VIBESPACE_DATA_DIR` is pointed at a fresh temp
  * directory per test, same reasoning as every other SQLite-backed test.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentProfile } from "@vibedeck/shared";
+import type { AgentProfile } from "@vibespace/shared";
 import { buildApp } from "../index.js";
 
 let dataDir: string;
 
 beforeEach(() => {
-  dataDir = mkdtempSync(join(tmpdir(), "vibedeck-agents-routes-test-"));
-  process.env.VIBEDECK_DATA_DIR = dataDir;
+  dataDir = mkdtempSync(join(tmpdir(), "vibespace-agents-routes-test-"));
+  process.env.VIBESPACE_DATA_DIR = dataDir;
 });
 
 afterEach(() => {
-  delete process.env.VIBEDECK_DATA_DIR;
+  delete process.env.VIBESPACE_DATA_DIR;
   rmSync(dataDir, { recursive: true, force: true });
 });
 
 /** Creates a throwaway workspace (via the real REST route) for tests that
  * need a valid workspaceId. */
 async function createWorkspace(app: ReturnType<typeof buildApp>) {
-  const projectDir = mkdtempSync(join(tmpdir(), "vibedeck-agents-workspace-"));
+  const projectDir = mkdtempSync(join(tmpdir(), "vibespace-agents-workspace-"));
   const response = await app.inject({
     method: "POST",
     url: "/api/workspaces",

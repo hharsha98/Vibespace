@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Workspace } from "@vibedeck/shared";
+import type { Workspace } from "@vibespace/shared";
 import { deriveWorkspaceTabs, nextTabIndex, workspaceIdForTabIndex } from "./workspaceTabs.js";
 
 function ws(overrides: Partial<Workspace> & { id: string }): Workspace {

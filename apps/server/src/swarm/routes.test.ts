@@ -8,18 +8,18 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Mission, MissionDetail } from "@vibedeck/shared";
+import type { Mission, MissionDetail } from "@vibespace/shared";
 import { buildApp } from "../index.js";
 
 let dataDir: string;
 
 beforeEach(() => {
-  dataDir = mkdtempSync(join(tmpdir(), "vibedeck-swarm-routes-test-"));
-  process.env.VIBEDECK_DATA_DIR = dataDir;
+  dataDir = mkdtempSync(join(tmpdir(), "vibespace-swarm-routes-test-"));
+  process.env.VIBESPACE_DATA_DIR = dataDir;
 });
 
 afterEach(() => {
-  delete process.env.VIBEDECK_DATA_DIR;
+  delete process.env.VIBESPACE_DATA_DIR;
   rmSync(dataDir, { recursive: true, force: true });
 });
 
@@ -66,7 +66,7 @@ async function waitFor(condition: () => boolean, timeoutMs = 10_000): Promise<vo
 }
 
 async function createWorkspace(app: ReturnType<typeof buildApp>) {
-  const projectDir = mkdtempSync(join(tmpdir(), "vibedeck-swarm-workspace-"));
+  const projectDir = mkdtempSync(join(tmpdir(), "vibespace-swarm-workspace-"));
   const response = await app.inject({
     method: "POST",
     url: "/api/workspaces",

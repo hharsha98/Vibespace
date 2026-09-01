@@ -18,7 +18,7 @@ import {
   type MissionStatus,
   type MissionTaskStatus,
   type TaskScheduleResponse,
-} from "@vibedeck/shared";
+} from "@vibespace/shared";
 import type { WorkspaceStore } from "../db/workspaces.js";
 import type { SessionManager } from "../pty/session-manager.js";
 import { detectAllAgents, INSTALL_HINTS, isAgentId } from "../pty/agents.js";

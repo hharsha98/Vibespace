@@ -14,7 +14,7 @@ import { isProbablyBinary, safeResolve } from "./safe-path.js";
 const cleanupDirs: string[] = [];
 
 function makeRoot(): string {
-  const dir = mkdtempSync(join(tmpdir(), "vibedeck-safe-path-"));
+  const dir = mkdtempSync(join(tmpdir(), "vibespace-safe-path-"));
   cleanupDirs.push(dir);
   return dir;
 }
@@ -94,8 +94,8 @@ describe("safeResolve — textual traversal", () => {
   it("rejects a sibling directory that merely shares root's name as a prefix (the startsWith trap)", () => {
     // Regression guard for the classic bug: naively checking
     // candidate.startsWith(root) (without the trailing separator) would let
-    // "/tmp/vibedeck-safe-path-XXXX-evil" pass as "inside"
-    // "/tmp/vibedeck-safe-path-XXXX". Build exactly that sibling and make
+    // "/tmp/vibespace-safe-path-XXXX-evil" pass as "inside"
+    // "/tmp/vibespace-safe-path-XXXX". Build exactly that sibling and make
     // sure a traversal into it is still rejected.
     const root = makeRoot();
     const evilSibling = `${root}-evil`;

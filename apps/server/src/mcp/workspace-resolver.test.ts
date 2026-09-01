@@ -13,14 +13,14 @@ let dataDir: string;
 let store: WorkspaceStore;
 
 beforeEach(() => {
-  dataDir = mkdtempSync(join(tmpdir(), "vibedeck-workspace-resolver-test-"));
-  process.env.VIBEDECK_DATA_DIR = dataDir;
+  dataDir = mkdtempSync(join(tmpdir(), "vibespace-workspace-resolver-test-"));
+  process.env.VIBESPACE_DATA_DIR = dataDir;
   store = new WorkspaceStore();
 });
 
 afterEach(() => {
   store.close();
-  delete process.env.VIBEDECK_DATA_DIR;
+  delete process.env.VIBESPACE_DATA_DIR;
   rmSync(dataDir, { recursive: true, force: true });
 });
 
@@ -32,10 +32,10 @@ describe("resolveWorkspaceId", () => {
   });
 
   it("returns a clear error for a root not registered as any workspace", () => {
-    const result = resolveWorkspaceId(store, "/tmp/never-opened-in-vibedeck");
+    const result = resolveWorkspaceId(store, "/tmp/never-opened-in-vibespace");
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error).toContain("/tmp/never-opened-in-vibedeck");
+    expect(result.error).toContain("/tmp/never-opened-in-vibespace");
     expect(result.error.toLowerCase()).toContain("workspace");
   });
 

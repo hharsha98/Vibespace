@@ -19,8 +19,9 @@ import {
 import { randomUUID } from "node:crypto";
 import { join, relative, sep } from "node:path";
 import type { FastifyInstance } from "fastify";
-import type { FileChangeEventType, FileEntry, FileWatchEvent } from "@vibedeck/shared";
+import type { FileChangeEventType, FileEntry, FileWatchEvent } from "@vibespace/shared";
 import type { WorkspaceStore } from "../db/workspaces.js";
+import { migrateLegacyWorkspaceDotDir } from "./legacy-dot-dir.js";
 import { isInside, isProbablyBinary, safeResolve } from "./safe-path.js";
 import { PASTE_IMAGE_DIR_NAME, pickPasteImagePath } from "./paste-image.js";
 
@@ -211,7 +212,7 @@ export function registerFileRoutes(app: FastifyInstance, workspaceStore: Workspa
   // `handleDrop` (dragged files) already uses client-side.
   //
   // `pickPasteImagePath` (paste-image.ts) decides WHERE inside the
-  // workspace the image lands (`.vibedeck/pastes/...`); this handler only
+  // workspace the image lands (`.vibespace/pastes/...`); this handler only
   // owns request validation and the actual write, and — same rule as every
   // other route in this file — runs that decision's relative path through
   // `safeResolve` before ever touching `fs`, even though it's a
@@ -248,6 +249,15 @@ export function registerFileRoutes(app: FastifyInstance, workspaceStore: Workspa
     if (buf.length > MAX_PASTE_IMAGE_BYTES) {
       return reply.status(413).send({ error: `Image must be under ${MAX_PASTE_IMAGE_BYTES} bytes` });
     }
+
+    // A vibedeck-era workspace may still have its pastes (and memory notes,
+    // and skills) sitting under `.vibedeck` instead of `.vibespace` — move
+    // the whole dot-directory across before creating anything new inside
+    // it, same lazy per-workspace migration `memory/store.ts`'s
+    // `ensureMemoryDir` triggers from its own write path (see
+    // `legacy-dot-dir.ts`'s top comment for why this can't just happen
+    // once at startup).
+    migrateLegacyWorkspaceDotDir(workspace.rootPath);
 
     // safeResolve requires the target's parent to already exist on disk to
     // realpath it (see safe-path.ts's top comment) — ensure the dot-dir
@@ -408,7 +418,7 @@ export function registerFileRoutes(app: FastifyInstance, workspaceStore: Workspa
       // worth anyone's sessions, so it is logged and skipped.
       watcher.on("error", (err: unknown) => {
         console.warn(
-          `vibedeck: file watcher error under "${root}" (continuing to watch): ` +
+          `vibespace: file watcher error under "${root}" (continuing to watch): ` +
             `${err instanceof Error ? err.message : String(err)}`
         );
       });

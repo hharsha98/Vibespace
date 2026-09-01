@@ -32,7 +32,7 @@
  * requests every 15 seconds.
  */
 import { useEffect, useRef, useState } from "react";
-import type { GitBranchResponse } from "@vibedeck/shared";
+import type { GitBranchResponse } from "@vibespace/shared";
 
 const POLL_INTERVAL_MS = 15_000;
 

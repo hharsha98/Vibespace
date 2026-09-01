@@ -1,9 +1,9 @@
 /**
- * The `vibedeck [path]` CLI — BridgeSpace's `bridgespace .` equivalent
+ * The `vibespace [path]` CLI — BridgeSpace's `bridgespace .` equivalent
  * (see docs/PARITY.md). Run it from any project directory and that
- * directory opens as a vibedeck workspace, starting the server first if one
+ * directory opens as a vibespace workspace, starting the server first if one
  * isn't already up. This file holds the pure, injectable-dependency core
- * (`runVibedeckCli`) so `vibedeck.test.ts` can exercise every branch —
+ * (`runVibespaceCli`) so `vibespace.test.ts` can exercise every branch —
  * "path doesn't exist", "server already running", "server needs starting
  * and never comes up", "workspace already registered", "workspace needs
  * creating" — with fake deps and no real network call, no real child
@@ -13,8 +13,8 @@
  * `memory/mcp-server.ts` (thin stdio entry) already uses in this codebase.
  *
  * --- What "opens it" means here, and why ---
- * A vibedeck workspace only exists inside a running server (workspaces are
- * rows in `~/.vibedeck/vibedeck.db`, resolved through the server's REST API
+ * A vibespace workspace only exists inside a running server (workspaces are
+ * rows in `~/.vibespace/vibespace.db`, resolved through the server's REST API
  * — see `../db/workspaces.ts` and `../workspace-path.ts`). There is no
  * direct-to-desktop-app deep link today: `apps/desktop/src-tauri/src/main.rs`
  * takes no CLI arguments and registers no custom URL scheme — its `main()`
@@ -38,7 +38,7 @@
  *      keeps running after this CLI process exits (see bin.ts).
  *   3. Ensure a workspace is registered for the resolved path, reusing an
  *      existing one by exact `rootPath` match rather than creating a
- *      duplicate every time `vibedeck .` is run in the same directory.
+ *      duplicate every time `vibespace .` is run in the same directory.
  *   4. Open the system's default browser at that server's origin, with a
  *      `?workspace=<id>` query param the web app (`apps/web/src/App.tsx`)
  *      reads on load to auto-select that workspace instead of whichever one
@@ -48,7 +48,7 @@
 import { basename } from "node:path";
 import type { ResolveRootPathResult } from "../workspace-path.js";
 
-/** How long `runVibedeckCli` waits for a freshly-started server to answer
+/** How long `runVibespaceCli` waits for a freshly-started server to answer
  * `/api/health` before giving up and reporting a failure. 15s is generous
  * for `node dist/index.js` (no compilation, just process startup +
  * `better-sqlite3`'s native binding load + Fastify's `.listen()`) while
@@ -59,7 +59,7 @@ export interface EnsureWorkspaceResult {
   id: string;
   name: string;
   /** True if an existing workspace's `rootPath` already matched (reused,
-   * not created) — purely for the log line `runVibedeckCli` prints; callers
+   * not created) — purely for the log line `runVibespaceCli` prints; callers
    * that don't care can ignore it. */
   reused: boolean;
 }
@@ -67,12 +67,12 @@ export interface EnsureWorkspaceResult {
 export type EnsureWorkspaceOutcome = EnsureWorkspaceResult | { error: string };
 
 /**
- * Every side effect `runVibedeckCli` needs, as injectable functions — the
+ * Every side effect `runVibespaceCli` needs, as injectable functions — the
  * same "pure core, inject the I/O" shape `resolveStaticDir` uses in
  * `runtime-config.ts`. `bin.ts` supplies real implementations;
- * `vibedeck.test.ts` supplies fakes.
+ * `vibespace.test.ts` supplies fakes.
  */
-export interface VibedeckCliDeps {
+export interface VibespaceCliDeps {
   /** Resolves and validates the user-supplied path. Real impl is
    * `resolveRootPath` from `../workspace-path.ts` — reused rather than
    * reimplemented so the CLI accepts/rejects paths by EXACTLY the same
@@ -104,16 +104,16 @@ export interface VibedeckCliDeps {
 }
 
 /**
- * Runs the whole `vibedeck [path]` flow and returns a process exit code (0
+ * Runs the whole `vibespace [path]` flow and returns a process exit code (0
  * success, 1 failure) — `bin.ts` is the only caller that actually calls
  * `process.exit` with this; tests just assert on the returned number plus
  * what got logged.
  */
-export async function runVibedeckCli(argv: string[], deps: VibedeckCliDeps): Promise<number> {
+export async function runVibespaceCli(argv: string[], deps: VibespaceCliDeps): Promise<number> {
   const inputPath = argv[0] ?? ".";
   const resolved = deps.resolvePath(inputPath);
   if (!resolved.ok) {
-    deps.logError(`vibedeck: ${resolved.error}`);
+    deps.logError(`vibespace: ${resolved.error}`);
     return 1;
   }
   const rootPath = resolved.path;
@@ -129,23 +129,23 @@ export async function runVibedeckCli(argv: string[], deps: VibedeckCliDeps): Pro
   if (port === null) {
     port = deps.defaultPort;
     deps.log(
-      `No vibedeck server found on port ${deps.candidatePorts.join(" or ")} — starting one on ${port}...`
+      `No vibespace server found on port ${deps.candidatePorts.join(" or ")} — starting one on ${port}...`
     );
     try {
       deps.startServer(port);
     } catch (err) {
       deps.logError(
-        `vibedeck: could not start the server — ${err instanceof Error ? err.message : String(err)}`
+        `vibespace: could not start the server — ${err instanceof Error ? err.message : String(err)}`
       );
       return 1;
     }
     const up = await deps.waitForServerUp(port, CLI_SERVER_START_TIMEOUT_MS);
     if (!up) {
       deps.logError(
-        `vibedeck: server did not come up on port ${port} within ${
+        `vibespace: server did not come up on port ${port} within ${
           CLI_SERVER_START_TIMEOUT_MS / 1000
         }s. Check whether another process is already using that port, or run ` +
-          `"pnpm --filter @vibedeck/server start" yourself in another terminal to see the actual error.`
+          `"pnpm --filter @vibespace/server start" yourself in another terminal to see the actual error.`
       );
       return 1;
     }
@@ -153,7 +153,7 @@ export async function runVibedeckCli(argv: string[], deps: VibedeckCliDeps): Pro
 
   const workspace = await deps.ensureWorkspace(port, rootPath);
   if ("error" in workspace) {
-    deps.logError(`vibedeck: ${workspace.error}`);
+    deps.logError(`vibespace: ${workspace.error}`);
     return 1;
   }
 
@@ -171,7 +171,7 @@ export async function runVibedeckCli(argv: string[], deps: VibedeckCliDeps): Pro
 
 /** Shape of `GET /api/workspaces`'s response — just the fields
  * `ensureWorkspace` actually reads, not the full `Workspace` type, so this
- * module doesn't need to import `@vibedeck/shared` for one helper. */
+ * module doesn't need to import `@vibespace/shared` for one helper. */
 interface WorkspaceListItem {
   id: string;
   name: string;
@@ -181,7 +181,7 @@ interface WorkspaceListItem {
 /**
  * The real `ensureWorkspace` implementation: `GET /api/workspaces`, look
  * for an exact `rootPath` match, `POST /api/workspaces` if none exists.
- * Exported (not just used inline in `bin.ts`) so `vibedeck.test.ts` can
+ * Exported (not just used inline in `bin.ts`) so `vibespace.test.ts` can
  * exercise it directly against a real, in-process `buildApp()` server
  * (listening on an ephemeral port) rather than faking `fetch` itself —
  * proving the query actually round-trips against the real API shape, not

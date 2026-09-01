@@ -17,7 +17,7 @@ import {
   type AgentId,
   type CardPriority,
   type ColumnId,
-} from "@vibedeck/shared";
+} from "@vibespace/shared";
 import type { WorkspaceStore } from "../db/workspaces.js";
 import type { BoardStore, UpdateCardOptions } from "../db/board.js";
 import type { SessionManager } from "../pty/session-manager.js";

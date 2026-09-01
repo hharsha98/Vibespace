@@ -4,11 +4,11 @@
  * v3.4.17 parity).
  *
  * --- Why this exists only for Codex, and what it does NOT do ------------
- * vibedeck has no API access to any provider and keeps no token accounting
+ * vibespace has no API access to any provider and keeps no token accounting
  * of its own — every agent CLI runs as a real process inside a pty (see
  * `apps/server/src/pty/agents.ts`), and the ONLY signal available is
  * whatever that CLI prints to its own terminal. Before writing this file,
- * each of the three CLIs vibedeck ships today (`claude`, `codex`,
+ * each of the three CLIs vibespace ships today (`claude`, `codex`,
  * `cursor-agent`) was checked for a genuine, default, on-screen
  * context/token indicator:
  *
@@ -27,7 +27,7 @@
  *    exposed via a user-configured `statusLine` command, but that's opt-in
  *    (most installs have none configured) and, when present, the rendered
  *    text is an arbitrary user-authored command's output — not a fixed
- *    string vibedeck could safely regex for. Confirmed by reading the
+ *    string vibespace could safely regex for. Confirmed by reading the
  *    installed `claude` binary's own source strings, which gate that
  *    render path behind `settings?.statusLine` being configured at all.
  *  - Cursor Agent: NO default on-screen indicator. It has a `/context`
@@ -36,7 +36,7 @@
  *    anything printed passively during normal use.
  *
  * So: this module parses a REAL measurement Codex itself computes and
- * prints — not an estimate vibedeck invents. It is deliberately Codex-only
+ * prints — not an estimate vibespace invents. It is deliberately Codex-only
  * (Option A: "parse a real indicator a specific CLI genuinely prints" —
  * see the phase notes). `Terminal.tsx` only ever feeds this tracker pty
  * output for `agentId === "codex"` panes; every other pane simply never

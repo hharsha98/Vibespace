@@ -11,7 +11,7 @@
  * PaneView.tsx (the JSX) calls straight into these rather than
  * re-implementing any of this logic inline.
  */
-import type { AgentId } from "@vibedeck/shared";
+import type { AgentId } from "@vibespace/shared";
 
 /**
  * The minimal shape these functions need from an agent option. Deliberately

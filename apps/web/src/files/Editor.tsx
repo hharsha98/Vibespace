@@ -40,7 +40,7 @@ import { markdown } from "@codemirror/lang-markdown";
 import { css } from "@codemirror/lang-css";
 import { html } from "@codemirror/lang-html";
 import { python } from "@codemirror/lang-python";
-import type { FileContentResponse, FileWatchEvent } from "@vibedeck/shared";
+import type { FileContentResponse, FileWatchEvent } from "@vibespace/shared";
 import type { Theme } from "../themes/themes.js";
 import { buildCodeMirrorTheme } from "./cmTheme.js";
 import { EMPTY_SURFACE_BACKGROUND, EmptyState, KeyHint } from "../shell/ui.js";
@@ -393,7 +393,7 @@ export default function Editor({ workspaceId, theme, openRequest }: EditorProps)
         showInView(path);
       })
       .catch((err: unknown) => {
-        console.warn("vibedeck: failed to reload file after an external change", path, err);
+        console.warn("vibespace: failed to reload file after an external change", path, err);
       });
   }
 

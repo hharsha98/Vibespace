@@ -6,8 +6,8 @@ import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { ImageAddon } from "@xterm/addon-image";
-import type { AgentId, ClientMessage, ServerMessage } from "@vibedeck/shared";
-import { AGENT_SPECS } from "@vibedeck/shared";
+import type { AgentId, ClientMessage, ServerMessage } from "@vibespace/shared";
+import { AGENT_SPECS } from "@vibespace/shared";
 import { isMacPlatform, matchShortcut } from "../keys/keymap.js";
 import { isCopyShortcut } from "./copyShortcut.js";
 import { fitIfVisible } from "./fitIfVisible.js";
@@ -153,13 +153,13 @@ async function uploadPastedImage(file: File, workspaceId: string): Promise<strin
     });
     if (!res.ok) {
       const body = (await res.json().catch(() => ({}))) as { error?: string };
-      console.warn("vibedeck: failed to upload pasted image", body.error ?? res.statusText);
+      console.warn("vibespace: failed to upload pasted image", body.error ?? res.statusText);
       return null;
     }
     const body = (await res.json()) as { path: string };
     return body.path;
   } catch (err) {
-    console.warn("vibedeck: failed to upload pasted image", err);
+    console.warn("vibespace: failed to upload pasted image", err);
     return null;
   }
 }
@@ -322,7 +322,7 @@ export default function Terminal({
   const pendingCommandRef = useRef<PendingCommand | null>(null);
   // Context-meter pill (BridgeSpace v3.4.17 parity) — created fresh per
   // mount alongside `blockTracker` below, ONLY for `agentId === "codex"`
-  // (the one CLI vibedeck ships that genuinely prints this — see
+  // (the one CLI vibespace ships that genuinely prints this — see
   // contextMeter.ts's top comment). `lastNotifiedContextLeftRef` exists
   // purely so the "output" handler below only calls `onContextLeftChange`
   // when the reading actually changed, not on every single chunk.
@@ -399,7 +399,7 @@ export default function Terminal({
         if (!cancelled && body) setHistory(body.commands);
       })
       .catch((err: unknown) => {
-        console.warn("vibedeck: failed to load command history", err);
+        console.warn("vibespace: failed to load command history", err);
       });
     return () => {
       cancelled = true;
@@ -420,7 +420,7 @@ export default function Terminal({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ workspaceId, command: text }),
     }).catch((err: unknown) => {
-      console.warn("vibedeck: failed to record command history", err);
+      console.warn("vibespace: failed to record command history", err);
     });
   };
 
@@ -576,7 +576,7 @@ export default function Terminal({
     });
     termRef.current = term;
 
-    // Shortcuts vibedeck owns (Cmd+D, Cmd+K, Cmd+1..9, ...) must reach the
+    // Shortcuts vibespace owns (Cmd+D, Cmd+K, Cmd+1..9, ...) must reach the
     // app, not the shell — but xterm.js, by default, decides for itself
     // what to do with every keydown it receives, including forwarding some
     // modified combos to the pty. `attachCustomKeyEventHandler` runs BEFORE
@@ -832,7 +832,7 @@ export default function Terminal({
         holdsWebglSlot = true;
         addon.onContextLoss(() => {
           console.warn(
-            `vibedeck: WebGL context lost for session ${sessionId}; falling back to default renderer`
+            `vibespace: WebGL context lost for session ${sessionId}; falling back to default renderer`
           );
           // Disposing the addon (rather than the whole terminal) is the
           // documented xterm.js recovery path: xterm detaches the WebGL
@@ -845,11 +845,11 @@ export default function Terminal({
           }
         });
       } catch (err) {
-        console.warn("vibedeck: WebGL addon failed to load, falling back to default renderer", err);
+        console.warn("vibespace: WebGL addon failed to load, falling back to default renderer", err);
       }
     } else {
       console.info(
-        `vibedeck: WebGL terminal cap (${MAX_WEBGL_TERMINALS}) reached — session ${sessionId} uses the default renderer`
+        `vibespace: WebGL terminal cap (${MAX_WEBGL_TERMINALS}) reached — session ${sessionId} uses the default renderer`
       );
     }
 
@@ -878,7 +878,7 @@ export default function Terminal({
       });
       term.loadAddon(imageAddon);
     } catch (err) {
-      console.warn("vibedeck: image addon failed to load, inline images will not render", err);
+      console.warn("vibespace: image addon failed to load, inline images will not render", err);
     }
 
     term.open(container);
@@ -1154,7 +1154,7 @@ export default function Terminal({
         // nothing sensible to type into the pty either — same honest
         // "can't do this without a workspace" degrade the git-branch chip
         // (PaneView.tsx) already uses elsewhere in this app.
-        console.warn("vibedeck: pasted image, but this pane has no active workspace to save it under");
+        console.warn("vibespace: pasted image, but this pane has no active workspace to save it under");
         return;
       }
 
@@ -1208,7 +1208,7 @@ export default function Terminal({
         termRef.current?.paste(text);
       })
       .catch((err: unknown) => {
-        console.warn("vibedeck: couldn't read clipboard for paste", err);
+        console.warn("vibespace: couldn't read clipboard for paste", err);
       });
     setContextMenu(null);
   };
@@ -1235,7 +1235,7 @@ export default function Terminal({
     fetch(`/api/sessions/${sessionId}`, { method: "DELETE" })
       .then(() => onClose?.())
       .catch((err: unknown) => {
-        console.warn("vibedeck: failed to close session", err);
+        console.warn("vibespace: failed to close session", err);
       });
   };
 

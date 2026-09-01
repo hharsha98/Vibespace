@@ -123,7 +123,7 @@ export function buildRemoteCommand(
     // even though the `cd --` argument itself was safely single-quoted.
     // Routing EVERYTHING through posixSingleQuote, with no double-quoted
     // context anywhere in this function, closes that off for good.
-    const quotedMessage = posixSingleQuote(`vibedeck: couldn't cd to "${dir}" on connect`);
+    const quotedMessage = posixSingleQuote(`vibespace: couldn't cd to "${dir}" on connect`);
     parts.push(`cd -- ${quotedDir} || echo ${quotedMessage} >&2`);
   }
   if (cmd) {

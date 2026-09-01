@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ServerMessage } from "@vibedeck/shared";
+import type { ServerMessage } from "@vibespace/shared";
 import { buildApp } from "./index.js";
 
 /**
@@ -15,20 +15,20 @@ import { buildApp } from "./index.js";
 
 /**
  * Every `buildApp()` call in this file constructs a fresh `WorkspaceStore`,
- * which opens a SQLite file under `VIBEDECK_DATA_DIR` (see
+ * which opens a SQLite file under `VIBESPACE_DATA_DIR` (see
  * `apps/server/src/db/schema.ts`). Point that at a brand-new temp directory
  * before each test, and clean it up after, so these tests never read or
- * write a developer's real `~/.vibedeck`.
+ * write a developer's real `~/.vibespace`.
  */
 let dataDir: string;
 
 beforeEach(() => {
-  dataDir = mkdtempSync(join(tmpdir(), "vibedeck-index-test-"));
-  process.env.VIBEDECK_DATA_DIR = dataDir;
+  dataDir = mkdtempSync(join(tmpdir(), "vibespace-index-test-"));
+  process.env.VIBESPACE_DATA_DIR = dataDir;
 });
 
 afterEach(() => {
-  delete process.env.VIBEDECK_DATA_DIR;
+  delete process.env.VIBESPACE_DATA_DIR;
   rmSync(dataDir, { recursive: true, force: true });
 });
 
@@ -191,7 +191,7 @@ describe("session REST endpoints", () => {
     "spawns a session in a workspace's rootPath when workspaceId is given",
     async () => {
       const app = buildApp();
-      const projectDir = mkdtempSync(join(tmpdir(), "vibedeck-workspace-cwd-"));
+      const projectDir = mkdtempSync(join(tmpdir(), "vibespace-workspace-cwd-"));
 
       const workspaceResponse = await app.inject({
         method: "POST",
@@ -238,7 +238,7 @@ describe("session recovery REST endpoints", () => {
       const workspaceResponse = await app.inject({
         method: "POST",
         url: "/api/workspaces",
-        payload: { name: "recovery-test", rootPath: mkdtempSync(join(tmpdir(), "vibedeck-recovery-")) },
+        payload: { name: "recovery-test", rootPath: mkdtempSync(join(tmpdir(), "vibespace-recovery-")) },
       });
       const workspace = workspaceResponse.json() as { id: string; rootPath: string };
 
@@ -293,8 +293,8 @@ describe("session recovery REST endpoints", () => {
   it(
     "a session record SURVIVES a simulated server restart, becoming recoverable",
     async () => {
-      const dataDirForRestart = mkdtempSync(join(tmpdir(), "vibedeck-restart-test-"));
-      process.env.VIBEDECK_DATA_DIR = dataDirForRestart;
+      const dataDirForRestart = mkdtempSync(join(tmpdir(), "vibespace-restart-test-"));
+      process.env.VIBESPACE_DATA_DIR = dataDirForRestart;
 
       // "Process 1": spawn a shell session, then close the app the way a
       // crash would look from the database's point of view — disposeAll()
@@ -330,7 +330,7 @@ describe("session recovery REST endpoints", () => {
       expect(records[0].paneId).toBe("pane-restart");
 
       await app2.close();
-      delete process.env.VIBEDECK_DATA_DIR;
+      delete process.env.VIBESPACE_DATA_DIR;
       rmSync(dataDirForRestart, { recursive: true, force: true });
     },
     10_000
@@ -485,7 +485,7 @@ describe("session recovery REST endpoints", () => {
       const workspaceResponse = await app.inject({
         method: "POST",
         url: "/api/workspaces",
-        payload: { name: "restore-test", rootPath: mkdtempSync(join(tmpdir(), "vibedeck-restore-")) },
+        payload: { name: "restore-test", rootPath: mkdtempSync(join(tmpdir(), "vibespace-restore-")) },
       });
       const workspace = workspaceResponse.json() as { id: string };
 
@@ -550,7 +550,7 @@ describe("workspace REST endpoints", () => {
 
   it("creates, lists, gets, patches, and deletes a workspace", async () => {
     const app = buildApp();
-    const projectDir = mkdtempSync(join(tmpdir(), "vibedeck-workspace-crud-"));
+    const projectDir = mkdtempSync(join(tmpdir(), "vibespace-workspace-crud-"));
 
     const createResponse = await app.inject({
       method: "POST",
@@ -608,7 +608,7 @@ describe("workspace REST endpoints", () => {
 
   it("POST /api/workspaces rejects an empty name with 400", async () => {
     const app = buildApp();
-    const projectDir = mkdtempSync(join(tmpdir(), "vibedeck-workspace-badname-"));
+    const projectDir = mkdtempSync(join(tmpdir(), "vibespace-workspace-badname-"));
     const response = await app.inject({
       method: "POST",
       url: "/api/workspaces",
@@ -624,7 +624,7 @@ describe("workspace REST endpoints", () => {
     const response = await app.inject({
       method: "POST",
       url: "/api/workspaces",
-      payload: { name: "ghost-project", rootPath: "/definitely/does/not/exist/vibedeck" },
+      payload: { name: "ghost-project", rootPath: "/definitely/does/not/exist/vibespace" },
     });
     expect(response.statusCode).toBe(400);
     expect(response.json()).toMatchObject({ error: expect.any(String) });
@@ -633,7 +633,7 @@ describe("workspace REST endpoints", () => {
 
   it("PATCH /api/workspaces/:id rejects a rootPath that doesn't exist with 400", async () => {
     const app = buildApp();
-    const projectDir = mkdtempSync(join(tmpdir(), "vibedeck-workspace-patch-"));
+    const projectDir = mkdtempSync(join(tmpdir(), "vibespace-workspace-patch-"));
     const created = (
       await app.inject({
         method: "POST",
@@ -645,7 +645,7 @@ describe("workspace REST endpoints", () => {
     const response = await app.inject({
       method: "PATCH",
       url: `/api/workspaces/${created.id}`,
-      payload: { rootPath: "/definitely/does/not/exist/vibedeck" },
+      payload: { rootPath: "/definitely/does/not/exist/vibespace" },
     });
     expect(response.statusCode).toBe(400);
 
@@ -655,7 +655,7 @@ describe("workspace REST endpoints", () => {
 
   it("PATCH /api/workspaces/:id accepts a colour from the fixed palette", async () => {
     const app = buildApp();
-    const projectDir = mkdtempSync(join(tmpdir(), "vibedeck-workspace-color-"));
+    const projectDir = mkdtempSync(join(tmpdir(), "vibespace-workspace-color-"));
     const created = (
       await app.inject({
         method: "POST",
@@ -687,7 +687,7 @@ describe("workspace REST endpoints", () => {
 
   it("PATCH /api/workspaces/:id rejects a colour that isn't in the fixed palette with 400", async () => {
     const app = buildApp();
-    const projectDir = mkdtempSync(join(tmpdir(), "vibedeck-workspace-badcolor-"));
+    const projectDir = mkdtempSync(join(tmpdir(), "vibespace-workspace-badcolor-"));
     const created = (
       await app.inject({
         method: "POST",

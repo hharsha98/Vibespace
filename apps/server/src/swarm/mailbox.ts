@@ -10,7 +10,7 @@
  */
 import type { Database } from "better-sqlite3";
 import { randomUUID } from "node:crypto";
-import type { MissionMessage } from "@vibedeck/shared";
+import type { MissionMessage } from "@vibespace/shared";
 import { openDatabase } from "../db/schema.js";
 
 interface MissionMessageRow {

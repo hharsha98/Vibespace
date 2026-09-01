@@ -1,6 +1,6 @@
 name: Release
 
-# Phase 11b (PARITY #52). Builds vibedeck's desktop app on all three
+# Phase 11b (PARITY #52). Builds vibespace's desktop app on all three
 # platforms and publishes DMG (macOS), NSIS/MSI (Windows), and DEB + RPM +
 # AppImage (Linux) to a GitHub Release — plus the signed updater artifacts
 # PARITY #51's auto-updater checks against (see docs/DESKTOP.md's
@@ -10,7 +10,7 @@ name: Release
 # This workflow has never been run (no GitHub Actions runner was available
 # while building this phase — see docs/DESKTOP.md's own note on that).
 # Every step mirrors a command actually run and verified by hand locally
-# (`pnpm --filter @vibedeck/desktop run package`, real signed builds
+# (`pnpm --filter @vibespace/desktop run package`, real signed builds
 # against the real updater keypair) EXCEPT the parts only a real CI runner
 # can exercise: the Windows/Linux runners themselves, and `tauri-action`'s
 # own GitHub Release / `latest.json` plumbing.
@@ -138,7 +138,7 @@ jobs:
       # what that script actually does and why (the fix for PARITY #52's
       # "the installer only works on the machine that built it" problem).
       - name: Build the web app
-        run: pnpm --filter @vibedeck/web build
+        run: pnpm --filter @vibespace/web build
 
       - name: Build the relocatable server bundle
         run: node apps/desktop/scripts/build-server-resources.mjs
@@ -182,7 +182,7 @@ jobs:
         with:
           projectPath: apps/desktop
           tagName: ${{ steps.tag.outputs.tag }}
-          releaseName: "vibedeck ${{ steps.tag.outputs.tag }}"
+          releaseName: "Vibespace ${{ steps.tag.outputs.tag }}"
           # A draft, not an immediate publish — see docs/DESKTOP.md's
           # "Releasing" section: a human reviews the generated release
           # (checking all three platforms' assets actually attached, the

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AgentId, SessionInfo } from "@vibedeck/shared";
+import type { AgentId, SessionInfo } from "@vibespace/shared";
 import {
   filterSkills,
   groupSkillsByScope,

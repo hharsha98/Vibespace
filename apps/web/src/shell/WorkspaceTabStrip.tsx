@@ -1,5 +1,5 @@
 import { useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
-import type { Workspace } from "@vibedeck/shared";
+import type { Workspace } from "@vibespace/shared";
 import { deriveWorkspaceTabs, nextTabIndex } from "./workspaceTabs.js";
 import { FONT, RADIUS, SPACE } from "./tokens.js";
 import ColorPickerPopover from "./ColorPickerPopover.js";

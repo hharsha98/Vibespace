@@ -16,7 +16,7 @@
  */
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import type { GitBranchResponse } from "@vibedeck/shared";
+import type { GitBranchResponse } from "@vibespace/shared";
 
 const execFileAsync = promisify(execFile);
 

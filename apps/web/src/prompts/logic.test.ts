@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { SavedPrompt } from "@vibedeck/shared";
+import type { SavedPrompt } from "@vibespace/shared";
 import { groupPromptsByScope } from "./logic.js";
 
 function prompt(overrides: Partial<SavedPrompt> & Pick<SavedPrompt, "id" | "workspaceId">): SavedPrompt {

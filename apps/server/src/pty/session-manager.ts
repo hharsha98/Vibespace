@@ -15,7 +15,7 @@
  */
 import { randomUUID } from "node:crypto";
 import * as pty from "node-pty";
-import type { AgentId, SessionInfo } from "@vibedeck/shared";
+import type { AgentId, SessionInfo } from "@vibespace/shared";
 import { RingBuffer } from "./ring-buffer.js";
 import { resolveAgent } from "./agents.js";
 import { ShellIntegrationManager } from "./shell-integration/zdotdir.js";

@@ -1,20 +1,24 @@
 /**
  * Skill discovery: scans the six conventional `agentskills.io` directories
- * (three user-scoped, three project-scoped) and returns every valid skill
- * found, later scope winning on a name collision. See `docs/SKILLS.md` for
- * the full scope table and the reasoning behind it; this file's job is just
- * to implement that table correctly and safely.
+ * (three user-scoped, three project-scoped) — plus, for back-compat, the
+ * two legacy `.vibedeck/skills` directories left over from this project's
+ * previous name (one user-scoped, one project-scoped; see
+ * `buildScopeList`'s own comment) — and returns every valid skill found,
+ * later scope winning on a name collision. See `docs/SKILLS.md` for the
+ * full scope table and the reasoning behind it; this file's job is just to
+ * implement that table correctly and safely.
  *
  * --- TRUST BOUNDARY: project-scoped skills are untrusted input ---
- * The three PROJECT scopes live inside the repository being worked on —
- * `<workspaceRoot>/.agents/skills`, `.vibedeck/skills`, `.claude/skills`.
- * A freshly `git clone`d repo is, by definition, content the user has not
- * reviewed yet, and a `SKILL.md` is prose an agent is meant to read and
- * act on — so a malicious repo could ship a skill whose description/body
- * tries to steer a connected agent into doing something the user never
- * asked for (classic prompt injection, just delivered as a "skill" instead
- * of a code comment). This module does NOT solve that — nothing short of
- * not reading the file at all would — but it does two narrower things:
+ * The PROJECT scopes live inside the repository being worked on —
+ * `<workspaceRoot>/.agents/skills`, `.vibedeck/skills`, `.vibespace/skills`,
+ * `.claude/skills`. A freshly `git clone`d repo is, by definition, content
+ * the user has not reviewed yet, and a `SKILL.md` is prose an agent is
+ * meant to read and act on — so a malicious repo could ship a skill whose
+ * description/body tries to steer a connected agent into doing something
+ * the user never asked for (classic prompt injection, just delivered as a
+ * "skill" instead of a code comment). This module does NOT solve that —
+ * nothing short of not reading the file at all would — but it does two
+ * narrower things:
  *   1. Every discovered skill carries its `scope` (`user` vs `project`) all
  *      the way through to the REST/MCP response, so a human or an agent can
  *      tell "this came from the repo I just cloned" from "this is one of
@@ -56,11 +60,20 @@ const SKIP_ENTRY_NAMES = new Set([".git", "node_modules"]);
 const MAX_ENTRIES_EXAMINED = 2000;
 
 export type SkillScopeKind = "user" | "project";
-export type SkillScopeDirLabel = ".agents/skills" | ".vibedeck/skills" | ".claude/skills";
+// ".vibedeck/skills" is the project's previous name's scope — see
+// `buildScopeList`'s back-compat comment below. Kept as its own distinct
+// label (rather than folded into ".vibespace/skills") so a skill sourced
+// from there is labelled HONESTLY in the UI: it really does still live at
+// the old path on disk (skills discovery never migrates/renames anything —
+// see this file's own top comment), and a user deciding whether to trust a
+// project skill deserves to know that, not see it silently reported as
+// coming from ".vibespace/skills" when it doesn't.
+export type SkillScopeDirLabel = ".agents/skills" | ".vibespace/skills" | ".claude/skills" | ".vibedeck/skills";
 
 export interface SkillScope {
   kind: SkillScopeKind;
-  /** Which of the three conventional subdirectories this came from. */
+  /** Which of the conventional subdirectories this came from (three
+   * current, plus the legacy `.vibedeck/skills`). */
   dirLabel: SkillScopeDirLabel;
   /** Absolute path to the scope root itself (not the individual skill's
    * own directory) — e.g. "/Users/x/.claude/skills". */
@@ -89,26 +102,42 @@ export interface DiscoverSkillsResult {
 }
 
 /**
- * The six scopes `discoverSkills` scans, in ascending precedence order — a
- * LATER scope's skill wins a name collision against an earlier one. The
- * three project scopes are listed last specifically so "project overrides
- * user" (the universal convention every dotfile-style tool follows) falls
- * out of plain list order rather than needing separate tie-break logic.
+ * The eight scopes `discoverSkills` scans, in ascending precedence order —
+ * a LATER scope's skill wins a name collision against an earlier one. The
+ * project scopes are listed last specifically so "project overrides user"
+ * (the universal convention every dotfile-style tool follows) falls out of
+ * plain list order rather than needing separate tie-break logic.
  * `workspaceRoot` is `null` for a discovery call with no project context
  * (there is none today — both the REST routes and the MCP tools always
  * have a workspace root — but the type stays honest about it being
  * optional rather than asserting non-null everywhere).
+ *
+ * --- Back-compat: `.vibedeck/skills` (the project's previous name) ---
+ * Unlike the other back-compat migrations in this codebase (the global
+ * data dir in `db/schema.ts`, the workspace dot-dir in
+ * `files/legacy-dot-dir.ts`), skills discovery never RENAMES anything —
+ * see this file's own top comment: it's a READ-ONLY module by design, and
+ * must not mutate a user's repo just because they opened the Skills tab.
+ * So instead of migrating `.vibedeck/skills` to `.vibespace/skills`, both
+ * are scanned as separate scopes, for both user and project. Each legacy
+ * scope is listed immediately BEFORE its `.vibespace/skills` counterpart
+ * (not after `.claude/skills`) specifically so a same-named skill in BOTH
+ * the old and new location resolves to the new one — a later scope wins a
+ * collision, and vibespace should always be favored over a stale vibedeck
+ * copy once both exist.
  */
 function buildScopeList(workspaceRoot: string | null, homeDir: string): SkillScope[] {
   const scopes: SkillScope[] = [
     { kind: "user", dirLabel: ".agents/skills", rootDir: join(homeDir, ".agents", "skills") },
     { kind: "user", dirLabel: ".vibedeck/skills", rootDir: join(homeDir, ".vibedeck", "skills") },
+    { kind: "user", dirLabel: ".vibespace/skills", rootDir: join(homeDir, ".vibespace", "skills") },
     { kind: "user", dirLabel: ".claude/skills", rootDir: join(homeDir, ".claude", "skills") },
   ];
   if (workspaceRoot) {
     scopes.push(
       { kind: "project", dirLabel: ".agents/skills", rootDir: join(workspaceRoot, ".agents", "skills") },
       { kind: "project", dirLabel: ".vibedeck/skills", rootDir: join(workspaceRoot, ".vibedeck", "skills") },
+      { kind: "project", dirLabel: ".vibespace/skills", rootDir: join(workspaceRoot, ".vibespace", "skills") },
       { kind: "project", dirLabel: ".claude/skills", rootDir: join(workspaceRoot, ".claude", "skills") }
     );
   }

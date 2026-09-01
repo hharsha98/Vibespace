@@ -26,7 +26,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation, type Simulation } from "d3-force";
-import type { MemoryGraphEdge, MemoryGraphNode } from "@vibedeck/shared";
+import type { MemoryGraphEdge, MemoryGraphNode } from "@vibespace/shared";
 import { EmptyState, IconButton } from "../shell/ui.js";
 import { RADIUS, SHADOW_VAR, SPACE } from "../shell/tokens.js";
 

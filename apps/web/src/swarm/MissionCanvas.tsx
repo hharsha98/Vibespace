@@ -19,7 +19,7 @@
  * pan/zoom/click, not repositioning agents.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { MissionAgent } from "@vibedeck/shared";
+import type { MissionAgent } from "@vibespace/shared";
 import { EmptyState, IconButton } from "../shell/ui.js";
 import { RADIUS, SHADOW_VAR, SPACE } from "../shell/tokens.js";
 import { agentStatusKind, fitTransform, layoutMissionNodes, roleColorVar, roleGlyph, type ViewTransform } from "./logic.js";

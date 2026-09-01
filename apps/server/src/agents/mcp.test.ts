@@ -16,14 +16,14 @@ let store: AgentProfileStore;
 const WORKSPACE_A = "workspace-a";
 
 beforeEach(() => {
-  dataDir = mkdtempSync(join(tmpdir(), "vibedeck-agents-mcp-test-"));
-  process.env.VIBEDECK_DATA_DIR = dataDir;
+  dataDir = mkdtempSync(join(tmpdir(), "vibespace-agents-mcp-test-"));
+  process.env.VIBESPACE_DATA_DIR = dataDir;
   store = new AgentProfileStore();
 });
 
 afterEach(() => {
   store.close();
-  delete process.env.VIBEDECK_DATA_DIR;
+  delete process.env.VIBESPACE_DATA_DIR;
   rmSync(dataDir, { recursive: true, force: true });
 });
 

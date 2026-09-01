@@ -12,7 +12,7 @@
  * does: kills every agent's terminal session AND releases every claim the
  * mission holds (see docs/SWARM.md's `PATCH .../missions/:id` section).
  */
-import type { Mission } from "@vibedeck/shared";
+import type { Mission } from "@vibespace/shared";
 import { Button, Pill, StatusDot } from "../shell/ui.js";
 import { FONT, SPACE } from "../shell/tokens.js";
 import { formatElapsed, missionStatusKind, type MissionProgress } from "./logic.js";

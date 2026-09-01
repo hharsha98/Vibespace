@@ -120,7 +120,7 @@ export interface Shortcut {
 }
 
 /**
- * Every keyboard shortcut vibedeck recognises, in the order they're shown
+ * Every keyboard shortcut vibespace recognises, in the order they're shown
  * in the command palette and cheat sheet. `matchShortcut` below is the only
  * function that ever reads this array to decide what an event means — add
  * a shortcut here and it's automatically matchable, palette-searchable, and
@@ -395,7 +395,7 @@ const DESKTOP_PLAIN_FORM_IDS = new Set(["new-pane"]);
 /**
  * Is `event` — under platform `isMac` — one of the shortcuts in `KEYMAP`?
  * Returns the matching shortcut's `id`, or `null` if it's not a shortcut
- * vibedeck recognises.
+ * vibespace recognises.
  *
  * The platform split: Mac's primary modifier is Cmd (`metaKey`); every
  * other platform's is Ctrl (`ctrlKey`). A combo only matches if the
@@ -482,7 +482,7 @@ export function isMacPlatform(): boolean {
 
 /**
  * Pure parser behind `isTauriApp` — does `search` (a URL query string, e.g.
- * `"?vibedeckDesktop=1"`) carry the marker the desktop wrapper's Rust side
+ * `"?vibespaceDesktop=1"`) carry the marker the desktop wrapper's Rust side
  * appends when it navigates the webview to the running server (see
  * apps/desktop/src-tauri/src/main.rs)? Split out from `isTauriApp` so it's
  * testable with a plain string — no `window`/`URLSearchParams` global
@@ -501,7 +501,7 @@ export function isMacPlatform(): boolean {
  * internals at all.
  */
 export function hasDesktopMarker(search: string): boolean {
-  return new URLSearchParams(search).get("vibedeckDesktop") === "1";
+  return new URLSearchParams(search).get("vibespaceDesktop") === "1";
 }
 
 /**

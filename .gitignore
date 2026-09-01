@@ -13,6 +13,6 @@ coverage
 *.sqlite
 
 # Screenshots pasted into an agent pane (see apps/server/src/files/paste-image.ts).
-# These are transient scratch images, not knowledge — unlike `.vibedeck/memory/`,
+# These are transient scratch images, not knowledge — unlike `.vibespace/memory/`,
 # which is plain markdown deliberately meant to be committed (docs/MEMORY.md).
-.vibedeck/pastes/
+.vibespace/pastes/

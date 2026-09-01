@@ -21,8 +21,8 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Terminal as XTerm, IMarker } from "@xterm/xterm";
-import type { AgentId } from "@vibedeck/shared";
-import { AGENT_SPECS } from "@vibedeck/shared";
+import type { AgentId } from "@vibespace/shared";
+import { AGENT_SPECS } from "@vibespace/shared";
 import type { CommandBlock } from "./blocks.js";
 import { formatBlockDuration } from "./blocks.js";
 import { lineToRuns, planBlockCap, resolveBlockRange, type LineLike, type StyledRun } from "./lineRuns.js";
@@ -197,7 +197,7 @@ export default function BlocksView({ term, agentId, blocks, lineMarkers, theme }
   if (agentId !== "shell") {
     return (
       <BlocksEmptyState>
-        Blocks view needs vibedeck's shell integration, which only runs in "shell" panes — not{" "}
+        Blocks view needs vibespace's shell integration, which only runs in "shell" panes — not{" "}
         {AGENT_SPECS[agentId].displayName}. {AGENT_SPECS[agentId].displayName} is a full-screen program with no
         command markers to build blocks from; use Live view here instead.
       </BlocksEmptyState>

@@ -15,7 +15,7 @@
  *   -c, --continue         Continue the most recent conversation in cwd.
  *   --session-id <uuid>    Use a specific session ID for the conversation
  *                          (must be a valid UUID) — settable at SPAWN time.
- * Because `--session-id` lets vibedeck CHOOSE the id up front, every claude
+ * Because `--session-id` lets vibespace CHOOSE the id up front, every claude
  * session is spawned with a freshly-generated uuid via that flag (see
  * `spawnExtrasFor` below), stored as `SessionRecord.agentSessionRef`.
  * Resuming then uses `claude --resume <that exact uuid>` — a precise match,
@@ -55,7 +55,7 @@
  * means for a plain shell or an SSH pane.
  */
 import { randomUUID } from "node:crypto";
-import type { AgentId, SessionRecord } from "@vibedeck/shared";
+import type { AgentId, SessionRecord } from "@vibespace/shared";
 
 const CLAUDE_SESSION_ID_FLAG = "--session-id";
 

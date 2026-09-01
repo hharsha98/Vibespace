@@ -19,7 +19,7 @@ import type {
   SessionRecord,
   SessionRecordEndedReason,
   SessionRecordStatus,
-} from "@vibedeck/shared";
+} from "@vibespace/shared";
 import { openDatabase } from "./schema.js";
 
 /** The raw shape a row comes back as from better-sqlite3 (snake_case). */

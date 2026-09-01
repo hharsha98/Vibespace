@@ -22,6 +22,7 @@
  * not just at creation" idiom that file's theme-sync effect already uses).
  */
 import { useSyncExternalStore } from "react";
+import { readWithLegacyFallback } from "./legacyStorage.js";
 
 export type CursorStyle = "block" | "underline" | "bar";
 
@@ -66,7 +67,11 @@ function isCursorStyle(value: unknown): value is CursorStyle {
   return typeof value === "string" && (CURSOR_STYLES as readonly string[]).includes(value);
 }
 
-const TERMINAL_PREFS_KEY = "vibedeck.terminalPrefs";
+const TERMINAL_PREFS_KEY = "vibespace.terminalPrefs";
+// The pre-rename key this project shipped under as vibedeck — see
+// `legacyStorage.ts`'s top comment for why every persisted preference in
+// this app reads a legacy key as a fallback.
+const LEGACY_TERMINAL_PREFS_KEY = "vibedeck.terminalPrefs";
 
 /** Parses a stored blob defensively, field by field — a shallow-merge onto
  * `DEFAULT_TERMINAL_PREFS` so a blob saved by an OLDER build (missing a
@@ -87,15 +92,17 @@ function parseStoredPrefs(raw: string): TerminalPrefs {
 
 /** Reads the persisted preferences, or the defaults if none are stored, the
  * blob is corrupt, or localStorage isn't available at all (SSR/Node, or
- * private-browsing Safari, which throws on ANY access, not just writes). */
+ * private-browsing Safari, which throws on ANY access, not just writes).
+ * Falls back to the pre-rename `vibedeck.terminalPrefs` key via
+ * `readWithLegacyFallback` (see that function's own comment) so a
+ * returning user's saved font size/cursor style/scrollback isn't lost. */
 export function loadTerminalPrefs(): TerminalPrefs {
-  if (typeof window === "undefined") return DEFAULT_TERMINAL_PREFS;
+  const raw = readWithLegacyFallback(TERMINAL_PREFS_KEY, LEGACY_TERMINAL_PREFS_KEY);
+  if (raw === null) return DEFAULT_TERMINAL_PREFS;
   try {
-    const raw = window.localStorage.getItem(TERMINAL_PREFS_KEY);
-    if (raw === null) return DEFAULT_TERMINAL_PREFS;
     return parseStoredPrefs(raw);
   } catch {
-    return DEFAULT_TERMINAL_PREFS;
+    return DEFAULT_TERMINAL_PREFS; // Corrupt/non-JSON blob — same fallback as no value at all.
   }
 }
 

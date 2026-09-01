@@ -3,7 +3,7 @@ import { BILLING_PARAGRAPHS } from "./billingContent.js";
 
 // The exact regression this file exists to guard against: someone later
 // "helpfully" adding a price, a plan tier, or an upgrade/subscribe control
-// to the Billing section — vibedeck is free and MIT-licensed; there is
+// to the Billing section — vibespace is free and MIT-licensed; there is
 // nothing to sell. Settings.tsx renders BILLING_PARAGRAPHS verbatim (one
 // <p> per entry, no other Billing-specific markup), so scanning this
 // constant directly is equivalent to scanning what actually reaches the

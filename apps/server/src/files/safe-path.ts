@@ -1,5 +1,5 @@
 /**
- * The ONE place in vibedeck that turns a client-supplied, workspace-relative
+ * The ONE place in vibespace that turns a client-supplied, workspace-relative
  * file path into a real, absolute filesystem path safe to hand to `fs`
  * calls. Every file route in `apps/server/src/files/routes.ts` — tree
  * listing, read, write, watch — MUST go through `safeResolve` here rather

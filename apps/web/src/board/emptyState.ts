@@ -7,7 +7,7 @@
  * `shell/ui.tsx`'s `sessionStatusKind` — so `emptyState.test.ts` can
  * exercise every case without a browser.
  */
-import type { ColumnId } from "@vibedeck/shared";
+import type { ColumnId } from "@vibespace/shared";
 
 /**
  * The three ways a column can render:

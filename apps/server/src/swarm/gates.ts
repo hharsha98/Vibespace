@@ -17,7 +17,7 @@
  *     further output is silently dropped rather than buffered forever.
  */
 import { spawn } from "node:child_process";
-import type { GateResult } from "@vibedeck/shared";
+import type { GateResult } from "@vibespace/shared";
 
 /** Force-kill a gate command that's still running after this long. Public
  * so callers/tests can reason about it; CI's own gate tests
@@ -55,7 +55,7 @@ export function runGate(command: string, cwd: string, timeoutMs: number = GATE_T
       // process itself is left running so its real exit code still comes
       // through.
       if (Buffer.byteLength(output, "utf8") > GATE_OUTPUT_CAP_BYTES) {
-        output = output.slice(0, GATE_OUTPUT_CAP_BYTES) + "\n[vibedeck: output truncated at 64KB]";
+        output = output.slice(0, GATE_OUTPUT_CAP_BYTES) + "\n[vibespace: output truncated at 64KB]";
         capped = true;
       }
     };
@@ -69,7 +69,7 @@ export function runGate(command: string, cwd: string, timeoutMs: number = GATE_T
 
     child.on("error", (err) => {
       clearTimeout(timer);
-      resolve({ passed: false, exitCode: null, output: `${output}\n[vibedeck: failed to run gate: ${err.message}]` });
+      resolve({ passed: false, exitCode: null, output: `${output}\n[vibespace: failed to run gate: ${err.message}]` });
     });
 
     child.on("close", (exitCode) => {
@@ -78,7 +78,7 @@ export function runGate(command: string, cwd: string, timeoutMs: number = GATE_T
         resolve({
           passed: false,
           exitCode,
-          output: `${output}\n[vibedeck: gate killed after exceeding ${timeoutMs}ms timeout]`,
+          output: `${output}\n[vibespace: gate killed after exceeding ${timeoutMs}ms timeout]`,
         });
         return;
       }

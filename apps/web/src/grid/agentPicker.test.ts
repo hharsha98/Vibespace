@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AgentId } from "@vibedeck/shared";
+import type { AgentId } from "@vibespace/shared";
 import {
   canLaunchMultiple,
   MAX_MULTI_LAUNCH,

@@ -4,9 +4,9 @@
  * by checking the routes actually USE that logic and wire it up to the
  * right HTTP status codes, plus the ordinary read/write/list behaviour.
  *
- * Same `VIBEDECK_DATA_DIR` temp-dir pattern as index.test.ts — every test
+ * Same `VIBESPACE_DATA_DIR` temp-dir pattern as index.test.ts — every test
  * here builds its own SQLite temp dir so nothing touches a real
- * `~/.vibedeck`, and a separate temp dir for the workspace's project files.
+ * `~/.vibespace`, and a separate temp dir for the workspace's project files.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
@@ -22,20 +22,20 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { FileWatchEvent } from "@vibedeck/shared";
+import type { FileWatchEvent } from "@vibespace/shared";
 import { buildApp } from "../index.js";
 
 let dataDir: string;
 let projectDir: string;
 
 beforeEach(() => {
-  dataDir = mkdtempSync(join(tmpdir(), "vibedeck-files-test-data-"));
-  process.env.VIBEDECK_DATA_DIR = dataDir;
-  projectDir = mkdtempSync(join(tmpdir(), "vibedeck-files-test-project-"));
+  dataDir = mkdtempSync(join(tmpdir(), "vibespace-files-test-data-"));
+  process.env.VIBESPACE_DATA_DIR = dataDir;
+  projectDir = mkdtempSync(join(tmpdir(), "vibespace-files-test-project-"));
 });
 
 afterEach(() => {
-  delete process.env.VIBEDECK_DATA_DIR;
+  delete process.env.VIBESPACE_DATA_DIR;
   rmSync(dataDir, { recursive: true, force: true });
   rmSync(projectDir, { recursive: true, force: true });
 });
@@ -182,7 +182,7 @@ describe("GET /api/files/content", () => {
   it("returns 403 for a symlink escaping the workspace root", async () => {
     const app = buildApp();
     const workspaceId = await createWorkspace(app);
-    const outside = mkdtempSync(join(tmpdir(), "vibedeck-files-outside-"));
+    const outside = mkdtempSync(join(tmpdir(), "vibespace-files-outside-"));
     writeFileSync(join(outside, "secret.txt"), "top secret");
     symlinkSync(join(outside, "secret.txt"), join(projectDir, "link.txt"), "file");
 
@@ -280,7 +280,7 @@ describe("PUT /api/files/content", () => {
     const response = await app.inject({
       method: "PUT",
       url: "/api/files/content",
-      payload: { workspaceId, path: "../../tmp/vibedeck-pwned.txt", content: "pwned" },
+      payload: { workspaceId, path: "../../tmp/vibespace-pwned.txt", content: "pwned" },
     });
     expect(response.statusCode).toBe(403);
     await app.close();
@@ -319,7 +319,7 @@ describe("POST /api/files/paste-image", () => {
   const TINY_PNG_BASE64 =
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 
-  it("writes the decoded image under .vibedeck/pastes and returns its relative path", async () => {
+  it("writes the decoded image under .vibespace/pastes and returns its relative path", async () => {
     const app = buildApp();
     const workspaceId = await createWorkspace(app);
 
@@ -331,7 +331,7 @@ describe("POST /api/files/paste-image", () => {
 
     expect(response.statusCode).toBe(201);
     const body = response.json() as { path: string };
-    expect(body.path.startsWith(".vibedeck/pastes/")).toBe(true);
+    expect(body.path.startsWith(".vibespace/pastes/")).toBe(true);
     expect(body.path.endsWith(".png")).toBe(true);
 
     const written = readFileSync(join(projectDir, body.path));
@@ -350,7 +350,7 @@ describe("POST /api/files/paste-image", () => {
     });
 
     expect(response.statusCode).toBe(400);
-    expect(existsSync(join(projectDir, ".vibedeck", "pastes"))).toBe(false);
+    expect(existsSync(join(projectDir, ".vibespace", "pastes"))).toBe(false);
     await app.close();
   });
 

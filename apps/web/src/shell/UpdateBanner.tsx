@@ -3,7 +3,7 @@
 // check silently in the background, only ever ask before restarting.
 //
 // This component is a no-op in the browser build. `isTauriApp()` (the same
-// `?vibedeckDesktop=1` marker check `matchShortcut`'s `isDesktop` branch
+// `?vibespaceDesktop=1` marker check `matchShortcut`'s `isDesktop` branch
 // uses, see keymap.ts) gates BOTH the network-touching effect below AND the
 // render — the effect check stops it from ever calling into
 // `@tauri-apps/plugin-updater` outside a real Tauri webview (where the
@@ -110,7 +110,7 @@ export default function UpdateBanner() {
     <div style={bannerStyle} role="status">
       {phase === "downloading" ? (
         <span>
-          Downloading vibedeck {update.version}… {formatDownloadProgress(progress)}
+          Downloading vibespace {update.version}… {formatDownloadProgress(progress)}
         </span>
       ) : phase === "error" ? (
         <>
@@ -124,7 +124,7 @@ export default function UpdateBanner() {
         </>
       ) : (
         <>
-          <span>vibedeck {update.version} is available.</span>
+          <span>Vibespace {update.version} is available.</span>
           <button style={primaryButtonStyle} onClick={handleUpdate}>
             Update &amp; Restart
           </button>

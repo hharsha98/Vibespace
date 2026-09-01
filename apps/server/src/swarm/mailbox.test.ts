@@ -15,8 +15,8 @@ let dataDir: string;
 let store: MailboxStore;
 
 beforeEach(() => {
-  dataDir = mkdtempSync(join(tmpdir(), "vibedeck-mailbox-test-"));
-  process.env.VIBEDECK_DATA_DIR = dataDir;
+  dataDir = mkdtempSync(join(tmpdir(), "vibespace-mailbox-test-"));
+  process.env.VIBESPACE_DATA_DIR = dataDir;
   store = new MailboxStore();
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
@@ -24,7 +24,7 @@ beforeEach(() => {
 
 afterEach(() => {
   store.close();
-  delete process.env.VIBEDECK_DATA_DIR;
+  delete process.env.VIBESPACE_DATA_DIR;
   rmSync(dataDir, { recursive: true, force: true });
   vi.useRealTimers();
 });

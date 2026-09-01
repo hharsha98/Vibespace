@@ -1,7 +1,7 @@
 /**
- * Builds the FULL vibedeck MCP server for one workspace root: memory tools
+ * Builds the FULL vibespace MCP server for one workspace root: memory tools
  * (unchanged, from `../memory/mcp.ts`) PLUS the board/agents/prompts tools
- * and the `vibedeck_developer_guide` prompt added in Phase 9.5b (PARITY
+ * and the `vibespace_developer_guide` prompt added in Phase 9.5b (PARITY
  * #27c/#27d). One process, one workspace root — same shape
  * `memory/mcp-server.ts` has always had; this file is what makes that ONE
  * process also speak board/agents/prompts, per docs/RESEARCH.md §5's own
@@ -13,7 +13,7 @@
  * client (Claude Code, cursor-agent, Codex) spawns it directly over stdio;
  * it does not go through `apps/server/src/index.ts` at all. The board,
  * agent profiles, and saved prompts all live in the ONE shared SQLite file
- * at `~/.vibedeck/vibedeck.db` (or `$VIBEDECK_DATA_DIR` in tests). Two ways
+ * at `~/.vibespace/vibespace.db` (or `$VIBESPACE_DATA_DIR` in tests). Two ways
  * to reach that data existed:
  *
  *   (a) Open that SQLite file directly from this MCP process, via the same
@@ -24,9 +24,9 @@
  *       dispatch preamble already tells a terminal-dispatched agent to do.
  *
  * THIS FILE PICKS (a). Reasoning:
- *   - `memory/mcp.ts` already reads/writes `<root>/.vibedeck/memory/*.md`
+ *   - `memory/mcp.ts` already reads/writes `<root>/.vibespace/memory/*.md`
  *     directly, with no dependency on the Fastify server being up at all —
- *     an agent can use memory tools even if the user hasn't opened vibedeck
+ *     an agent can use memory tools even if the user hasn't opened vibespace
  *     today. Picking (b) for board/agents/prompts would make THIS process
  *     depend on the server being alive while memory tools in the SAME
  *     process don't — an inconsistent reliability story for one MCP server.
@@ -52,7 +52,7 @@
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { AGENT_IDS, CARD_PRIORITIES, COLUMN_IDS } from "@vibedeck/shared";
+import { AGENT_IDS, CARD_PRIORITIES, COLUMN_IDS } from "@vibespace/shared";
 import { createMemoryMcpServer } from "../memory/mcp.js";
 import { openDatabase } from "../db/schema.js";
 import { WorkspaceStore } from "../db/workspaces.js";
@@ -73,7 +73,7 @@ import { resolveWorkspaceId } from "./workspace-resolver.js";
 import { errorResult } from "./result.js";
 import { DEVELOPER_GUIDE_PROMPT_NAME, developerGuideText } from "./developer-guide.js";
 
-export interface VibedeckMcpServer {
+export interface VibespaceMcpServer {
   server: McpServer;
   /** Closes the shared SQLite handle this file opened. Memory tools have
    * no handle of their own to close (they're pure filesystem I/O), so this
@@ -89,7 +89,7 @@ export interface VibedeckMcpServer {
  * binding), so there is no async work to await before the server is ready
  * to register tools against.
  */
-export function buildVibedeckMcpServer(root: string): VibedeckMcpServer {
+export function buildVibespaceMcpServer(root: string): VibespaceMcpServer {
   // Memory tools first — this IS the server instance every other tool
   // below gets registered onto, per this file's top-comment decision to
   // keep everything on one MCP connection rather than spinning up a
@@ -293,9 +293,9 @@ export function buildVibedeckMcpServer(root: string): VibedeckMcpServer {
   server.registerPrompt(
     DEVELOPER_GUIDE_PROMPT_NAME,
     {
-      title: "vibedeck developer guide",
+      title: "vibespace developer guide",
       description:
-        "Onboards a connected agent into vibedeck's workflow: reading tasks, taskKnowledge vs description, the board lifecycle, memory, agent profiles, and swarm file-claim rules.",
+        "Onboards a connected agent into vibespace's workflow: reading tasks, taskKnowledge vs description, the board lifecycle, memory, agent profiles, and swarm file-claim rules.",
     },
     () => ({
       messages: [{ role: "user", content: { type: "text", text: developerGuideText() } }],

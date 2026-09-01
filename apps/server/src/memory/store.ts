@@ -1,7 +1,7 @@
 /**
  * MemoryStore: Phase 8's memory is deliberately NOT a database — it's plain
- * markdown files on disk at `<workspace>/.vibedeck/memory/<slug>.md`, so
- * notes live next to the code, are readable without vibedeck at all (any
+ * markdown files on disk at `<workspace>/.vibespace/memory/<slug>.md`, so
+ * notes live next to the code, are readable without vibespace at all (any
  * editor, `cat`, `grep`), and can be committed to git along with the
  * project. This module is the only place that reads/writes those files;
  * routes.ts and mcp.ts both go through it rather than touching `fs`
@@ -10,32 +10,43 @@
  *
  * Every function takes `root` — a workspace's `rootPath` (already resolved
  * and trusted, exactly like `files/routes.ts`'s `workspace.rootPath`) — as
- * its first argument, and resolves slugs against `<root>/.vibedeck/memory`
+ * its first argument, and resolves slugs against `<root>/.vibespace/memory`
  * via `safeResolve` (see `../files/safe-path.ts`). Slugs are ALWAYS
  * client-supplied (a URL param, an MCP tool argument) — resolving against
  * the memory directory itself, not the workspace root, means a crafted
  * slug like `"../../../etc/passwd"` can escape at most as far as somewhere
- * inside `.vibedeck/memory`, and `safeResolve`'s own containment check
+ * inside `.vibespace/memory`, and `safeResolve`'s own containment check
  * rejects even that. See store.test.ts's "path traversal" tests.
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { MemoryNote } from "@vibedeck/shared";
+import type { MemoryNote } from "@vibespace/shared";
+import { migrateLegacyWorkspaceDotDir } from "../files/legacy-dot-dir.js";
 import { safeResolve } from "../files/safe-path.js";
 import { parseFrontmatter, serializeFrontmatter } from "./frontmatter.js";
 
 /** Workspace-relative directory every memory note lives under. */
-export const MEMORY_DIR_NAME = ".vibedeck/memory";
+export const MEMORY_DIR_NAME = ".vibespace/memory";
 
 /**
- * Ensures `<root>/.vibedeck/memory` exists and returns its absolute path.
+ * Ensures `<root>/.vibespace/memory` exists and returns its absolute path.
  * `safeResolve` requires an existing, real (symlink-resolvable) directory
  * to realpath against (see safe-path.ts's top comment) — creating it
  * up-front, on every call, means a brand-new workspace that has never had a
  * note written to it still works for `list()` (empty) without a separate
  * "has this workspace's memory dir been initialized yet?" check anywhere.
+ *
+ * Also where the workspace-local `.vibedeck` -> `.vibespace` back-compat
+ * migration happens for THIS workspace (see `legacy-dot-dir.ts`'s top
+ * comment for why it's lazy, per-workspace, and triggered from write
+ * points like this one rather than at startup): a vibedeck-era workspace
+ * still has its notes at `<root>/.vibedeck/memory`, and this call is what
+ * moves the whole dot-directory across before `mkdirSync` below would
+ * otherwise create a brand-new, empty `.vibespace/memory` right next to
+ * them.
  */
 function ensureMemoryDir(root: string): string {
+  migrateLegacyWorkspaceDotDir(root);
   const dir = join(root, MEMORY_DIR_NAME);
   mkdirSync(dir, { recursive: true });
   return dir;
@@ -78,7 +89,7 @@ function uniqueSlug(memoryDir: string, title: string): string {
 
 /**
  * Reads and parses one note by slug, or `null` if the slug resolves outside
- * `.vibedeck/memory` (a path-traversal attempt) or the file doesn't exist.
+ * `.vibespace/memory` (a path-traversal attempt) or the file doesn't exist.
  * A malformed/missing frontmatter block never throws — `parseFrontmatter`
  * degrades to "whole file is the body", and this function falls back to
  * the slug itself as the title (the "derived from the filename" the phase
@@ -137,7 +148,7 @@ export function list(root: string): MemoryNote[] {
 }
 
 /** One note by slug, or `null` if it doesn't exist (including a crafted
- * slug that would escape `.vibedeck/memory` — see the top comment). */
+ * slug that would escape `.vibespace/memory` — see the top comment). */
 export function get(root: string, slug: string): MemoryNote | null {
   const dir = ensureMemoryDir(root);
   return readNote(dir, slug);
@@ -199,7 +210,7 @@ export function update(root: string, slug: string, patch: UpdateNoteOptions): Me
 }
 
 /** True if a note with this slug existed and was deleted. A crafted slug
- * that would resolve outside `.vibedeck/memory` returns `false`, same as
+ * that would resolve outside `.vibespace/memory` returns `false`, same as
  * "doesn't exist" — it never gets close enough to `unlinkSync` to matter. */
 export function remove(root: string, slug: string): boolean {
   const dir = ensureMemoryDir(root);

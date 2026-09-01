@@ -13,7 +13,7 @@
  * 16 base colours come from the ACTIVE THEME (`Theme.terminal`, the same
  * palette xterm itself is rendering with) so Live and Blocks views agree.
  * Indices 16-255 use the standard fixed xterm 256-colour cube/greyscale
- * ramp — vibedeck's themes don't customise those (only the 16 base ANSI
+ * ramp — vibespace's themes don't customise those (only the 16 base ANSI
  * slots + background/foreground/cursor, per `themes.ts`'s `TerminalPalette`
  * — see that file), so replicating the standard formula here matches what
  * xterm itself renders.

@@ -35,7 +35,7 @@ import {
 let root: string;
 
 beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), "vibedeck-mcp-test-"));
+  root = mkdtempSync(join(tmpdir(), "vibespace-mcp-test-"));
 });
 
 afterEach(() => {

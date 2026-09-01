@@ -2,7 +2,7 @@
  * One board column (docs/DESIGN.md §5 "Column header"): icon · uppercase
  * 10px label · count badge, all tinted by the column's status meaning
  * (`--idle`/`--warn`/`--info`/`--ok` — see `COLUMNS` in
- * `@vibedeck/shared`'s protocol.ts), a scrollable card list (a dnd-kit
+ * `@vibespace/shared`'s protocol.ts), a scrollable card list (a dnd-kit
  * `SortableContext` so cards can reorder within it and a `useDroppable` so
  * an EMPTY column can still be dropped onto), and an inline "+ Add task"
  * form pinned to the bottom — never `window.prompt`, per DESIGN.md's own
@@ -11,7 +11,7 @@
 import { useState, type CSSProperties } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import type { AgentId, BoardCard, CardPriority, ColumnId, SessionInfo } from "@vibedeck/shared";
+import type { AgentId, BoardCard, CardPriority, ColumnId, SessionInfo } from "@vibespace/shared";
 import type { AgentOption } from "../grid/PaneView.js";
 import { Button, EmptyState, Pill, statusColorVar, type StatusKind } from "../shell/ui.js";
 import { columnEmptyKind } from "./emptyState.js";

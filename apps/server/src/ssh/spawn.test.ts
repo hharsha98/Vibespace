@@ -91,7 +91,7 @@ describe("buildSshArgv", () => {
     expect(argv.slice(1, 3)).toEqual(["-p", "2200"]);
     expect(argv[3]).toBe("ci@build.internal");
     expect(argv[4]).toBe(
-      `cd -- '/srv/ci/workspace' || echo 'vibedeck: couldn'\\''t cd to "/srv/ci/workspace" on connect' >&2; source .venv/bin/activate; exec "\${SHELL:-/bin/sh}" -l`
+      `cd -- '/srv/ci/workspace' || echo 'vibespace: couldn'\\''t cd to "/srv/ci/workspace" on connect' >&2; source .venv/bin/activate; exec "\${SHELL:-/bin/sh}" -l`
     );
   });
 });
@@ -180,7 +180,7 @@ describe("injection resistance — actually executing the built remote command",
   let marker: string;
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "vibedeck-ssh-injection-test-"));
+    tmpDir = mkdtempSync(join(tmpdir(), "vibespace-ssh-injection-test-"));
     marker = join(tmpDir, "INJECTED");
   });
 

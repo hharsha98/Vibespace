@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AGENT_IDS } from "@vibedeck/shared";
+import { AGENT_IDS } from "@vibespace/shared";
 import { detectAgent, detectAllAgents, INSTALL_HINTS, resolveAgent } from "./agents.js";
 
 describe("resolveAgent", () => {

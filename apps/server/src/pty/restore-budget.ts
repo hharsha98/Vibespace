@@ -6,7 +6,7 @@
  * are unit-testable with nothing but plain data and a clock-free counter.
  * The actual orchestration that USES these lives in `restore.ts`.
  */
-import type { SessionRecord } from "@vibedeck/shared";
+import type { SessionRecord } from "@vibespace/shared";
 
 /**
  * How many recoverable sessions a workspace eagerly restores at once when

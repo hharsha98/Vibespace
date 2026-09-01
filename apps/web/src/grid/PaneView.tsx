@@ -6,7 +6,7 @@ import type {
   SessionInfo,
   SshProfile,
   Workspace,
-} from "@vibedeck/shared";
+} from "@vibespace/shared";
 import Terminal from "../term/Terminal.js";
 import type { Theme } from "../themes/themes.js";
 import type { Direction, PaneId } from "./tree.js";
@@ -214,7 +214,7 @@ export default function PaneView({
   const gitBranch = useGitBranch(workspaceId);
   // Context-meter pill (BridgeSpace v3.4.17 parity): fed by Terminal.tsx's
   // `onContextLeftChange`, which only ever fires for `agentId === "codex"`
-  // panes (the one CLI vibedeck ships that genuinely prints this — see
+  // panes (the one CLI vibespace ships that genuinely prints this — see
   // contextMeter.ts's top comment). Stays `null` — and the pill below
   // simply doesn't render — for every other agent, an empty pane, or a
   // codex session that hasn't reached its composer footer yet.
@@ -424,7 +424,7 @@ export default function PaneView({
   const closeFromHeader = () => {
     if (sessionId) {
       fetch(`/api/sessions/${sessionId}`, { method: "DELETE" }).catch((err: unknown) => {
-        console.warn("vibedeck: failed to close session", err);
+        console.warn("vibespace: failed to close session", err);
       });
     }
     onClosePane(paneId);
@@ -610,7 +610,7 @@ export default function PaneView({
             hover, matching this app's established honesty-labelling tone
             (see Settings.tsx's notification-permission copy). */}
         {contextLeft !== null && (
-          <span title={`${contextLeft}% of Codex's context window left — reported by Codex's own status line, not measured or estimated by vibedeck.`}>
+          <span title={`${contextLeft}% of Codex's context window left — reported by Codex's own status line, not measured or estimated by vibespace.`}>
             <Pill status={contextLeftPillStatus(contextLeft)}>{contextLeft}% left</Pill>
           </span>
         )}
@@ -731,7 +731,7 @@ export default function PaneView({
                   >
                     {deferred.cwd}
                   </code>
-                  . Not restored automatically — the workspace had more recoverable panes than vibedeck
+                  . Not restored automatically — the workspace had more recoverable panes than vibespace
                   eagerly restores at once.
                 </>
               }

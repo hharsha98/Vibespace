@@ -1,25 +1,25 @@
 /**
  * Route tests for the SSH profile CRUD + Duplicate endpoints, exercised via
  * `app.inject()` (in-process, no real network port) — same pattern as
- * `agents/routes.test.ts`. `VIBEDECK_DATA_DIR` is pointed at a fresh temp
- * directory per test, never the developer's real `~/.vibedeck`.
+ * `agents/routes.test.ts`. `VIBESPACE_DATA_DIR` is pointed at a fresh temp
+ * directory per test, never the developer's real `~/.vibespace`.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { SshProfile } from "@vibedeck/shared";
+import type { SshProfile } from "@vibespace/shared";
 import { buildApp } from "../index.js";
 
 let dataDir: string;
 
 beforeEach(() => {
-  dataDir = mkdtempSync(join(tmpdir(), "vibedeck-ssh-routes-test-"));
-  process.env.VIBEDECK_DATA_DIR = dataDir;
+  dataDir = mkdtempSync(join(tmpdir(), "vibespace-ssh-routes-test-"));
+  process.env.VIBESPACE_DATA_DIR = dataDir;
 });
 
 afterEach(() => {
-  delete process.env.VIBEDECK_DATA_DIR;
+  delete process.env.VIBESPACE_DATA_DIR;
   rmSync(dataDir, { recursive: true, force: true });
 });
 

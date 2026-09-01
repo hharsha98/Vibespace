@@ -19,7 +19,7 @@
  *      reading at all — so injection into a shell pane is refused outright
  *      with a clear error rather than guessing at one.
  */
-import type { AgentId } from "@vibedeck/shared";
+import type { AgentId } from "@vibespace/shared";
 import { toSingleLine } from "../board/dispatch.js";
 import type { ParsedSkill } from "./parse.js";
 
@@ -39,14 +39,14 @@ export type PrepareSkillInjectionResult =
   | { ok: true; text: string; truncated: boolean }
   | { ok: false; error: string };
 
-/** Builds the exact text a pty receives for `skill`: a short `[vibedeck]`
+/** Builds the exact text a pty receives for `skill`: a short `[vibespace]`
  * label naming the skill, then its full body, folded through
  * `toSingleLine` and capped per `SKILL_INJECT_MAX_LENGTH`. Exported
  * separately from `prepareSkillInjection` so injection.test.ts can assert
  * on the text shape (newline-folding, truncation) without also exercising
  * the shell/agent branch below. */
 export function buildSkillInjectionText(skill: ParsedSkill): { text: string; truncated: boolean } {
-  const raw = `[vibedeck] Skill "${skill.name}": ${skill.description}\n\n${skill.body}`;
+  const raw = `[vibespace] Skill "${skill.name}": ${skill.description}\n\n${skill.body}`;
   const folded = toSingleLine(raw);
   if (folded.length <= SKILL_INJECT_MAX_LENGTH) {
     return { text: `${folded}\n`, truncated: false };

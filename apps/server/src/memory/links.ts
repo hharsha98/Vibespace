@@ -6,7 +6,7 @@
  * is deliberately the module store.ts, routes.ts, and mcp.ts all share
  * rather than each re-deriving their own notion of "what counts as a link."
  */
-import type { MemoryGraphEdge, MemoryGraphNode } from "@vibedeck/shared";
+import type { MemoryGraphEdge, MemoryGraphNode } from "@vibespace/shared";
 
 /** Matches `[[target]]` — target is anything but `]` or a newline, so
  * `[[a]] [[b]]` on one line extracts two separate links rather than one

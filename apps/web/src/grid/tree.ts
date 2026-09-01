@@ -25,7 +25,7 @@
  * vanishing. `attachSession`/`clearDeferredPane` both clear it once it's no
  * longer relevant (a real session attached, or the record was discarded).
  */
-import type { DeferredPane } from "@vibedeck/shared";
+import type { DeferredPane } from "@vibespace/shared";
 
 /** Opaque id for a single pane (a `leaf` node). Just a UUID string. */
 export type PaneId = string;

@@ -15,7 +15,7 @@ import { getGitBranch } from "./branch.js";
 let dir: string;
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), "vibedeck-git-branch-test-"));
+  dir = mkdtempSync(join(tmpdir(), "vibespace-git-branch-test-"));
 });
 
 afterEach(() => {

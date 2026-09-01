@@ -1,6 +1,6 @@
 <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
   <!--
-    vibedeck favicon. Same mark as src/shell/Logo.tsx, but with colours baked
+    vibespace favicon. Same mark as src/shell/Logo.tsx, but with colours baked
     in: a favicon is rendered outside the page, so it cannot inherit CSS
     custom properties. The dark rounded tile keeps the mark readable against
     both light and dark browser tab strips.
