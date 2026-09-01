@@ -3,7 +3,7 @@ import "allotment/dist/style.css";
 import type { AgentId, SessionInfo, SshProfile, Workspace } from "@vibespace/shared";
 import PaneView, { type AgentOption } from "./PaneView.js";
 import type { Theme } from "../themes/themes.js";
-import { findPane, type Direction, type GridNode, type PaneId } from "./tree.js";
+import { findPane, paneSessionId, type Direction, type GridNode, type PaneId } from "./tree.js";
 
 interface GridProps {
   root: GridNode;
@@ -32,6 +32,13 @@ interface GridProps {
   onLaunchMultiple: (paneId: PaneId, agentIds: AgentId[]) => void;
   onSplit: (paneId: PaneId, direction: Direction) => void;
   onClosePane: (paneId: PaneId) => void;
+  /** Browser panes: "Open a browser" was clicked in an empty pane's picker
+   * — see PaneView.tsx's own `onOpenBrowser` prop doc comment. */
+  onOpenBrowser: (paneId: PaneId) => void;
+  /** Browser panes: a navigation (typed URL, Enter) should be persisted
+   * back into this pane's `GridNode` — see PaneView.tsx's own
+   * `onBrowserNavigate` prop doc comment. */
+  onBrowserNavigate: (paneId: PaneId, url: string) => void;
   /** The pane currently filling the whole grid (docs/DESIGN.md §5
    * "maximise"), or null if none is. When set, Grid renders ONLY that one
    * leaf — see the top-level comment below for why that's safe. */
@@ -88,16 +95,20 @@ function GridNodeView({ node, ...rest }: GridProps & { node: GridNode }) {
     onLaunchMultiple,
     onSplit,
     onClosePane,
+    onOpenBrowser,
+    onBrowserNavigate,
     maximizedPaneId,
     onToggleMaximize,
   } = rest;
 
   if (node.kind === "leaf") {
-    const session = node.sessionId ? (sessions.find((s) => s.id === node.sessionId) ?? null) : null;
+    const sessionId = paneSessionId(node);
+    const session = sessionId ? (sessions.find((s) => s.id === sessionId) ?? null) : null;
     return (
       <PaneView
         paneId={node.id}
-        sessionId={node.sessionId}
+        sessionId={sessionId}
+        content={node.content}
         session={session}
         deferred={node.deferred ?? null}
         agents={agents}
@@ -113,6 +124,8 @@ function GridNodeView({ node, ...rest }: GridProps & { node: GridNode }) {
         onLaunchMultiple={onLaunchMultiple}
         onSplit={onSplit}
         onClosePane={onClosePane}
+        onOpenBrowser={onOpenBrowser}
+        onBrowserNavigate={onBrowserNavigate}
         isMaximized={maximizedPaneId === node.id}
         onToggleMaximize={onToggleMaximize}
       />

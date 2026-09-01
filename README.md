@@ -212,6 +212,21 @@ young project moving quickly; expect rough edges.
       No credentials are stored; authentication is entirely your own
       ssh-agent/keys, the same as any terminal — see
       [docs/SSH.md](./docs/SSH.md).
+- [x] **Browser panes**: a pane can show a web page instead of a terminal,
+      in the same split grid as everything else — the real use case is a
+      dev server (`localhost:3000`) sitting right beside the agent that's
+      building it. Type a URL (a bare `host:port` like `localhost:3000`
+      works too — it fills in `http://` or `https://` for you), reload, or
+      open it in your system browser instead. Only `http`/`https` links can
+      ever load, and the pane is sandboxed so a page inside it can't
+      navigate the whole vibespace window away. Two honest limits worth
+      knowing: many sites flatly refuse to render inside ANY frame
+      (`X-Frame-Options`/`Content-Security-Policy: frame-ancestors`) — that
+      is the *site's* choice, not something vibespace can work around, and
+      "open in system browser" is the fallback when it happens; and because
+      the page is a different origin from vibespace's own UI, this pane can
+      never see inside it — no devtools, no console capture, just "did it
+      load".
 
 ## Prerequisites
 

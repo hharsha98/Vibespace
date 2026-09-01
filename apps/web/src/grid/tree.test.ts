@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  attachBrowser,
   attachSession,
   buildTemplate,
   closePane,
@@ -8,8 +9,10 @@ import {
   createLeaf,
   findPane,
   listPanes,
+  paneSessionId,
   pruneDeadSessions,
   splitPane,
+  upgradeLegacyLayout,
   type GridNode,
   type LeafNode,
 } from "./tree.js";
@@ -19,13 +22,81 @@ describe("createLeaf", () => {
     const a = createLeaf();
     const b = createLeaf();
     expect(a.kind).toBe("leaf");
-    expect(a.sessionId).toBeNull();
+    expect(a.content).toBeNull();
     expect(a.id).not.toBe(b.id);
   });
 
   it("can be created already attached to a session", () => {
     const leaf = createLeaf("session-123");
-    expect(leaf.sessionId).toBe("session-123");
+    expect(leaf.content).toEqual({ kind: "session", sessionId: "session-123" });
+    expect(paneSessionId(leaf)).toBe("session-123");
+  });
+});
+
+describe("paneSessionId", () => {
+  it("returns null for an empty leaf", () => {
+    expect(paneSessionId(createLeaf(null))).toBeNull();
+  });
+
+  it("returns the session id for a session leaf", () => {
+    expect(paneSessionId(createLeaf("session-1"))).toBe("session-1");
+  });
+
+  it("returns null for a browser leaf — a browser pane has no session, but isn't 'empty' either", () => {
+    const leaf = createLeaf(null);
+    const withBrowser: LeafNode = { ...leaf, content: { kind: "browser", url: "https://example.com" } };
+    expect(paneSessionId(withBrowser)).toBeNull();
+    expect(withBrowser.content).not.toBeNull(); // the actual "is this pane occupied" check
+  });
+});
+
+describe("attachBrowser", () => {
+  it("sets browser content on the targeted empty leaf, leaving other panes untouched", () => {
+    const empty1 = createLeaf(null);
+    const empty2 = createLeaf(null);
+    const root: GridNode = {
+      kind: "split",
+      id: "root",
+      direction: "row",
+      children: [empty1, empty2],
+    };
+
+    const result = attachBrowser(root, empty2.id, "https://example.com");
+    if (result.kind !== "split") throw new Error("expected a split node");
+
+    expect(result.children[0]).toBe(empty1); // untouched branch keeps its identity
+    const attached = result.children[1];
+    if (attached.kind !== "leaf") throw new Error("expected the attached child to still be a leaf");
+    expect(attached.content).toEqual({ kind: "browser", url: "https://example.com" });
+    expect(paneSessionId(attached)).toBeNull(); // a browser pane never has a session id
+    expect(attached.id).toBe(empty2.id); // same pane, just now attached
+  });
+
+  it("accepts an empty url — the 'just opened, nothing typed yet' state", () => {
+    const leaf = createLeaf(null);
+    const result = attachBrowser(leaf, leaf.id, "");
+    if (result.kind !== "leaf") throw new Error("expected a leaf");
+    expect(result.content).toEqual({ kind: "browser", url: "" });
+  });
+
+  it("clears any deferred marker, same as attachSession", () => {
+    const leaf: LeafNode = { kind: "leaf", id: "p1", content: null, deferred: null };
+    const withDeferred: LeafNode = {
+      ...leaf,
+      deferred: { paneId: "p1", recordId: "r1", agent: "claude", title: "Claude", cwd: "/tmp", sshProfileId: null },
+    };
+    const result = attachBrowser(withDeferred, "p1", "https://example.com");
+    if (result.kind !== "leaf") throw new Error("expected a leaf");
+    expect(result.deferred).toBeNull();
+  });
+
+  it("does not mutate the original tree", () => {
+    const leaf = createLeaf(null);
+    const before = JSON.parse(JSON.stringify(leaf)) as GridNode;
+
+    attachBrowser(leaf, leaf.id, "https://example.com");
+
+    expect(leaf).toEqual(before);
   });
 });
 
@@ -47,7 +118,7 @@ describe("splitPane", () => {
     expect(split.children[0]).toEqual(root); // original leaf preserved untouched
     const newLeaf = split.children[1];
     if (newLeaf.kind !== "leaf") throw new Error("expected the new second child to be a leaf");
-    expect(newLeaf.sessionId).toBeNull();
+    expect(newLeaf.content).toBeNull();
     expect(newLeaf.id).not.toBe(root.id);
   });
 
@@ -98,7 +169,7 @@ describe("attachSession", () => {
     expect(result.children[0]).toBe(empty1); // untouched branch keeps its identity
     const attached = result.children[1];
     if (attached.kind !== "leaf") throw new Error("expected the attached child to still be a leaf");
-    expect(attached.sessionId).toBe("session-xyz");
+    expect(attached.content).toEqual({ kind: "session", sessionId: "session-xyz" });
     expect(attached.id).toBe(empty2.id); // same pane, just now attached
   });
 
@@ -126,7 +197,7 @@ describe("closePaneOrEmpty", () => {
     expect(result).not.toBeNull();
     expect(result.kind).toBe("leaf");
     // Empty: the closed pane's session must not be carried onto it.
-    expect((result as LeafNode).sessionId).toBeNull();
+    expect((result as LeafNode).content).toBeNull();
     expect(result.id).not.toBe(root.id);
   });
 
@@ -303,20 +374,27 @@ describe("pruneDeadSessions", () => {
     const leaf = createLeaf("session-gone");
     const pruned = pruneDeadSessions(leaf, new Set());
     if (pruned.kind !== "leaf") throw new Error("expected a leaf");
-    expect(pruned.sessionId).toBeNull();
+    expect(pruned.content).toBeNull();
   });
 
   it("leaves a leaf's sessionId alone when it IS in the live set", () => {
     const leaf = createLeaf("session-alive");
     const pruned = pruneDeadSessions(leaf, new Set(["session-alive"]));
     if (pruned.kind !== "leaf") throw new Error("expected a leaf");
-    expect(pruned.sessionId).toBe("session-alive");
+    expect(pruned.content).toEqual({ kind: "session", sessionId: "session-alive" });
   });
 
   it("leaves empty leaves (no sessionId) untouched", () => {
     const leaf = createLeaf(null);
     const pruned = pruneDeadSessions(leaf, new Set());
     expect(pruned).toBe(leaf); // same reference — nothing needed pruning
+  });
+
+  it("leaves a browser pane's content alone — pruning only ever concerns sessions, never web pages", () => {
+    const leaf = createLeaf(null);
+    const withBrowser: LeafNode = { ...leaf, content: { kind: "browser", url: "https://example.com" } };
+    const pruned = pruneDeadSessions(withBrowser, new Set());
+    expect(pruned).toBe(withBrowser); // same reference — nothing needed pruning
   });
 
   it("prunes dead sessions anywhere in a nested tree, leaving live ones intact", () => {
@@ -335,5 +413,116 @@ describe("pruneDeadSessions", () => {
     const root = buildTemplate(4); // every leaf already has sessionId: null
     const pruned = pruneDeadSessions(root, new Set());
     expect(pruned).toBe(root);
+  });
+});
+
+describe("upgradeLegacyLayout", () => {
+  // Every layout saved before PaneContent existed has this shape: a leaf's
+  // session was a bare `sessionId` field, no `content` at all.
+  const oldEmptyLeaf = { kind: "leaf", id: "leaf-empty" };
+  const oldSessionLeaf = { kind: "leaf", id: "leaf-session", sessionId: "session-1" };
+  const oldNullSessionLeaf = { kind: "leaf", id: "leaf-null", sessionId: null };
+
+  it("converts an old-shape leaf with a sessionId into the new content shape", () => {
+    const result = upgradeLegacyLayout(oldSessionLeaf);
+    expect(result).toEqual({ kind: "leaf", id: "leaf-session", content: { kind: "session", sessionId: "session-1" }, deferred: null });
+  });
+
+  it("converts an old-shape leaf with sessionId: null into empty content", () => {
+    const result = upgradeLegacyLayout(oldNullSessionLeaf);
+    expect(result).toEqual({ kind: "leaf", id: "leaf-null", content: null, deferred: null });
+  });
+
+  it("converts an old-shape leaf with no sessionId field at all into empty content", () => {
+    const result = upgradeLegacyLayout(oldEmptyLeaf);
+    expect(result).toEqual({ kind: "leaf", id: "leaf-empty", content: null, deferred: null });
+  });
+
+  it("passes a leaf already in the new shape through untouched", () => {
+    const newLeaf = { kind: "leaf", id: "leaf-new", content: { kind: "browser", url: "https://example.com" } };
+    const result = upgradeLegacyLayout(newLeaf);
+    expect(result).toEqual({
+      kind: "leaf",
+      id: "leaf-new",
+      content: { kind: "browser", url: "https://example.com" },
+      deferred: null,
+    });
+  });
+
+  it("preserves a leaf's deferred marker across the upgrade", () => {
+    const deferred = { paneId: "leaf-session", recordId: "r1", agent: "claude", title: "Claude", cwd: "/tmp", sshProfileId: null };
+    const result = upgradeLegacyLayout({ ...oldSessionLeaf, deferred });
+    if (result.kind !== "leaf") throw new Error("expected a leaf");
+    expect(result.deferred).toEqual(deferred);
+  });
+
+  it("recurses through a nested split tree, upgrading every leaf it finds", () => {
+    // root (row)
+    //  ├── mid (column)
+    //  │    ├── old-shape leaf, session-x
+    //  │    └── old-shape leaf, empty
+    //  └── old-shape leaf, session-y
+    const legacyTree = {
+      kind: "split",
+      id: "root",
+      direction: "row",
+      children: [
+        {
+          kind: "split",
+          id: "mid",
+          direction: "column",
+          children: [
+            { kind: "leaf", id: "leaf-x", sessionId: "session-x" },
+            { kind: "leaf", id: "leaf-y", sessionId: null },
+          ],
+        },
+        { kind: "leaf", id: "leaf-z", sessionId: "session-y" },
+      ],
+    };
+
+    const result = upgradeLegacyLayout(legacyTree);
+    const panes = listPanes(result);
+    expect(panes.map((p) => p.id)).toEqual(["leaf-x", "leaf-y", "leaf-z"]);
+    expect(panes.find((p) => p.id === "leaf-x")?.sessionId).toBe("session-x");
+    expect(panes.find((p) => p.id === "leaf-y")?.sessionId).toBeNull();
+    expect(panes.find((p) => p.id === "leaf-z")?.sessionId).toBe("session-y");
+  });
+
+  it("upgrades a MIXED tree — some leaves old-shape, some already new-shape", () => {
+    const mixedTree = {
+      kind: "split",
+      id: "root",
+      direction: "row",
+      children: [
+        { kind: "leaf", id: "old-leaf", sessionId: "session-old" }, // old shape
+        { kind: "leaf", id: "new-leaf", content: { kind: "browser", url: "https://example.com" } }, // new shape
+      ],
+    };
+
+    const result = upgradeLegacyLayout(mixedTree);
+    if (result.kind !== "split") throw new Error("expected a split node");
+    const [oldUpgraded, newUntouched] = result.children;
+    if (oldUpgraded.kind !== "leaf" || newUntouched.kind !== "leaf") {
+      throw new Error("expected both children to be leaves");
+    }
+    expect(oldUpgraded.content).toEqual({ kind: "session", sessionId: "session-old" });
+    expect(newUntouched.content).toEqual({ kind: "browser", url: "https://example.com" });
+  });
+
+  it("throws on a node with no recognisable kind, so the caller's own fallback (an empty pane) takes over", () => {
+    expect(() => upgradeLegacyLayout({ foo: "bar" })).toThrow();
+    expect(() => upgradeLegacyLayout(null)).toThrow();
+    expect(() => upgradeLegacyLayout("not an object")).toThrow();
+    expect(() => upgradeLegacyLayout(42)).toThrow();
+  });
+
+  it("throws on a split node with the wrong number of children", () => {
+    expect(() =>
+      upgradeLegacyLayout({ kind: "split", id: "root", direction: "row", children: [oldEmptyLeaf] })
+    ).toThrow();
+  });
+
+  it("throws on a leaf with no id", () => {
+    expect(() => upgradeLegacyLayout({ kind: "leaf" })).toThrow();
   });
 });

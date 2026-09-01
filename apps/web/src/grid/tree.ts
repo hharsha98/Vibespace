@@ -10,9 +10,10 @@
  * decide what changed, which only works if we never mutate the old one.
  *
  * The tree shape: a `GridNode` is either a `leaf` (one pane, holding at most
- * one terminal session) or a `split` (two children divided either
- * side-by-side ("row") or stacked ("column")). Nesting these two node kinds
- * is enough to represent any arrangement of resizable panes.
+ * one piece of `PaneContent` — see that type's own doc comment) or a `split`
+ * (two children divided either side-by-side ("row") or stacked ("column")).
+ * Nesting these two node kinds is enough to represent any arrangement of
+ * resizable panes.
  *
  * --- Deferred panes (session recovery, cold-start restore) ---
  * A leaf's `deferred` field is the client-side half of
@@ -22,8 +23,9 @@
  * its split position, its intended cwd/agent, and a `recordId` to act on —
  * `PaneView.tsx` renders this as a "this pane was running X — restore it?"
  * affordance instead of either the ordinary empty-pane picker or silently
- * vanishing. `attachSession`/`clearDeferredPane` both clear it once it's no
- * longer relevant (a real session attached, or the record was discarded).
+ * vanishing. `attachSession`/`attachBrowser`/`clearDeferredPane` all clear
+ * it once it's no longer relevant (a real session or browser attached, or
+ * the record was discarded).
  */
 import type { DeferredPane } from "@vibespace/shared";
 
@@ -33,14 +35,51 @@ export type PaneId = string;
 /** "row" = children sit side by side (a vertical divider). "column" = children stack (a horizontal divider). */
 export type Direction = "row" | "column";
 
+/**
+ * What a single pane is showing. Originally a pane could only ever be a
+ * terminal session (or nothing) — this union is what makes room for other
+ * kinds without every existing "is this pane running something" check
+ * having to learn a THIRD, unrelated shape. `browser` is the first addition
+ * (see `apps/web/src/browser/BrowserPane.tsx`): a pane that shows a web
+ * page in an `<iframe>` instead of a pty, for the "dev server open beside
+ * the agent building it" workflow.
+ *
+ * Deliberately lives HERE, not in `packages/shared/src/protocol.ts`: a
+ * workspace's saved `layout` (`Workspace.layout`) is an opaque JSON string
+ * as far as the server is concerned — it never parses it, only stores and
+ * returns it — so `PaneContent` is purely client-side layout state, same as
+ * `GridNode`/`Direction` above. See `upgradeLegacyLayout` below for how an
+ * OLDER build's saved layout (whose leaves never had a `content` field at
+ * all, just a bare `sessionId`) gets read by a build that ships this type.
+ */
+export type PaneContent = { kind: "session"; sessionId: string } | { kind: "browser"; url: string };
+
 export type GridNode =
-  | { kind: "leaf"; id: PaneId; sessionId: string | null; deferred?: DeferredPane | null }
+  | { kind: "leaf"; id: PaneId; content: PaneContent | null; deferred?: DeferredPane | null }
   | { kind: "split"; id: string; direction: Direction; children: [GridNode, GridNode] };
 
 /** The `leaf` branch of `GridNode` on its own — handy when a function (like
  * `createLeaf`) always returns a leaf and callers shouldn't have to narrow
- * the union themselves to reach `.sessionId`. */
+ * the union themselves to reach `.content`. */
 export type LeafNode = Extract<GridNode, { kind: "leaf" }>;
+
+/**
+ * The session id a leaf is showing, or `null` if it's empty, showing a
+ * browser, or (defensively) anything else `PaneContent` might grow into
+ * later. This is the one place the vast majority of call sites that only
+ * ever cared about "which session (if any) is in this pane" — closing a
+ * session, finding an empty pane to attach one to, the skill-injection
+ * target list, ... — go, instead of every one of them re-deriving the same
+ * `leaf.content?.kind === "session" ? leaf.content.sessionId : null` union
+ * narrowing by hand. Anything that genuinely needs to tell "empty" apart
+ * from "showing a browser" (both read `sessionId: null` here) should read
+ * `leaf.content` directly instead — see e.g. App.tsx's
+ * `startAgentInFocusedPane`, which must not silently overwrite a browser
+ * pane just because it has no session.
+ */
+export function paneSessionId(leaf: LeafNode): string | null {
+  return leaf.content?.kind === "session" ? leaf.content.sessionId : null;
+}
 
 /** Every pane count the template picker supports. Anything else is rejected. */
 const SUPPORTED_TEMPLATE_SIZES = [1, 2, 4, 6, 8, 10, 12, 14, 16];
@@ -54,7 +93,7 @@ export function nextPaneId(): string {
 
 /** A brand-new empty pane, optionally already attached to a session. */
 export function createLeaf(sessionId: string | null = null): LeafNode {
-  return { kind: "leaf", id: nextPaneId(), sessionId };
+  return { kind: "leaf", id: nextPaneId(), content: sessionId ? { kind: "session", sessionId } : null };
 }
 
 /**
@@ -132,7 +171,32 @@ export function splitPane(root: GridNode, targetPaneId: PaneId, direction: Direc
  * resuming a deferred pane's record, there's nothing left to "restore".
  */
 export function attachSession(root: GridNode, targetPaneId: PaneId, sessionId: string): GridNode {
-  return mapLeaf(root, targetPaneId, (leaf) => ({ ...leaf, sessionId, deferred: null }));
+  return mapLeaf(root, targetPaneId, (leaf) => ({
+    ...leaf,
+    content: { kind: "session", sessionId },
+    deferred: null,
+  }));
+}
+
+/**
+ * The browser-pane counterpart to `attachSession` above: points the leaf at
+ * `targetPaneId` at a web page instead of a terminal session. `url` may be
+ * `""` — that's what the empty-pane picker's "Open a browser" button
+ * attaches immediately, before anyone has typed a URL; `BrowserPane.tsx`
+ * reads an empty `url` as "show my own empty state, not an iframe" (see
+ * that component's own top comment). A real navigation later calls this
+ * again with the real, validated URL (`browser/url.ts`'s
+ * `normalizeAndValidateUrl`) to update it in place.
+ *
+ * Also clears `deferred`, same reasoning as `attachSession`: whichever kind
+ * of content just filled this pane, there's nothing left to offer restoring.
+ */
+export function attachBrowser(root: GridNode, targetPaneId: PaneId, url: string): GridNode {
+  return mapLeaf(root, targetPaneId, (leaf) => ({
+    ...leaf,
+    content: { kind: "browser", url },
+    deferred: null,
+  }));
 }
 
 /**
@@ -203,9 +267,28 @@ export function findPane(root: GridNode, paneId: PaneId): GridNode | null {
   return findPane(root.children[0], paneId) ?? findPane(root.children[1], paneId);
 }
 
-/** Every leaf pane, left-to-right (i.e. in the order they'd read on screen). */
-export function listPanes(root: GridNode): Array<{ id: PaneId; sessionId: string | null }> {
-  if (root.kind === "leaf") return [{ id: root.id, sessionId: root.sessionId }];
+/**
+ * Every leaf pane, left-to-right (i.e. in the order they'd read on screen).
+ *
+ * Returns both `sessionId` (via `paneSessionId` above) AND the raw
+ * `content` for each pane, rather than picking just one: nearly every
+ * existing caller (App.tsx's block-navigation, skill-injection targets,
+ * "does this workspace have anything running to warn about discarding",
+ * ...) only ever cared about sessions, so keeping `sessionId` here is what
+ * lets all of THOSE call sites stay exactly as they were — no destructuring
+ * a union at every site that never needed to know about browsers at all.
+ * But a couple of callers (App.tsx's `handleSessionDispatched` /
+ * `focusSessionInGrid`, both of which need to find a genuinely EMPTY pane
+ * to attach a new session to) would otherwise misread a browser pane as
+ * "empty" — `sessionId` is `null` for a browser pane too, same as a truly
+ * empty one — and silently clobber it. Those two read `content === null`
+ * instead, which `listPanes` only needs to expose once, here, rather than
+ * having every such caller re-walk the tree with `findPane` itself.
+ */
+export function listPanes(
+  root: GridNode
+): Array<{ id: PaneId; sessionId: string | null; content: PaneContent | null }> {
+  if (root.kind === "leaf") return [{ id: root.id, sessionId: paneSessionId(root), content: root.content }];
   return [...listPanes(root.children[0]), ...listPanes(root.children[1])];
 }
 
@@ -246,8 +329,9 @@ export function buildTemplate(n: number): GridNode {
  */
 export function pruneDeadSessions(root: GridNode, liveSessionIds: ReadonlySet<string>): GridNode {
   if (root.kind === "leaf") {
-    if (root.sessionId && !liveSessionIds.has(root.sessionId)) {
-      return { ...root, sessionId: null };
+    const sessionId = paneSessionId(root);
+    if (sessionId && !liveSessionIds.has(sessionId)) {
+      return { ...root, content: null };
     }
     return root;
   }
@@ -275,4 +359,102 @@ function buildBalanced(n: number, direction: Direction): GridNode {
     direction,
     children: [buildBalanced(leftCount, childDirection), buildBalanced(rightCount, childDirection)],
   };
+}
+
+/**
+ * Upgrades a `GridNode` tree that may have been parsed from a saved layout
+ * written by an OLDER build of vibespace — one from before `PaneContent`
+ * existed, when a leaf's shape was `{ kind: "leaf", id, sessionId, deferred?
+ * }` instead of today's `{ kind: "leaf", id, content, deferred? }`. Every
+ * layout already saved on disk (`Workspace.layout`, an opaque JSON string
+ * the server never parses — see `PaneContent`'s own doc comment) has the OLD
+ * shape, and a person's saved grid is not something a version bump gets to
+ * throw away. This is App.tsx's `layoutToTree` (its only caller) doing that
+ * upgrade tolerantly, in place, the moment a layout is loaded — the same
+ * "read an older build's blob defensively, field by field" posture
+ * `settings/terminalPrefs.ts`'s `parseStoredPrefs` already uses for a
+ * different persisted blob, applied here to a tree instead of a flat object.
+ *
+ * Deliberately does NOT touch the database: there is nothing FOR a
+ * migration to touch (the column is opaque JSON, not a parsed schema), so
+ * "upgrade on read" is not a shortcut around a migration, it is the only
+ * place this can honestly happen at all.
+ *
+ * A leaf already in the new shape (has a `content` field, even if that
+ * field is something a FUTURE build added that this one doesn't recognise)
+ * passes through with its `content` preserved as-is, not re-derived — this
+ * is what makes a mixed tree safe, where some leaves are old-shape and
+ * others already new-shape (which can't happen from a single save today,
+ * but is the honest, defensive assumption to make about a hand-edited or
+ * partially-migrated blob rather than an assumption this code happens to
+ * currently get away with).
+ *
+ * Throws on a node that isn't shaped like a `GridNode` at all (missing
+ * `kind`, a split without exactly two children, ...) — `layoutToTree`'s own
+ * `try`/`catch` around the whole parse-and-upgrade already treats "this
+ * JSON wasn't a valid layout" as "start with one empty pane instead" (the
+ * same fallback `pruneDeadSessions` relied on being wrapped in before this
+ * function existed), so there is no need for a second copy of that
+ * fallback here.
+ */
+export function upgradeLegacyLayout(node: unknown): GridNode {
+  if (node === null || typeof node !== "object") {
+    throw new Error("upgradeLegacyLayout: expected an object");
+  }
+  const candidate = node as Record<string, unknown>;
+
+  if (candidate.kind === "leaf") {
+    return upgradeLegacyLeaf(candidate);
+  }
+
+  if (candidate.kind === "split") {
+    if (typeof candidate.id !== "string") {
+      throw new Error("upgradeLegacyLayout: split node missing its id");
+    }
+    if (candidate.direction !== "row" && candidate.direction !== "column") {
+      throw new Error("upgradeLegacyLayout: split node has an invalid direction");
+    }
+    const children = candidate.children;
+    if (!Array.isArray(children) || children.length !== 2) {
+      throw new Error("upgradeLegacyLayout: split node must have exactly two children");
+    }
+    return {
+      kind: "split",
+      id: candidate.id,
+      direction: candidate.direction,
+      children: [upgradeLegacyLayout(children[0]), upgradeLegacyLayout(children[1])],
+    };
+  }
+
+  throw new Error(`upgradeLegacyLayout: unrecognised node kind ${JSON.stringify(candidate.kind)}`);
+}
+
+function upgradeLegacyLeaf(candidate: Record<string, unknown>): LeafNode {
+  if (typeof candidate.id !== "string") {
+    throw new Error("upgradeLegacyLayout: leaf missing its id");
+  }
+  // `deferred` never changed shape across this migration — carried through
+  // as-is either way (it's already optional/nullable on both old and new
+  // leaves, so there's nothing to upgrade about it).
+  const deferred = (candidate.deferred ?? null) as DeferredPane | null;
+
+  // Already the new shape: pass `content` through untouched (see this
+  // function's own top comment for why that's deliberate) rather than
+  // re-deriving it from a `sessionId` field a new-shape leaf may not even
+  // carry.
+  if ("content" in candidate) {
+    return {
+      kind: "leaf",
+      id: candidate.id,
+      content: (candidate.content ?? null) as PaneContent | null,
+      deferred,
+    };
+  }
+
+  // Old shape: a bare `sessionId` field, no `content` at all. `sessionId:
+  // "abc"` becomes `content: {kind:"session", sessionId:"abc"}`;
+  // `sessionId: null` (or missing entirely) becomes `content: null`.
+  const sessionId = candidate.sessionId;
+  const content: PaneContent | null = typeof sessionId === "string" ? { kind: "session", sessionId } : null;
+  return { kind: "leaf", id: candidate.id, content, deferred };
 }

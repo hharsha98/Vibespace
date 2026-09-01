@@ -9,7 +9,8 @@ import type {
 } from "@vibespace/shared";
 import Terminal from "../term/Terminal.js";
 import type { Theme } from "../themes/themes.js";
-import type { Direction, PaneId } from "./tree.js";
+import type { Direction, PaneContent, PaneId } from "./tree.js";
+import BrowserPane, { GlobeIcon } from "../browser/BrowserPane.js";
 import {
   Button,
   EMPTY_SURFACE_BACKGROUND,
@@ -89,8 +90,17 @@ export interface AgentOption {
 
 interface PaneViewProps {
   paneId: PaneId;
-  /** The session this pane's leaf currently points at, or null if it's empty. */
+  /** The session this pane's leaf currently points at, or null if it's
+   * empty OR showing a browser (see `content` below — this is a
+   * convenience derived from it via `grid/tree.ts`'s `paneSessionId`). */
   sessionId: string | null;
+  /** This pane's full content — `null` (empty), `{kind:"session",...}`, or
+   * `{kind:"browser",...}`. `sessionId`/`session` above stay as separate
+   * props (rather than every call site narrowing this union itself)
+   * because almost all of this component's existing logic only ever cared
+   * about sessions; this is only read directly by the new browser-pane
+   * render branch below. */
+  content: PaneContent | null;
   /** Looked-up SessionInfo for `sessionId` (title/status), or null if empty/not found yet. */
   session: SessionInfo | null;
   /**
@@ -148,6 +158,15 @@ interface PaneViewProps {
   onSplit: (paneId: PaneId, direction: Direction) => void;
   /** Fired once this pane should be removed from the tree (session already killed, if it had one). */
   onClosePane: (paneId: PaneId) => void;
+  /** The empty-pane picker's "Open a browser" row was clicked — App.tsx
+   * attaches this pane to a browser with an empty url (see
+   * `grid/tree.ts`'s `attachBrowser`), which `BrowserPane.tsx` reads as
+   * "nothing typed yet" and shows its own empty state for. */
+  onOpenBrowser: (paneId: PaneId) => void;
+  /** A browser pane navigated (its URL bar's Enter, already validated by
+   * `browser/url.ts`) — App.tsx persists the new url back into this pane's
+   * `GridNode`. */
+  onBrowserNavigate: (paneId: PaneId, url: string) => void;
   /** Whether THIS pane is the one currently filling the whole grid — see
    * Grid.tsx's `maximizedPaneId`. Purely a rendering/icon-swap concern here;
    * Grid.tsx owns the actual "render only this pane, full size" decision. */
@@ -173,6 +192,7 @@ interface PaneViewProps {
 export default function PaneView({
   paneId,
   sessionId,
+  content,
   session,
   deferred,
   agents,
@@ -188,6 +208,8 @@ export default function PaneView({
   onLaunchMultiple,
   onSplit,
   onClosePane,
+  onOpenBrowser,
+  onBrowserNavigate,
   isMaximized,
   onToggleMaximize,
 }: PaneViewProps) {
@@ -536,7 +558,7 @@ export default function PaneView({
             fontWeight: session ? 500 : 400,
           }}
         >
-          {session ? session.title : "Empty pane"}
+          {content?.kind === "browser" ? content.url || "Browser" : session ? session.title : "Empty pane"}
           {session?.status === "exited" && ` (exited ${session.exitCode})`}
         </span>
         {/* Phase 9.5c, PARITY #13c: names the workspace alongside the agent
@@ -654,7 +676,9 @@ export default function PaneView({
       )}
 
       <div style={{ flex: 1, minHeight: 0 }}>
-        {sessionId ? (
+        {content?.kind === "browser" ? (
+          <BrowserPane url={content.url} onNavigate={(url) => onBrowserNavigate(paneId, url)} />
+        ) : sessionId ? (
           <Terminal
             sessionId={sessionId}
             // `session` is looked up by sessionId in the same render pass
@@ -979,6 +1003,69 @@ export default function PaneView({
                   </div>
                 </div>
               )}
+
+              {/* Browser panes: a pane that shows a web page (an iframe)
+                  instead of a terminal — the real use case is a dev server
+                  open beside the agent building it. Always shown (unlike
+                  the SSH group above, which hides when there are no saved
+                  profiles) since there's nothing to set up first — see
+                  browser/url.ts for the scheme allowlist/normalisation a
+                  URL eventually goes through, and browser/BrowserPane.tsx
+                  for the pane itself. Reuses the exact same row chrome as
+                  `SshProfileRow` below (`.vd-agent-card`, same padding/
+                  radius/border) so this reads as one more option in the
+                  same picker, not a bolted-on extra. */}
+              <div style={{ marginTop: SPACE.lg, paddingTop: SPACE.md, borderTop: "1px solid var(--vd-border)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: SPACE.sm }}>
+                  <span aria-hidden style={{ color: "var(--vd-text-faint)", display: "flex" }}>
+                    <GlobeIcon />
+                  </span>
+                  <span style={{ fontSize: FONT.meta, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--vd-text-faint)" }}>
+                    Browser
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onOpenBrowser(paneId)}
+                  title="Open a web page in this pane"
+                  className="vd-agent-card"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: SPACE.sm,
+                    textAlign: "left",
+                    background: "var(--vd-surface-raised)",
+                    borderWidth: 1,
+                    borderColor: "var(--vd-border)",
+                    borderStyle: "solid",
+                    borderRadius: RADIUS.lg,
+                    padding: "8px 10px",
+                    cursor: "pointer",
+                    boxSizing: "border-box",
+                    width: "100%",
+                  }}
+                >
+                  <span
+                    aria-hidden
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: 26,
+                      height: 26,
+                      borderRadius: "50%",
+                      flexShrink: 0,
+                      background: "color-mix(in srgb, var(--vd-text-faint) 16%, transparent)",
+                      color: "var(--vd-text-muted)",
+                    }}
+                  >
+                    <GlobeIcon size={15} />
+                  </span>
+                  <span style={{ fontSize: FONT.body, fontWeight: 500, color: "var(--vd-text)" }}>
+                    Open a web page
+                  </span>
+                </button>
+              </div>
 
               {startError && (
                 <p

@@ -10,6 +10,7 @@ import type {
 import Grid from "./grid/Grid.js";
 import type { AgentOption } from "./grid/PaneView.js";
 import {
+  attachBrowser,
   attachSession,
   buildTemplate,
   clearDeferredPane,
@@ -18,8 +19,10 @@ import {
   findPane,
   listPanes,
   markPaneDeferred,
+  paneSessionId,
   pruneDeadSessions,
   splitPane,
+  upgradeLegacyLayout,
   type Direction,
   type GridNode,
   type PaneId,
@@ -129,8 +132,15 @@ async function loadJson<T>(url: string): Promise<T> {
 function layoutToTree(layout: string | null, sessions: SessionInfo[]): GridNode {
   if (!layout) return createLeaf(null);
   try {
-    const parsed = JSON.parse(layout) as GridNode;
-    return pruneDeadSessions(parsed, new Set(sessions.map((s) => s.id)));
+    const parsed: unknown = JSON.parse(layout);
+    // `upgradeLegacyLayout` (grid/tree.ts) tolerantly rewrites any leaf
+    // still in an OLDER build's `{sessionId}` shape into today's
+    // `{content}` shape before anything else touches the tree — see that
+    // function's own doc comment. It must run BEFORE `pruneDeadSessions`:
+    // an old-shape leaf has no `content` field at all, so pruning would
+    // silently do nothing to it otherwise.
+    const upgraded = upgradeLegacyLayout(parsed);
+    return pruneDeadSessions(upgraded, new Set(sessions.map((s) => s.id)));
   } catch (err) {
     console.warn(
       "vibespace: failed to parse a saved workspace layout, starting with an empty pane instead",
@@ -644,7 +654,12 @@ export default function App() {
       // React's StrictMode double-invokes in development.
       if (!root) return;
       const panes = listPanes(root);
-      const emptyPane = panes.find((p) => p.sessionId === null);
+      // `content === null`, not `sessionId === null` — a browser pane also
+      // reads `sessionId: null` (see `grid/tree.ts`'s `paneSessionId`), and
+      // silently dropping a dispatched session's board card into a pane
+      // someone's actively browsing in would be exactly the kind of
+      // surprise this check exists to avoid.
+      const emptyPane = panes.find((p) => p.content === null);
       if (emptyPane) {
         setRoot(attachSession(root, emptyPane.id, session.id));
         setFocusedPaneId(emptyPane.id);
@@ -690,7 +705,10 @@ export default function App() {
         return;
       }
 
-      const emptyPane = panes.find((p) => p.sessionId === null);
+      // Same "content === null, not sessionId === null" reasoning as
+      // handleSessionDispatched above — never mistake a browser pane for
+      // an empty one just because it has no session id.
+      const emptyPane = panes.find((p) => p.content === null);
       if (emptyPane) {
         setRoot(attachSession(root, emptyPane.id, sessionId));
         setFocusedPaneId(emptyPane.id);
@@ -769,8 +787,8 @@ export default function App() {
     (paneId: PaneId) => {
       if (!root) return;
       const pane = findPane(root, paneId);
-      if (pane?.kind === "leaf" && pane.sessionId) {
-        const sessionId = pane.sessionId;
+      const sessionId = pane?.kind === "leaf" ? paneSessionId(pane) : null;
+      if (sessionId) {
         setSessions((prev) => prev.filter((s) => s.id !== sessionId));
       }
       // ...OrEmpty, because a plain `closePane` returns null once the last
@@ -797,6 +815,25 @@ export default function App() {
     },
     []
   );
+
+  // Browser panes: the empty-pane picker's "Open a browser" row was
+  // clicked — attach an empty-url browser to this pane immediately (see
+  // `grid/tree.ts`'s `attachBrowser`), which `BrowserPane.tsx` reads as
+  // "nothing typed yet" and shows its own empty state for, same shape as
+  // `handleSessionStarted` below except there's no server round trip
+  // first: a browser pane doesn't spawn anything server-side.
+  const handleOpenBrowser = useCallback((paneId: PaneId) => {
+    setRoot((prev) => (prev ? attachBrowser(prev, paneId, "") : prev));
+    setFocusedPaneId(paneId);
+  }, []);
+
+  // Browser panes: a navigation from BrowserPane.tsx's own URL bar
+  // (already validated by `browser/url.ts`) — persist it back into this
+  // pane's `GridNode` so it survives a reload via the workspace's saved
+  // layout, the same way `handleSessionStarted` persists a session id.
+  const handleBrowserNavigate = useCallback((paneId: PaneId, url: string) => {
+    setRoot((prev) => (prev ? attachBrowser(prev, paneId, url) : prev));
+  }, []);
 
   // "New pane" splits whatever's focused; if nothing's focused (or there's
   // no grid at all yet, e.g. every pane was just closed) it falls back to
@@ -873,8 +910,9 @@ export default function App() {
   const closeFocusedPane = useCallback(() => {
     if (!root || !focusedPaneId) return;
     const pane = findPane(root, focusedPaneId);
-    if (pane?.kind === "leaf" && pane.sessionId) {
-      fetch(`/api/sessions/${pane.sessionId}`, { method: "DELETE" }).catch((err: unknown) => {
+    const sessionId = pane?.kind === "leaf" ? paneSessionId(pane) : null;
+    if (sessionId) {
+      fetch(`/api/sessions/${sessionId}`, { method: "DELETE" }).catch((err: unknown) => {
         console.warn("vibespace: failed to close session via keyboard shortcut", err);
       });
     }
@@ -916,8 +954,10 @@ export default function App() {
   const focusedSession = useMemo(() => {
     if (!root || !focusedPaneId) return null;
     const pane = findPane(root, focusedPaneId);
-    if (!pane || pane.kind !== "leaf" || !pane.sessionId) return null;
-    return sessions.find((s) => s.id === pane.sessionId) ?? null;
+    if (!pane || pane.kind !== "leaf") return null;
+    const sessionId = paneSessionId(pane);
+    if (!sessionId) return null;
+    return sessions.find((s) => s.id === sessionId) ?? null;
   }, [root, focusedPaneId, sessions]);
 
   // Cmd+Up / Cmd+Down (Phase 5): jump the focused pane's terminal to the
@@ -953,7 +993,10 @@ export default function App() {
     async (agent: AgentId) => {
       if (!root || !focusedPaneId) return;
       const pane = findPane(root, focusedPaneId);
-      if (!pane || pane.kind !== "leaf" || pane.sessionId) return;
+      // `pane.content !== null`, not `pane.sessionId` — a browser pane has
+      // no sessionId either, but it IS occupied, and starting an agent
+      // here must not silently overwrite whatever page someone has open.
+      if (!pane || pane.kind !== "leaf" || pane.content !== null) return;
       try {
         const res = await fetch("/api/sessions", {
           method: "POST",
@@ -981,7 +1024,9 @@ export default function App() {
     async (profileId: string) => {
       if (!root || !focusedPaneId) return;
       const pane = findPane(root, focusedPaneId);
-      if (!pane || pane.kind !== "leaf" || pane.sessionId) return;
+      // Same "content !== null, not sessionId" reasoning as
+      // startAgentInFocusedPane above.
+      if (!pane || pane.kind !== "leaf" || pane.content !== null) return;
       try {
         const res = await fetch("/api/sessions", {
           method: "POST",
@@ -1315,7 +1360,10 @@ export default function App() {
   const focusedEmptyPane = useMemo(() => {
     if (!root || !focusedPaneId) return null;
     const pane = findPane(root, focusedPaneId);
-    return pane?.kind === "leaf" && !pane.sessionId ? pane : null;
+    // `content === null`, not `!sessionId` — a browser pane must not offer
+    // "Start <agent> in this pane" in the command palette (see
+    // startAgentInFocusedPane's matching guard above).
+    return pane?.kind === "leaf" && pane.content === null ? pane : null;
   }, [root, focusedPaneId]);
 
   // Phase 10 (PARITY #37): every pane in the ACTIVE workspace's own grid
@@ -1799,6 +1847,8 @@ export default function App() {
                     onLaunchMultiple={handleLaunchMultiple}
                     onSplit={handleSplit}
                     onClosePane={handleClosePane}
+                    onOpenBrowser={handleOpenBrowser}
+                    onBrowserNavigate={handleBrowserNavigate}
                     maximizedPaneId={maximizedPaneId}
                     onToggleMaximize={toggleMaximize}
                   />
