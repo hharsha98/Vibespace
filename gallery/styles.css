@@ -5,6 +5,7 @@
   --muted: #8a8a94;
   --accent: #2a6df4;
   --accent-hot: #8ab4f8;
+  --accent-text: #8ab4f8;
   --hairline: rgba(255, 255, 255, 0.1);
   --surface-1: #17171c;
   --ease-ui: cubic-bezier(0.4, 0, 0.2, 1);
@@ -134,7 +135,7 @@ a {
 .eyebrow {
   position: relative;
   margin: 0;
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.16em;
@@ -300,6 +301,10 @@ figure a.shot {
   text-decoration: none;
 }
 
+figure picture {
+  display: block;
+}
+
 figure img {
   width: 100%;
   border-radius: 16px;
@@ -341,7 +346,7 @@ footer code {
   gap: 0.75rem 1.25rem;
   margin: 0.85rem 0 0;
   font-size: 0.8125rem;
-  color: #71717a;
+  color: var(--muted);
 }
 
 .step a {
@@ -362,7 +367,7 @@ footer code {
 }
 
 footer {
-  color: #71717a;
+  color: var(--muted);
   text-align: center;
   padding: 1.5rem var(--gutter) 4rem;
   font-size: 0.8125rem;
