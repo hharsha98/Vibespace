@@ -25,6 +25,10 @@ just answering questions.
 
 ## See it work
 
+A static product gallery (screenshot/GIF walkthrough, not a hosted instance of
+the app) lives at
+**[vibedeck-gallery.pages.dev](https://vibedeck-gallery.pages.dev)**.
+
 ![vibedeck demo — launching a shell and Claude Code side by side, splitting panes, the task board, and settings](./docs/vibedeck-demo.gif)
 
 Recorded from a real session, not a mockup — every pane is a real pty, and
@@ -315,6 +319,8 @@ vibedeck/
 ├── apps/
 │   ├── server/    # Fastify backend (port 4317)
 │   └── web/       # React + Vite frontend (port 5317)
+├── gallery/       # Static product gallery for Cloudflare Pages
+│                  # (https://vibedeck-gallery.pages.dev) — not a hosted app
 └── packages/
     └── shared/    # Types shared between server and web (e.g. the
                     # WebSocket message protocol), so both sides always

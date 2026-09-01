@@ -1,0 +1,9 @@
+{
+  // Cloudflare Pages project for the static product gallery only.
+  // Intended URL: https://vibedeck-gallery.pages.dev
+  // Do not use vibedeck.pages.dev — that name is taken by an unrelated squatter.
+  // This is not a hosted instance of the VibeDeck app (no FastAPI/Next.js deploy).
+  "name": "vibedeck-gallery",
+  "compatibility_date": "2026-09-01",
+  "pages_build_output_dir": ".",
+}
