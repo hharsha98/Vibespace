@@ -1,5 +1,7 @@
 # vibedeck
 
+[![Product gallery](https://img.shields.io/badge/product_gallery-live-2a6df4)](https://vibedeck-gallery.pages.dev)
+
 **vibedeck** is an open-source *agentic development environment* — a home base
 for running multiple AI coding agents (like Claude, Cursor, or Codex) at the
 same time, side by side, instead of juggling them in separate terminal
