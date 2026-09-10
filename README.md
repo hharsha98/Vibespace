@@ -46,13 +46,23 @@ It ends where it started, back on the terminals.
 
 ## Download
 
-**[Get v0.1.2 →](https://github.com/hharsha98/Vibespace/releases/latest)**
+**[Download the latest release →](https://github.com/hharsha98/Vibespace/releases/latest)**
 
 | Platform | File |
 |---|---|
-| macOS (Apple Silicon) | `Vibespace_0.1.2_aarch64.dmg` |
-| Windows | `Vibespace_0.1.2_x64-setup.exe` |
+| macOS (Apple Silicon) | `Vibespace_<version>_aarch64.dmg` |
+| Windows | `Vibespace_<version>_x64-setup.exe` |
 | Linux | `.deb`, `.rpm`, or `.AppImage` |
+
+That link always resolves to the newest published release, and the files
+carry whatever version that is. No version number is hardcoded here on
+purpose: a README that names one goes stale the moment the next release
+ships, and then quietly advertises the wrong version to everyone who
+reads it.
+
+Releases before v0.1.3 were published under this project's old name, so
+their files are called `vibedeck_*` rather than `Vibespace_*`. They still
+install and run; only the filename differs.
 
 Two things to know before you install:
 

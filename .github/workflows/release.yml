@@ -7,8 +7,10 @@ name: Release
 # "Releasing" section for the full story, including what a user launching
 # these installers actually gets).
 #
-# This workflow has never been run (no GitHub Actions runner was available
-# while building this phase — see docs/DESKTOP.md's own note on that).
+# This workflow has since run successfully three times — v0.1.0
+# (2026-08-14), v0.1.1 (2026-08-21), and v0.1.2 (2026-08-21) — after two
+# earlier v0.1.0 attempts failed before it was fixed (see docs/DESKTOP.md's
+# "Releasing" section for the full story).
 # Every step mirrors a command actually run and verified by hand locally
 # (`pnpm --filter @vibespace/desktop run package`, real signed builds
 # against the real updater keypair) EXCEPT the parts only a real CI runner

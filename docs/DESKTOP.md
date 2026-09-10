@@ -496,12 +496,15 @@ relocated copy** — not by checking that the app opens.
   no separate Intel (`x86_64-apple-darwin`) build. Windows/Linux are
   x86_64. Real cross-compilation (e.g. a universal macOS binary, or ARM
   Linux) is out of this phase's scope.
-- **The release workflow itself has never actually run.** It was written
-  against the exact commands verified by hand locally (macOS only, the
-  only platform available while building this phase) and reviewed
-  carefully, but no GitHub Actions runner executed it before this phase
-  shipped — see `.github/workflows/release.yml`'s own top comment and the
-  "Releasing" section below.
+- **Windows and Linux artifacts are CI-built, not hand-verified.** The
+  release workflow has since run successfully three times — v0.1.0
+  (2026-08-14), v0.1.1 (2026-08-21), and v0.1.2 (2026-08-21), after two
+  earlier v0.1.0 attempts failed before it was fixed — so the Windows and
+  Linux legs are no longer untested in principle. But nobody has put the
+  resulting `.exe`/`.deb`/`.rpm`/AppImage on an actual Windows or Linux
+  machine and run them; only that GitHub Actions built them and attached
+  them to the release. See `.github/workflows/release.yml`'s own top
+  comment and the "Releasing" section below.
 - **Auto-update installs still require the same system Node the base app
   does.** The updater replaces the `.app`/installer itself; it doesn't
   change what the newly-installed version needs to run.
@@ -520,11 +523,14 @@ relocated copy** — not by checking that the app opens.
 
 ## Releasing
 
-How to actually cut a release once `.github/workflows/release.yml` has run
-at least once successfully (it hasn't yet — see "Known limitations" above):
+How to cut a release. `.github/workflows/release.yml` has already run
+successfully three times — v0.1.0, v0.1.1, and v0.1.2 (see "Known
+limitations" above for the exact dates and the two failed attempts before
+it first worked) — so what follows is the exercised process, not a
+hypothetical one:
 
 1. **Bump the version.** `apps/desktop/src-tauri/tauri.conf.json`'s
-   top-level `"version"` field (currently `"0.0.0"`) is what the updater
+   top-level `"version"` field (currently `"0.1.3"`) is what the updater
    compares against — it needs to actually change for `check()` to ever
    report a newer version available. Bump `apps/desktop/package.json`'s
    version too, for consistency (not read by the updater itself, but

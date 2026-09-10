@@ -1,6 +1,6 @@
 [package]
 name = "vibespace-desktop"
-version = "0.1.2"
+version = "0.1.3"
 description = "vibespace — native desktop wrapper (Phase 11a, PARITY #50)"
 edition = "2021"
 # Not published; this crate only ever builds into the .app bundle.
