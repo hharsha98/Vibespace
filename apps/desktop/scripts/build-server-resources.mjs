@@ -361,6 +361,23 @@ for (const dir of [SERVER_BUNDLE_DIR, WEB_RESOURCE_DIR]) {
   writeFileSync(join(dir, ".gitkeep"), "");
 }
 
+// 8. Record the Node ABI this bundle's native modules were built for.
+//
+//    `pnpm deploy` in step 3 above runs under THIS SAME `node` process (the
+//    one executing this very script) — so `process.versions.modules` here is
+//    exactly the NODE_MODULE_VERSION that `better-sqlite3`'s prebuilt/
+//    compiled binding was built against. `apps/desktop/src-tauri/src/
+//    main.rs`'s `resolve_node_dir` reads this file back at launch time to
+//    pick a `node` on the user's machine whose ABI actually matches this
+//    bundle, instead of trusting the first `node` it happens to find on
+//    PATH or in its fallback locations — a real machine can easily have
+//    several Node majors installed (a newer one from Homebrew, an older one
+//    from a version manager), and loading a native `.node` addon built for
+//    one ABI under a different one fails hard with `ERR_DLOPEN_FAILED`
+//    rather than degrading gracefully.
+writeFileSync(join(SERVER_BUNDLE_DIR, ".node-abi"), `${process.versions.modules}\n`);
+console.log(`  recorded Node ABI ${process.versions.modules} to ${join(SERVER_BUNDLE_DIR, ".node-abi")}`);
+
 console.log("--- server bundle ready ---");
 console.log(`  ${SERVER_BUNDLE_DIR}`);
 console.log(`  ${WEB_RESOURCE_DIR}`);

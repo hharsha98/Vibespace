@@ -71,6 +71,34 @@ requirement remains:
    ~100MB+ per-platform Node binary) Phase 11b didn't take on; see
    "Relocatable installers" below for exactly what Phase 11b DID fix.
 
+   **It has to be the right Node, not just any Node.** The bundle's
+   `better-sqlite3` and `node-pty` are compiled native addons, and a
+   compiled addon only loads under the exact Node ABI
+   (`NODE_MODULE_VERSION`) it was built against. Machines routinely have
+   more than one Node major installed at once, and the app has no way to
+   guess which is "yours" — so `build-server-resources.mjs` records the
+   building Node's ABI into `server-bundle/.node-abi`, and
+   `resolve_node_dir` probes each candidate (`node -p
+   "process.versions.modules"`) and picks the first one that **matches**,
+   rather than the first that merely exists.
+
+   This is not hypothetical — it was found the hard way. A Homebrew
+   upgrade moved `/opt/homebrew/bin/node` (the first entry in the
+   fallback list) to Node 26, ABI 147, while the bundle had been built
+   against Node 22, ABI 127, still installed at `~/.local/bin`. The app
+   picked the Homebrew one, the server died instantly with
+   `ERR_DLOPEN_FAILED` before printing a single log line, and from the
+   outside it just looked like "the app won't connect". Note the
+   consequence for anyone trying to fix this by reinstalling:
+   **rebuilding alone does not help** if the rebuild runs under a
+   different Node than a Finder launch resolves to — that moves the
+   mismatch rather than removing it.
+
+   If no candidate matches, the app deliberately still launches the first
+   Node it found rather than refusing outright, so the error page shows
+   the real `ERR_DLOPEN_FAILED` from the server's own stderr instead of a
+   vaguer "couldn't find Node".
+
 Only `cargo tauri dev` (running this crate straight from a checkout, no
 packaging step) still requires the checkout to exist — see "Relocatable
 installers" for why that's fine, not an oversight.
@@ -256,8 +284,10 @@ outcomes:
   status text is replaced with the actual OS error and a pointer to this
   doc.
 - **The server exited before printing its ready line, or 20 seconds passed
-  without it** (most likely cause: Node not found — see "What a user
-  actually needs installed"): same error page, showing the last lines the
+  without it** (two likely causes, both covered in "What a user actually
+  needs installed": Node not found at all, or — subtler — a Node found
+  whose ABI doesn't match the bundle's native addons, which dies with
+  `ERR_DLOPEN_FAILED`): same error page, showing the last lines the
   server itself printed to stderr, so the actual failure (not just "it
   didn't work") is visible.
 

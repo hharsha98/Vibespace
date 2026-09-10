@@ -64,7 +64,7 @@
 use std::collections::VecDeque;
 use std::env;
 use std::io::{BufRead, BufReader};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStderr, ChildStdout, Command, Stdio};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
@@ -141,6 +141,45 @@ fn repo_root() -> PathBuf {
         )
 }
 
+/// Runs `node -p "process.versions.modules"` against one candidate `node`
+/// binary and returns its ABI (Node's `NODE_MODULE_VERSION` — the number
+/// that has to match between a native `.node` addon and the runtime
+/// `dlopen`-ing it) as a trimmed string, e.g. `"127"`. Used by
+/// `resolve_node_dir` below to find a `node` that can actually load the
+/// bundle's prebuilt `better-sqlite3`/`node-pty` bindings, not merely a
+/// `node` that happens to exist. A non-zero exit (a `node` too old to
+/// understand `-p`, or one that errored for some other reason), a failure
+/// to even spawn it (a broken symlink, a permissions problem), or stdout
+/// that isn't valid UTF-8 all collapse to `None` — any of those just means
+/// this one candidate can't be probed, not that probing itself is broken,
+/// so the caller is expected to move on to the next candidate rather than
+/// treat `None` as fatal.
+fn probe_node_abi(node_bin: &Path) -> Option<String> {
+    let output = Command::new(node_bin)
+        .arg("-p")
+        .arg("process.versions.modules")
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8(output.stdout).ok().map(|s| s.trim().to_string())
+}
+
+/// Reads back the ABI `build-server-resources.mjs` recorded for a bundled
+/// server's native modules — see that script's own comment on the step
+/// that writes `<server_dir>/.node-abi` for why `process.versions.modules`
+/// at BUILD time is the right value to have stashed here. A missing or
+/// unreadable file (an older bundle built before this file existed, or —
+/// more commonly — a `Dev` source, which has no bundle and therefore no
+/// `.node-abi` at all) returns `None`, which `resolve_node_dir` treats as
+/// "no ABI requirement to satisfy" rather than an error.
+fn required_node_abi(server_dir: &Path) -> Option<String> {
+    std::fs::read_to_string(server_dir.join(".node-abi"))
+        .ok()
+        .map(|s| s.trim().to_string())
+}
+
 /// Finds a directory containing an executable named `node`, trying (in
 /// order): every directory already on `PATH`, then a short list of common
 /// fixed install locations. The second half exists specifically for the
@@ -151,6 +190,46 @@ fn repo_root() -> PathBuf {
 /// (step 1 alone finds it), which is exactly why this bug is easy to miss
 /// in dev and only shows up in the packaged .app.
 ///
+/// # Why "the first `node` that exists" isn't good enough
+///
+/// Proven by controlled experiment while diagnosing a real crash: a
+/// machine can easily have MULTIPLE Node majors installed under different
+/// ABIs at once. On the machine this bug was diagnosed on, `/opt/homebrew/
+/// bin` — the very FIRST entry in the fallback list below — held Node 26
+/// (`NODE_MODULE_VERSION` 147), while `$HOME/.local/bin`, several entries
+/// later, held Node 22 (`NODE_MODULE_VERSION` 127) — the ABI the bundled
+/// `better-sqlite3` binding was actually compiled for (recorded in
+/// `<server_dir>/.node-abi` by `build-server-resources.mjs`, read back by
+/// `required_node_abi` above). Handing the server to the wrong-ABI Node
+/// doesn't produce a slow-but-working server or a friendly warning:
+/// `dlopen` on an ABI-127 `.node` binding under an ABI-147 runtime fails
+/// immediately with `ERR_DLOPEN_FAILED`, before the server prints a single
+/// log line — identical bundle, identical env, only the Node major
+/// differs, confirmed by hand running both side by side. From a
+/// Finder launch this reads as "vibespace is just broken", not "wrong Node
+/// version," because the real cause never reaches anywhere the user would
+/// see it. "First `node` that exists" can walk straight past the one
+/// `node` that would have worked to reach one that can't — so this
+/// function now probes candidates' ABIs (via `probe_node_abi`) and prefers
+/// one that actually matches, when there's an ABI to match against at all.
+///
+/// `required_abi` comes from `required_node_abi(server_dir)` for the
+/// `Bundled` source (see `spawn_server`) and is `None` for `Dev` — a plain
+/// checkout has no bundle and no `.node-abi`, so there is nothing to match
+/// and ABI selection would be meaningless there; any `node` on PATH is
+/// exactly what a bare `tsx` invocation would have found anyway.
+///
+/// When `required_abi` is `None`, OR none of the candidates probe to a
+/// matching ABI, this deliberately falls back to the OLD, pre-ABI-aware
+/// behavior: the first candidate in the list, full stop, no ABI check.
+/// That fallback is NOT a bug — returning `None` outright when nothing
+/// matches would make `spawn_server` fail to find Node at all and show a
+/// vague "couldn't find Node" message, when the more honest outcome is to
+/// still hand the server SOME `node` and let it fail exactly as it does
+/// today: a real `ERR_DLOPEN_FAILED` on stderr, flowing through
+/// `watch_server`'s `ServerStartup::Exited` path onto the error page —
+/// strictly more diagnosable than this function silently giving up.
+///
 /// This list is NOT exhaustive — nvm's per-version directories in
 /// particular aren't covered, since there's no single fixed path to check
 /// (it depends which version is "current"). See docs/DESKTOP.md's
@@ -158,11 +237,13 @@ fn repo_root() -> PathBuf {
 /// Node lives somewhere this function doesn't check, the app will show a
 /// clear error (via `spawn_server`'s `Err` branch in `main`'s `.setup`)
 /// rather than fail silently — but it also won't have found Node.
-fn resolve_node_dir() -> Option<PathBuf> {
+fn resolve_node_dir(required_abi: Option<&str>) -> Option<PathBuf> {
+    let mut candidates: Vec<PathBuf> = Vec::new();
+
     if let Some(path_var) = env::var_os("PATH") {
         for dir in env::split_paths(&path_var) {
             if dir.join("node").is_file() {
-                return Some(dir);
+                candidates.push(dir);
             }
         }
     }
@@ -178,7 +259,24 @@ fn resolve_node_dir() -> Option<PathBuf> {
         fallback_candidates.push(PathBuf::from(&home).join(".local/bin"));
         fallback_candidates.push(PathBuf::from(&home).join(".volta/bin"));
     }
-    fallback_candidates.into_iter().find(|dir| dir.join("node").is_file())
+    candidates.extend(fallback_candidates.into_iter().filter(|dir| dir.join("node").is_file()));
+
+    if let Some(required_abi) = required_abi {
+        // Only probe directories already confirmed to contain a `node`
+        // file — spawning `node -p ...` is cheap, but there's no reason to
+        // pay for it against a candidate that can't possibly be the right
+        // answer, and this keeps the number of subprocesses spawned here
+        // tiny (bounded by how many `node`s exist on the machine, not by
+        // PATH length).
+        if let Some(dir) = candidates
+            .iter()
+            .find(|dir| probe_node_abi(&dir.join("node")).as_deref() == Some(required_abi))
+        {
+            return Some(dir.clone());
+        }
+    }
+
+    candidates.into_iter().next()
 }
 
 /// Where `spawn_server` should run the vibespace server FROM — resolved once
@@ -252,8 +350,11 @@ fn spawn_server(source: &ServerSource) -> std::io::Result<Child> {
             // sidesteps any ambiguity about whether Rust's `Command` PATH
             // search honours an explicitly-set child env var at spawn time
             // versus the parent process's own inherited PATH — this way
-            // there's nothing to be ambiguous about.
-            let node_bin = resolve_node_dir()
+            // there's nothing to be ambiguous about. Also unlike the Dev
+            // path, this `node` has to match this bundle's ABI, not merely
+            // exist — see `resolve_node_dir`'s doc comment for the crash
+            // that motivated that requirement.
+            let node_bin = resolve_node_dir(required_node_abi(server_dir).as_deref())
                 .map(|dir| dir.join("node"))
                 .unwrap_or_else(|| PathBuf::from("node"));
 
@@ -289,8 +390,11 @@ fn spawn_server(source: &ServerSource) -> std::io::Result<Child> {
             // shim). So what actually determines whether Node gets found on
             // a Finder-launched .app is whether the PATH override below
             // succeeds — NOT whether `node` itself is directly reachable
-            // some other way.
-            if let Some(node_dir) = resolve_node_dir() {
+            // some other way. `None` here (no ABI to require): a `Dev`
+            // checkout has no bundle and therefore no `.node-abi` to read
+            // — see `resolve_node_dir`'s doc comment for why that makes
+            // ABI selection meaningless in this branch.
+            if let Some(node_dir) = resolve_node_dir(None) {
                 let existing_path = env::var("PATH").unwrap_or_default();
                 command.env("PATH", format!("{}:{existing_path}", node_dir.display()));
             }
