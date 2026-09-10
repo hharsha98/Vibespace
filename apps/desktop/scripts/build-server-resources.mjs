@@ -103,6 +103,7 @@ import { execSync } from "node:child_process";
 // scripts/fix-native-perms.mjs already established, since this repo's
 // eslint config doesn't enable Node's global environment.
 import console from "node:console";
+import process from "node:process";
 import {
   existsSync,
   mkdirSync,
