@@ -8,17 +8,24 @@
  *
  * The list mirrors BridgeSpace v3.2.1's nine-section Settings sidebar
  * (Appearance · Terminal · Shortcuts · Agents · Accounts · API Keys ·
- * Billing · Notifications · About), with one addition: `history`. Session
- * recovery has no BridgeSpace equivalent slot, but it's a real vibespace
- * feature that already lived inside Settings.tsx before this rail existed
- * (see History.tsx's own top comment) — dropping it to make the count line
- * up with BridgeSpace's nine would remove working functionality for the
- * sake of parity theatre, so it stays, placed next to Agents (its existing
- * neighbour on the old single-scroll page).
+ * Billing · Notifications · About), with two additions: `history` and
+ * `setup`. Session recovery has no BridgeSpace equivalent slot, but it's a
+ * real vibespace feature that already lived inside Settings.tsx before this
+ * rail existed (see History.tsx's own top comment) — dropping it to make
+ * the count line up with BridgeSpace's nine would remove working
+ * functionality for the sake of parity theatre, so it stays, placed next to
+ * Agents (its existing neighbour on the old single-scroll page). `setup`
+ * exists for the same reason as any other real vibespace need, not for
+ * parity: a person installing from GitHub hits real first-run requirements
+ * (Node version, Gatekeeper, agent CLIs, platform support) that used to
+ * live only in README.md — see setupRequirements.ts's own top comment. It's
+ * placed first because it's what a brand-new user needs before anything
+ * else here applies.
  */
 import { readWithLegacyFallback } from "./legacyStorage.js";
 
 export type SettingsSectionId =
+  | "setup"
   | "appearance"
   | "terminal"
   | "shortcuts"
@@ -37,6 +44,7 @@ export interface SettingsSectionMeta {
 }
 
 export const SETTINGS_SECTIONS: readonly SettingsSectionMeta[] = [
+  { id: "setup", label: "Setup" },
   { id: "appearance", label: "Appearance" },
   { id: "terminal", label: "Terminal" },
   { id: "shortcuts", label: "Shortcuts" },

@@ -39,10 +39,11 @@ afterEach(() => {
 });
 
 describe("SETTINGS_SECTIONS", () => {
-  it("lists BridgeSpace's nine sections plus History, each with a unique id", () => {
+  it("lists BridgeSpace's nine sections plus History and Setup, each with a unique id", () => {
     const ids = SETTINGS_SECTIONS.map((s) => s.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids).toEqual([
+      "setup",
       "appearance",
       "terminal",
       "shortcuts",

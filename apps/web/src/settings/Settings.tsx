@@ -32,10 +32,11 @@
  *
  * BridgeSpace's nine sections (Appearance · Terminal · Shortcuts · Agents ·
  * Accounts · API Keys · Billing · Notifications · About) are all here, plus
- * one addition — History (session recovery) — which has no BridgeSpace
- * equivalent slot but is a real vibespace feature that isn't getting dropped
- * for the sake of matching a competitor's section count; see sections.ts's
- * own comment.
+ * two additions with no BridgeSpace equivalent that aren't getting dropped
+ * for the sake of matching a competitor's section count: History (session
+ * recovery) and Setup, the first-run requirements a new GitHub install
+ * needs and previously only found in README.md; see sections.ts's own
+ * comment and setupRequirements.ts's.
  *
  * --- Persistence ---
  * Every preference rendered here is persisted the same way: theme via
@@ -81,6 +82,7 @@ import {
 } from "./notificationPrefs.js";
 import { loginNoteFor } from "./accounts.js";
 import { BILLING_PARAGRAPHS } from "./billingContent.js";
+import { SETUP_REQUIREMENTS } from "./setupRequirements.js";
 
 export interface SettingsProps {
   themeId: string;
@@ -161,6 +163,7 @@ export default function Settings({
         <div style={innerStyle}>
           <h2 style={pageTitleStyle}>{activeMeta.label}</h2>
 
+          {activeSection === "setup" && <SetupSection />}
           {activeSection === "appearance" && (
             <AppearanceSection themeId={themeId} onThemeChange={onThemeChange} />
           )}
@@ -180,6 +183,39 @@ export default function Settings({
         </div>
       </div>
     </div>
+  );
+}
+
+// --- Setup (new: first-run requirements a GitHub install needs — see
+// setupRequirements.ts's own top comment for why this lives here and not
+// only in README.md) --------------------------------------------------
+
+function SetupSection() {
+  return (
+    <>
+      <p style={sectionHintStyle}>
+        The four things a fresh install needs before Vibespace works the way it's supposed to — the same ground
+        README.md covers, kept here too so it's not something you only find by leaving the app.
+      </p>
+      <div style={{ display: "flex", flexDirection: "column", gap: SPACE.sm }}>
+        {SETUP_REQUIREMENTS.map((requirement) => (
+          <div key={requirement.id} style={setupItemStyle}>
+            <div style={setupTitleStyle}>{requirement.title}</div>
+            <p style={setupBodyStyle}>
+              {requirement.body}
+              {requirement.href && (
+                <>
+                  {" "}
+                  <a href={requirement.href} target="_blank" rel="noreferrer" style={linkStyle}>
+                    {requirement.linkLabel}
+                  </a>
+                </>
+              )}
+            </p>
+          </div>
+        ))}
+      </div>
+    </>
   );
 }
 
@@ -703,6 +739,27 @@ const cellKeyStyle: CSSProperties = {
   color: "var(--vd-text-muted)",
   textAlign: "right",
   whiteSpace: "nowrap",
+};
+
+const setupItemStyle: CSSProperties = {
+  padding: SPACE.sm,
+  background: "var(--vd-surface-raised)",
+  border: "1px solid var(--vd-border)",
+  borderRadius: RADIUS.sm,
+};
+
+const setupTitleStyle: CSSProperties = {
+  fontSize: FONT.body,
+  fontWeight: 600,
+  color: "var(--vd-text)",
+  marginBottom: 4,
+};
+
+const setupBodyStyle: CSSProperties = {
+  fontSize: FONT.meta,
+  color: "var(--vd-text-muted)",
+  lineHeight: 1.5,
+  margin: 0,
 };
 
 const accountRowStyle: CSSProperties = {
