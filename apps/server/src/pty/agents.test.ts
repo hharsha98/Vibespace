@@ -28,14 +28,23 @@ describe("resolveAgent", () => {
 
   // BridgeSpace-parity agents (Phase: 10-agent picker). Each resolves to a
   // static command the same way the original three do — see agents.ts's
-  // INSTALL_HINTS comment for how confident we are in each binary name.
+  // INSTALL_HINTS comment for the source behind each binary name.
+  //
+  // These names are asserted literally, rather than just shape-checked, for
+  // a specific reason: detection looks for `command` on PATH, so a name
+  // that is merely plausible instead of correct makes that agent
+  // permanently undetectable — `available: false` even for a user who has
+  // the CLI installed and open in another window. That is exactly what had
+  // happened to `grok` (asserted `grok-build`, really `grok`) and
+  // `antigravity` (asserted `antigravity`, really `agy`) until each was
+  // checked against its vendor's own documentation.
   it("resolves the newly-added agents to their static command/args", () => {
     expect(resolveAgent("droid")).toEqual({ command: "droid", args: [] });
     expect(resolveAgent("deepseek")).toEqual({ command: "deepcode", args: [] });
-    expect(resolveAgent("antigravity")).toEqual({ command: "antigravity", args: [] });
+    expect(resolveAgent("antigravity")).toEqual({ command: "agy", args: [] });
     expect(resolveAgent("gemini")).toEqual({ command: "gemini", args: [] });
     expect(resolveAgent("opencode")).toEqual({ command: "opencode", args: [] });
-    expect(resolveAgent("grok")).toEqual({ command: "grok-build", args: [] });
+    expect(resolveAgent("grok")).toEqual({ command: "grok", args: [] });
   });
 });
 
@@ -89,5 +98,21 @@ describe("INSTALL_HINTS", () => {
         expect(hint.length).toBeGreaterThan(0);
       }
     }
+  });
+
+  // Regression guard for a real release-QA finding: `antigravity` shipped
+  // with a null hint while every other installable agent had one, so a user
+  // without it saw a bare "Not installed" and no way forward. `claude` and
+  // `cursor-agent` had the same hole and it went unnoticed for longer,
+  // because the development machine had both installed — they always
+  // rendered as available, so their missing hints never surfaced.
+  //
+  // Pinning the exact set (rather than asserting "antigravity is non-null")
+  // is deliberate: it makes adding an eleventh agent with no install hint a
+  // test failure that has to be argued with, instead of a silent dead end
+  // that only a new user on a clean machine would ever discover.
+  it("shell is the only agent without an install hint", () => {
+    const withoutHint = AGENT_IDS.filter((id) => INSTALL_HINTS[id] === null);
+    expect(withoutHint).toEqual(["shell"]);
   });
 });
