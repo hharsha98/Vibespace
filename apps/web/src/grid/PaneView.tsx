@@ -1221,7 +1221,13 @@ function AgentRow({
           needs its own full-width line to stay legible instead of fighting
           the name for space on one cramped line — verified against a real
           browser render (docs/DESIGN.md-style visual check), where a single
-          line truncated names like "DeepSeek Harness" down to "DeepS…". */}
+          line truncated the longest name of the day, "DeepSeek Harness",
+          down to "DeepS…". That agent is called "Deep Code" now — the name
+          DeepSeek's own docs use — so nothing in the picker is quite that
+          long today. The constraint has not gone away though, it has got
+          broader: every agent carries an install hint now, so EVERY
+          unavailable row renders two lines, not just the longest-named
+          one. */}
       <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 1 }}>
         <span
           style={{

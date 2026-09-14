@@ -105,43 +105,59 @@ export async function detectAllAgents(): Promise<Record<AgentId, boolean>> {
  *  - gemini (Google): HIGH confidence. The official google-gemini/gemini-cli
  *    GitHub repo and the `@google/gemini-cli` npm package both document
  *    `npm install -g @google/gemini-cli` and the `gemini` command.
- *  - opencode (sst): MEDIUM-HIGH confidence. `opencode-ai` is a real,
- *    actively-published npm package; secondary sources agree its binary is
- *    `opencode`, but the npm package page itself has no README to confirm
- *    firsthand.
- *  - grok (xAI "Grok Build"): MEDIUM confidence. x.ai's own announcement
- *    page (x.ai/news/grok-build-cli) shows `grok-build` as the prompt in
- *    its terminal screenshots and documents `curl -fsSL
- *    https://x.ai/cli/install.sh | bash` as the install method — no npm
- *    package is published by xAI itself. An unofficial `@xai-official/grok`
- *    npm package with a `grok` binary also turned up in search, but isn't
- *    xAI's own, so it wasn't used here.
- *  - deepseek ("DeepSeek Harness" in the picker label, per BridgeSpace's
- *    photo): LOW confidence. No product literally named "DeepSeek Harness"
- *    could be confirmed against an authoritative source — search results
- *    for it (dsh, @deepseek-ai/dsh, a "DSH Plugin Store") read like
- *    low-quality/SEO content, not documentation. DeepSeek's OWN docs
- *    (api-docs.deepseek.com) instead document a real, differently-named
- *    tool, "Deep Code": `npm install -g @vegamo/deepcode-cli`, binary
- *    `deepcode`. That's used here as the best available stand-in, but it is
- *    a genuine guess about what BridgeSpace's "DeepSeek Harness" entry
- *    actually launches, not a confirmed match.
- *  - antigravity (Google): LOW confidence. Google's own antigravity.google
- *    marketing page confirms an "Antigravity CLI" product exists ("the
- *    lightweight, fast, terminal-first surface to work with Antigravity
- *    agents") but the fetched page carries no code snippets — no concrete
- *    binary name or install command could be confirmed from it. `null`
- *    below (no install hint) reflects that; the `antigravity` command name
- *    in AGENT_SPECS is a guess following the same "binary == short product
- *    name" pattern the confirmed entries above all follow.
+ *  - opencode (sst): HIGH confidence (was MEDIUM-HIGH). Rather than trust
+ *    the secondary sources the earlier note relied on, npm's registry
+ *    metadata for `opencode-ai` was read directly: it declares exactly one
+ *    bin, `{"opencode": ...}`. That is the name npm links onto PATH, which
+ *    is exactly what detection below looks for.
+ *  - grok (xAI "Grok Build"): HIGH confidence, and the command was WRONG
+ *    until now. The earlier note read `grok-build` off the interactive
+ *    prompt in x.ai's announcement screenshots — but a TUI's prompt string
+ *    is not its binary name, and here the two differ. xai-org/grok-build's
+ *    own README titles itself "Grok Build (`grok`)", verifies installs with
+ *    `grok --version`, and says plainly: "the binary artifact is named
+ *    `xai-grok-pager`; official installs ship it as `grok`". The install
+ *    hint (the x.ai curl script) was right and is unchanged.
+ *  - deepseek: HIGH confidence (was LOW), and the command was right all
+ *    along. DeepSeek's OWN API docs (api-docs.deepseek.com) carry a "Deep
+ *    Code" integration page documenting `npm install -g
+ *    @vegamo/deepcode-cli`, verification via `deepcode --version`, and
+ *    launching with `deepcode`; npm's registry metadata agrees, declaring
+ *    `{"deepcode": "cli.js"}`. What was actually wrong was the DISPLAY
+ *    name: "DeepSeek Harness" was copied from BridgeSpace's photographed
+ *    picker and names no real product. AGENT_SPECS now says "Deep Code".
+ *  - antigravity (Google): HIGH confidence, and the command was WRONG
+ *    until now. The earlier note could find no binary name and guessed
+ *    `antigravity` from the "binary == short product name" pattern.
+ *    Google's CLI docs (antigravity.google/docs/cli/getting-started) give
+ *    the real answer: the installer registers `agy` (at `~/.local/bin/agy`
+ *    on macOS/Linux) and the TUI launches with `agy`.
+ *
+ * Worth stating plainly, because it is the reason this note was rewritten
+ * rather than merely softened: a wrong `command` is not a cosmetic
+ * documentation problem. Detection works by looking for that exact name on
+ * PATH, so `grok` and `antigravity` could never report `available: true` —
+ * not even for a user who had installed the real CLI and was looking right
+ * at it. Two of the ten lanes were silently dead rather than simply
+ * unverified, and no amount of hedging in a comment would have found that;
+ * checking the vendors' own docs did.
  */
 export const INSTALL_HINTS: Record<AgentId, string | null> = {
-  claude: null,
-  "cursor-agent": null,
+  // These two were `null` for a long time, which looked harmless only
+  // because the machine this was developed on happened to have both
+  // installed — so they always rendered as "available" and the missing
+  // hint never showed. On a fresh Mac they are `available: false` like any
+  // other uninstalled CLI, and the picker then offers "Not installed" with
+  // no way forward, which is the single least helpful thing it could say.
+  // Both verified: npm's registry metadata for `@anthropic-ai/claude-code`
+  // declares bin {"claude": ...}, and Cursor's own CLI installation docs
+  // (cursor.com/docs/cli/installation) publish the curl script below.
+  claude: "npm install -g @anthropic-ai/claude-code",
+  "cursor-agent": "curl https://cursor.com/install -fsSL | bash",
   codex: "npm install -g @openai/codex",
   droid: "npm install -g droid",
   deepseek: "npm install -g @vegamo/deepcode-cli",
-  antigravity: null,
+  antigravity: "curl -fsSL https://antigravity.google/cli/install.sh | bash",
   gemini: "npm install -g @google/gemini-cli",
   opencode: "npm install -g opencode-ai",
   grok: "curl -fsSL https://x.ai/cli/install.sh | bash",

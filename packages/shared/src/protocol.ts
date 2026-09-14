@@ -230,37 +230,48 @@ export const AGENT_SPECS: Record<AgentId, AgentSpec> = {
   // own quickstart page, which documents `npm install -g droid` and shows
   // the `droid` command being run directly.
   droid: { id: "droid", displayName: "Droid", command: "droid", args: [] },
-  // Labelled "DeepSeek Harness" to match BridgeSpace's photographed picker,
-  // but no product by that exact name could be confirmed against an
-  // authoritative source — see agents.ts's INSTALL_HINTS comment for what
-  // WAS confirmed (DeepSeek's own docs describe a different, differently-
-  // named tool, "Deep Code", binary `deepcode`) and why that's the best
-  // available guess here. LOW confidence.
-  deepseek: { id: "deepseek", displayName: "DeepSeek Harness", command: "deepcode", args: [] },
-  // Google's agentic editor/CLI. Its official marketing site confirms an
-  // "Antigravity CLI" product exists but publishes no concrete binary name
-  // or install command anywhere fetchable. `antigravity` is a guess
-  // following the same "binary == short product name" convention every
-  // other confirmed entry here follows (droid, gemini, opencode). LOW
-  // confidence — see agents.ts for detail.
-  antigravity: { id: "antigravity", displayName: "Antigravity", command: "antigravity", args: [] },
+  // DeepSeek's terminal agent. HIGH confidence — this was previously
+  // labelled "DeepSeek Harness" (copied from BridgeSpace's photographed
+  // picker) and carried a LOW-confidence note, but DeepSeek's OWN API docs
+  // settle it: the product is called "Deep Code", installs with
+  // `npm install -g @vegamo/deepcode-cli`, and launches as `deepcode`.
+  // npm's registry metadata for that package agrees, declaring exactly one
+  // bin: {"deepcode": "cli.js"}. So the command was right all along; only
+  // the display name was invented. It now matches what the vendor actually
+  // calls it, because a picker entry naming a product that does not exist
+  // is worse than one naming a product a user can go and find.
+  deepseek: { id: "deepseek", displayName: "Deep Code", command: "deepcode", args: [] },
+  // Google's terminal agent. HIGH confidence, and a CORRECTED command:
+  // this used to guess `antigravity`, following the "binary == short
+  // product name" convention the other entries follow. The guess was
+  // wrong, and wrong in the way that matters most — Google's own CLI docs
+  // (antigravity.google/docs/cli/getting-started) install the binary as
+  // `agy`, to `~/.local/bin/agy`, and launch it as `agy`. Detection works
+  // by looking for `command` on PATH, so under the old name this lane
+  // could never report `available: true` even for someone who HAD
+  // installed the CLI: it was permanently, silently broken rather than
+  // merely unverified.
+  antigravity: { id: "antigravity", displayName: "Antigravity", command: "agy", args: [] },
   // Google's Gemini CLI. HIGH confidence — confirmed against the official
   // google-gemini/gemini-cli GitHub repo and npm's `@google/gemini-cli`,
   // both of which document the `gemini` command.
   gemini: { id: "gemini", displayName: "Gemini CLI", command: "gemini", args: [] },
-  // sst/opencode. MEDIUM-HIGH confidence — the `opencode-ai` npm package
-  // exists and is actively published; multiple secondary sources agree the
-  // installed binary is `opencode`, but npm's own package page carries no
-  // README to confirm firsthand.
+  // sst/opencode. HIGH confidence — upgraded from MEDIUM-HIGH: rather than
+  // trusting secondary sources, npm's registry metadata for `opencode-ai`
+  // was read directly, and it declares exactly one bin, {"opencode": ...}.
+  // That is the name npm links onto PATH, which is precisely what
+  // detection looks for.
   opencode: { id: "opencode", displayName: "OpenCode", command: "opencode", args: [] },
-  // xAI's terminal coding agent. MEDIUM confidence — x.ai's own
-  // announcement page (x.ai/news/grok-build-cli) shows `grok-build` as the
-  // interactive prompt in its terminal screenshots and documents a curl
-  // installer, not an npm package; a `grok` binary via an unofficial/
-  // third-party npm package also turned up in search but isn't the
-  // x.ai-published one, so `grok-build` (matching the official source) was
-  // chosen over it.
-  grok: { id: "grok", displayName: "Grok Build", command: "grok-build", args: [] },
+  // xAI's terminal coding agent. HIGH confidence, and a CORRECTED command:
+  // this used to be `grok-build`, read off the interactive prompt shown in
+  // x.ai's announcement screenshots — but a TUI's prompt string is not its
+  // binary name, and here they differ. xai-org/grok-build's own README
+  // titles itself "Grok Build (`grok`)", verifies the install with
+  // `grok --version`, and states outright that "the binary artifact is
+  // named `xai-grok-pager`; official installs ship it as `grok`". Same
+  // failure mode as `antigravity` above: the old name meant this lane
+  // could never detect a real installation.
+  grok: { id: "grok", displayName: "Grok Build", command: "grok", args: [] },
   // Renamed from "Shell" to "Terminal" to match BridgeSpace's picker label
   // — same command/args (resolved from $SHELL at request time; see
   // agents.ts's resolveAgent), purely a display-name change.
