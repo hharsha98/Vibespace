@@ -156,7 +156,7 @@ young project moving quickly; expect rough edges.
       (Claude Code, cursor-agent, Codex, or a plain shell), and save a layout
       per project so it comes back when you reopen it.
 - [x] **Phase 4 — Keyboard-first and themes**: drive the whole app without a
-      mouse, plus 26 dark-first colour themes.
+      mouse, plus 30 dark-first colour themes.
 - [x] **Phase 4.5 — The workroom layout**: a three-column shell (workspace
       rail, pane grid, right dock) and a design token system — see
       [docs/DESIGN.md](./docs/DESIGN.md).
