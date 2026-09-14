@@ -168,11 +168,7 @@ Legend: ✅ done · 🟡 partial · ⛔ not started · 🚫 not possible as spec
 
 ## Remaining work, in order
 
-Phases 1–9.5 are done. Everything below is what is genuinely left.
-
-**Phase 10 — Skills** (#37). Server done — see `docs/SKILLS.md`. What's
-left is the web UI: browsing the skill catalog and dragging one onto a
-running pane (the REST/MCP surface it would call already exists).
+Phases 1–10 are done. Everything below is what is genuinely left.
 
 **Phase 11 — Desktop** (#50–52). Tauri 2 (11a), relocatable installers and
 auto-updates (11b) — see `docs/DESKTOP.md`. Also closes #48, because a
