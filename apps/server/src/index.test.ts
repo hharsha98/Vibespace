@@ -228,6 +228,72 @@ describe("session REST endpoints", () => {
     expect(response.statusCode).toBe(400);
     await app.close();
   });
+
+  // Orphan-session DX fix: a session created with a workspaceId but no
+  // paneId spawns and appears in GET /api/sessions like any other, but
+  // nothing binds it to a layout leaf — the Terminals grid has no way to
+  // know it exists, and (per pty/restore.ts) it can never be restored into
+  // a pane after a server restart either. The route can't reject this
+  // outright (board/swarm dispatch both legitimately omit paneId), so it
+  // warns instead.
+  it(
+    "POST /api/sessions with a workspaceId but no paneId returns a warning",
+    async () => {
+      const app = buildApp();
+      const projectDir = mkdtempSync(join(tmpdir(), "vibespace-no-pane-warning-"));
+
+      const workspaceResponse = await app.inject({
+        method: "POST",
+        url: "/api/workspaces",
+        payload: { name: "no-pane-test", rootPath: projectDir },
+      });
+      expect(workspaceResponse.statusCode).toBe(201);
+      const workspace = workspaceResponse.json() as { id: string };
+
+      const sessionResponse = await app.inject({
+        method: "POST",
+        url: "/api/sessions",
+        payload: { agent: "shell", workspaceId: workspace.id },
+      });
+      expect(sessionResponse.statusCode).toBe(201);
+      const info = sessionResponse.json() as { warning?: string };
+      expect(info.warning).toEqual(expect.any(String));
+      expect(info.warning).toMatch(/paneId/);
+
+      rmSync(projectDir, { recursive: true, force: true });
+      await app.close();
+    },
+    10_000
+  );
+
+  it(
+    "POST /api/sessions with a workspaceId AND a paneId returns no warning",
+    async () => {
+      const app = buildApp();
+      const projectDir = mkdtempSync(join(tmpdir(), "vibespace-with-pane-no-warning-"));
+
+      const workspaceResponse = await app.inject({
+        method: "POST",
+        url: "/api/workspaces",
+        payload: { name: "with-pane-test", rootPath: projectDir },
+      });
+      expect(workspaceResponse.statusCode).toBe(201);
+      const workspace = workspaceResponse.json() as { id: string };
+
+      const sessionResponse = await app.inject({
+        method: "POST",
+        url: "/api/sessions",
+        payload: { agent: "shell", workspaceId: workspace.id, paneId: "pane-1" },
+      });
+      expect(sessionResponse.statusCode).toBe(201);
+      const info = sessionResponse.json() as { warning?: string };
+      expect(info.warning).toBeUndefined();
+
+      rmSync(projectDir, { recursive: true, force: true });
+      await app.close();
+    },
+    10_000
+  );
 });
 
 describe("session recovery REST endpoints", () => {

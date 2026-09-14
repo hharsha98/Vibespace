@@ -10,8 +10,10 @@ import type {
 import Grid from "./grid/Grid.js";
 import type { AgentOption } from "./grid/PaneView.js";
 import {
+  adoptOrphanSessions,
   attachBrowser,
   attachSession,
+  attachSessionToEmptyOrSplit,
   buildTemplate,
   clearDeferredPane,
   closePaneOrEmpty,
@@ -44,6 +46,7 @@ import CommandPalette, { type PaletteCommand } from "./CommandPalette.js";
 import KeyboardCheatSheet from "./KeyboardCheatSheet.js";
 import WorkspaceRail from "./shell/WorkspaceRail.js";
 import WorkspaceTabStrip from "./shell/WorkspaceTabStrip.js";
+import { mergeWorkspaces, useWorkspacePoll } from "./shell/useWorkspacePoll.js";
 import { templateLabel } from "./grid/templateNames.js";
 import { workspaceIdForTabIndex } from "./shell/workspaceTabs.js";
 import RightDock from "./shell/RightDock.js";
@@ -148,6 +151,36 @@ function layoutToTree(layout: string | null, sessions: SessionInfo[]): GridNode 
     );
     return createLeaf(null);
   }
+}
+
+/**
+ * `layoutToTree` above builds a workspace's tree from its saved layout
+ * alone, and its own doc comment is deliberate about never auto-filling
+ * from whatever else happens to be running — that rule stays intact here,
+ * untouched. This wrapper adds exactly one narrow thing on top: sessions
+ * that were created FOR this workspace (`cwd === workspace.rootPath`, the
+ * same predicate `sessionsForWorkspace` below uses) with no `paneId` at all
+ * — legitimate for board/swarm dispatch, but a real gap for anything else
+ * that hits `POST /api/sessions` without one (see that route's new
+ * `warning` field) — and are still `status: "running"`, but aren't
+ * referenced by any pane anywhere in the tree we just built. Those sessions
+ * would otherwise be invisible in this workspace's grid AND unreachable
+ * (there is no "orphan sessions" browser anywhere in the UI), forever, even
+ * though the server is still happily running their pty. `adoptOrphanSessions`
+ * (grid/tree.ts) re-homes exactly those — it does not touch anything that
+ * `layoutToTree` deliberately left alone.
+ */
+function buildWorkspaceTree(layout: string | null, allSessions: SessionInfo[], workspace: Workspace): GridNode {
+  const tree = layoutToTree(layout, allSessions);
+  const idsAlreadyInTree = new Set(
+    listPanes(tree)
+      .map((p) => p.sessionId)
+      .filter((id): id is string => id !== null)
+  );
+  const orphanSessionIds = allSessions
+    .filter((s) => s.status === "running" && s.cwd === workspace.rootPath && !idsAlreadyInTree.has(s.id))
+    .map((s) => s.id);
+  return orphanSessionIds.length > 0 ? adoptOrphanSessions(tree, orphanSessionIds) : tree;
 }
 
 /**
@@ -412,6 +445,23 @@ export default function App() {
 
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) ?? null;
 
+  // Prelaunch DX fix: the mount effect above fetches `GET /api/workspaces`
+  // exactly once, so a workspace created through the API (not this app's
+  // own "New workspace" form, which already updates `workspaces` locally
+  // the moment its POST resolves) never showed up in the rail until the
+  // whole page reloaded. `useWorkspacePoll` (shell/useWorkspacePoll.ts)
+  // re-fetches that same endpoint every 15s; `mergeWorkspaces` folds each
+  // response into local state WITHOUT clobbering the active workspace's
+  // `layout` (which autosaves here on a 500ms debounce below — a poll
+  // landing mid-edit must never revert it). Skipped entirely on `null`
+  // (before the poll's first response has landed), so this never fires
+  // before there's anything to merge.
+  const polledWorkspaces = useWorkspacePoll();
+  useEffect(() => {
+    if (!polledWorkspaces) return;
+    setWorkspaces((prev) => mergeWorkspaces(prev, polledWorkspaces, activeWorkspaceId));
+  }, [polledWorkspaces, activeWorkspaceId]);
+
   // A workspace's "running-pane count" (shown as the rail row's trailing
   // badge, and the dock's session count) has no direct server-side field to
   // read — `SessionInfo` doesn't carry a workspaceId (see
@@ -560,7 +610,7 @@ export default function App() {
         const deepLinked = deepLinkId ? loadedWorkspaces.find((w) => w.id === deepLinkId) : undefined;
         const initial = deepLinked ?? loadedWorkspaces[0];
         setActiveWorkspaceId(initial.id);
-        setRoot(layoutToTree(initial.layout, loadedSessions));
+        setRoot(buildWorkspaceTree(initial.layout, loadedSessions, initial));
         // Session recovery: patches in any eagerly-restored/deferred panes
         // once the server responds — see restoreWorkspaceSessions's own
         // doc comment for why this never blocks the tree set just above.
@@ -653,26 +703,14 @@ export default function App() {
       // state update from inside a `setState` updater function, which
       // React's StrictMode double-invokes in development.
       if (!root) return;
-      const panes = listPanes(root);
-      // `content === null`, not `sessionId === null` — a browser pane also
-      // reads `sessionId: null` (see `grid/tree.ts`'s `paneSessionId`), and
-      // silently dropping a dispatched session's board card into a pane
-      // someone's actively browsing in would be exactly the kind of
-      // surprise this check exists to avoid.
-      const emptyPane = panes.find((p) => p.content === null);
-      if (emptyPane) {
-        setRoot(attachSession(root, emptyPane.id, session.id));
-        setFocusedPaneId(emptyPane.id);
-        return;
-      }
-      const target = panes.find((p) => p.id === focusedPaneId) ?? panes[0];
-      const split = splitPane(root, target.id, "row");
-      // The freshly-created leaf is the only pane id NOT present before
-      // the split — findable by diffing the before/after pane id sets.
-      const beforeIds = new Set(panes.map((p) => p.id));
-      const newLeafId = listPanes(split).find((p) => !beforeIds.has(p.id))?.id;
-      setRoot(newLeafId ? attachSession(split, newLeafId, session.id) : split);
-      if (newLeafId) setFocusedPaneId(newLeafId);
+      // `attachSessionToEmptyOrSplit` (grid/tree.ts) is the "empty pane,
+      // else split the focused one" search this and `focusSessionInGrid`
+      // below both need — see its own doc comment for the full reasoning
+      // (in particular why it checks `content === null`, not
+      // `sessionId === null`, when looking for an "empty" pane).
+      const { root: nextRoot, paneId } = attachSessionToEmptyOrSplit(root, session.id, focusedPaneId);
+      setRoot(nextRoot);
+      if (paneId) setFocusedPaneId(paneId);
     },
     [root, focusedPaneId]
   );
@@ -705,21 +743,14 @@ export default function App() {
         return;
       }
 
-      // Same "content === null, not sessionId === null" reasoning as
-      // handleSessionDispatched above — never mistake a browser pane for
-      // an empty one just because it has no session id.
-      const emptyPane = panes.find((p) => p.content === null);
-      if (emptyPane) {
-        setRoot(attachSession(root, emptyPane.id, sessionId));
-        setFocusedPaneId(emptyPane.id);
-        return;
-      }
-      const target = panes.find((p) => p.id === focusedPaneId) ?? panes[0];
-      const split = splitPane(root, target.id, "row");
-      const beforeIds = new Set(panes.map((p) => p.id));
-      const newLeafId = listPanes(split).find((p) => !beforeIds.has(p.id))?.id;
-      setRoot(newLeafId ? attachSession(split, newLeafId, sessionId) : split);
-      if (newLeafId) setFocusedPaneId(newLeafId);
+      // Same "empty pane, else split the focused one" search
+      // handleSessionDispatched above uses — see attachSessionToEmptyOrSplit's
+      // own doc comment (grid/tree.ts) for why it checks `content === null`,
+      // not `sessionId === null`, so a browser pane is never mistaken for an
+      // empty one just because it has no session id.
+      const { root: nextRoot, paneId } = attachSessionToEmptyOrSplit(root, sessionId, focusedPaneId);
+      setRoot(nextRoot);
+      if (paneId) setFocusedPaneId(paneId);
     },
     [root, focusedPaneId]
   );
@@ -1108,7 +1139,7 @@ export default function App() {
       }
 
       setActiveWorkspaceId(targetId);
-      setRoot(layoutToTree(target.layout, sessions));
+      setRoot(buildWorkspaceTree(target.layout, sessions, target));
       setFocusedPaneId(null);
       setMaximizedPaneId(null);
       setGridEpoch((e) => e + 1); // wholesale swap — same reasoning as applyTemplate above

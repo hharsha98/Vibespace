@@ -414,6 +414,25 @@ export function buildApp(options: BuildAppOptions = {}) {
     const paneId = typeof body.paneId === "string" ? body.paneId : null;
     const workspaceIdForRecord = typeof body.workspaceId === "string" ? body.workspaceId : null;
 
+    // A session created with a workspaceId but no paneId spawns and shows
+    // up in GET /api/sessions like any other, but nothing binds it to a
+    // layout leaf — the Terminals grid has no way to know it exists (a
+    // real gap verified against the live DB: 31 of 52 session records have
+    // a null paneId, 11 of those belonging to a workspace whose saved
+    // layout never mentions their session id at all — they ran
+    // invisibly). Board and swarm dispatch both legitimately omit paneId
+    // (see that field's own doc comment just above) — they bind the
+    // session to a pane client-side once it's dispatched, or don't use a
+    // pane at all — so this can never be a hard error, only a heads-up for
+    // whoever else hits this endpoint without doing that. It's also true
+    // after a restart: pty/restore.ts's cold-start restore only ever
+    // considers records with a non-null paneId (it filters recoverable
+    // records to `r.paneId !== null` before anything else), so a session
+    // created this way can never come back once the server restarts.
+    const noPaneIdWarning = workspaceIdForRecord && !paneId
+      ? "This session has no paneId, so it is not bound to a pane: it will not appear in the Terminals grid until a client adopts it, and (per pty/restore.ts) it cannot be restored into a pane after a server restart. Pass paneId to bind it to a specific pane."
+      : null;
+
     if (body.sshProfileId !== undefined && body.agent !== undefined) {
       return reply.status(400).send({ error: 'Provide either "agent" or "sshProfileId", not both' });
     }
@@ -504,7 +523,7 @@ export function buildApp(options: BuildAppOptions = {}) {
         title: info.title,
       });
       trackSessionForRecovery(sessionManager, sessionRecordsStore, info.id, record.id, false);
-      return reply.status(201).send(info);
+      return reply.status(201).send(noPaneIdWarning ? { ...info, warning: noPaneIdWarning } : info);
     }
 
     if (!isAgentId(body.agent)) {
@@ -547,7 +566,7 @@ export function buildApp(options: BuildAppOptions = {}) {
       title: info.title,
     });
     trackSessionForRecovery(sessionManager, sessionRecordsStore, info.id, record.id, false);
-    return reply.status(201).send(info);
+    return reply.status(201).send(noPaneIdWarning ? { ...info, warning: noPaneIdWarning } : info);
   });
 
   app.delete("/api/sessions/:id", async (request, reply) => {

@@ -84,6 +84,17 @@ export function paneSessionId(leaf: LeafNode): string | null {
 /** Every pane count the template picker supports. Anything else is rejected. */
 const SUPPORTED_TEMPLATE_SIZES = [1, 2, 4, 6, 8, 10, 12, 14, 16];
 
+/**
+ * The most panes one workspace is ever expected to hold, derived from the
+ * template list above so the two cannot drift apart.
+ *
+ * Note this is NOT enforced by `splitPane` — splitting by hand has always
+ * been unbounded, and nothing has needed to change that, because each
+ * split is one deliberate click. It exists for `adoptOrphanSessions`,
+ * which is the one caller that splits in a loop without a human watching.
+ */
+const MAX_PANES = Math.max(...SUPPORTED_TEMPLATE_SIZES);
+
 /** Generate a fresh id for a new node. `crypto.randomUUID()` is a Web/Node
  * standard API available globally in both the browser (where this UI runs)
  * and in Node 19+ (where the vitest tests run) — no import needed. */
@@ -295,6 +306,115 @@ export function listPanes(
 /** How many leaf panes are currently in the tree. */
 export function countPanes(root: GridNode): number {
   return listPanes(root).length;
+}
+
+/**
+ * The shared "find somewhere for this session to land" logic behind
+ * `App.tsx`'s `handleSessionDispatched` (the board's "Dispatch" action) and
+ * `focusSessionInGrid` (jumping to a board card's or swarm mission's
+ * session, and — as of the orphan-session fix below — re-homing a session
+ * that was created with no `paneId` at all). Both of those call sites used
+ * to carry an identical, hand-copied version of exactly this four-step
+ * search; that duplication is exactly the kind of thing that quietly drifts
+ * out of sync the next time only one copy gets edited, so it lives here
+ * once instead.
+ *
+ * Prefers the first leaf whose `content` is `null`. This deliberately reads
+ * `content === null`, NOT `sessionId === null` — see `listPanes`'s own doc
+ * comment above for the fuller version of this reasoning, but in short: a
+ * browser pane also reports a `null` session id from `paneSessionId` (it
+ * isn't showing a session at all), so treating THAT as "empty" would
+ * silently blow away whatever page someone is actively browsing in, just
+ * because a session happened to need a home at that moment.
+ *
+ * If every pane is already occupied, splits `preferredPaneId` (or the
+ * tree's first pane, if that id isn't actually present — e.g. it was
+ * closed, or the caller has no notion of a "preferred" pane at all, like
+ * the orphan-adoption path below) with a "row" direction, and attaches the
+ * session into the newly-created leaf. `splitPane` doesn't hand the new
+ * leaf's id back directly, so it's found the same way both original call
+ * sites already did: diffing the set of pane ids before and after the
+ * split for whichever one is new.
+ *
+ * Returns the new root plus the pane id the session ended up in. `paneId`
+ * is `null` only in the split branch, and only if that diff somehow turns
+ * up no new leaf at all (shouldn't happen in practice — `splitPane` always
+ * adds exactly one) — callers should treat a `null` paneId as "the session
+ * is attached somewhere in the returned tree, but there's no specific pane
+ * worth focusing for it," matching the `newLeafId ? ... : split` fallback
+ * both original call sites used before this was extracted.
+ */
+export function attachSessionToEmptyOrSplit(
+  root: GridNode,
+  sessionId: string,
+  preferredPaneId: PaneId | null
+): { root: GridNode; paneId: PaneId | null } {
+  const panes = listPanes(root);
+  const emptyPane = panes.find((p) => p.content === null);
+  if (emptyPane) {
+    return { root: attachSession(root, emptyPane.id, sessionId), paneId: emptyPane.id };
+  }
+
+  const target = panes.find((p) => p.id === preferredPaneId) ?? panes[0];
+  const split = splitPane(root, target.id, "row");
+  const beforeIds = new Set(panes.map((p) => p.id));
+  const newLeafId = listPanes(split).find((p) => !beforeIds.has(p.id))?.id ?? null;
+  return { root: newLeafId ? attachSession(split, newLeafId, sessionId) : split, paneId: newLeafId };
+}
+
+/**
+ * Folds a batch of session ids into `root`, one `attachSessionToEmptyOrSplit`
+ * call at a time (see that function's own doc comment for how each
+ * individual session finds its pane). This exists for one specific, narrow
+ * situation: `POST /api/sessions` accepts an optional `paneId`, and board/
+ * swarm dispatch both legitimately omit it (they bind the session to a pane
+ * client-side once dispatched, or don't use a pane at all) — but a session
+ * started with no `paneId` some OTHER way (an external API caller, a script
+ * hitting the endpoint directly, ...) never gets bound to anything, and
+ * would otherwise sit in `GET /api/sessions` running forever with no pane
+ * anywhere in any saved layout ever pointing at it — invisible and
+ * unreachable from the grid.
+ *
+ * `App.tsx`'s `layoutToTree` (this function's caller, via a small wrapper —
+ * see that function's own doc comment) deliberately does NOT adopt every
+ * running session when it builds a workspace's tree: a workspace with no
+ * saved layout starts as one honest empty pane, never auto-filled from
+ * whatever else happens to be running on the server. Calling this function
+ * does not contradict that rule, because its caller is responsible for
+ * narrowing `sessionIds` first, to sessions that are ALL of: actually
+ * `status: "running"`, `cwd`-matched to THIS workspace specifically (not
+ * just running somewhere), and not already sitting in some pane elsewhere
+ * in `root` (via `listPanes`). That's not "auto-fill from whatever's
+ * running" — it's "rescue a session this exact workspace already owns, that
+ * has no other way back into view."
+ */
+export function adoptOrphanSessions(root: GridNode, sessionIds: string[]): GridNode {
+  let next = root;
+  for (const sessionId of sessionIds) {
+    // Stop at the same maximum `SUPPORTED_TEMPLATE_SIZES` tops out at
+    // (16), derived from that list rather than repeated as a literal so
+    // the two cannot drift apart.
+    //
+    // This bound matters here in a way it does not for the other two
+    // callers of `attachSessionToEmptyOrSplit`. `splitPane` itself enforces
+    // no maximum, and nothing ever needed it to: dispatching a board card
+    // or jumping to a swarm agent's terminal splits at most once, in
+    // response to a deliberate click. Adoption is the first caller that
+    // runs in a LOOP, unattended, at workspace-load time — so a user who
+    // has accumulated a pile of pane-less sessions (easy to do: every
+    // `POST /api/sessions` without a paneId leaves one behind) would open a
+    // workspace and get a grid split into as many panes as there were
+    // orphans, each one mounting a real xterm instance. That is a worse
+    // outcome than the invisibility it set out to fix.
+    //
+    // Sessions past the cap are simply left unadopted, which is exactly
+    // where they stand today — no better, but no worse, and nothing is
+    // killed or lost: they keep running server-side and stay listed in
+    // `GET /api/sessions`.
+    if (countPanes(next) >= MAX_PANES) break;
+    next = attachSessionToEmptyOrSplit(next, sessionId, null).root;
+  }
+  return next;
 }
 
 /**

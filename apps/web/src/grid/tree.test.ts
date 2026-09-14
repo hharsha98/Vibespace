@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  adoptOrphanSessions,
   attachBrowser,
   attachSession,
+  attachSessionToEmptyOrSplit,
   buildTemplate,
   closePane,
   closePaneOrEmpty,
@@ -180,6 +182,140 @@ describe("attachSession", () => {
     attachSession(leaf, leaf.id, "session-xyz");
 
     expect(leaf).toEqual(before);
+  });
+});
+
+describe("attachSessionToEmptyOrSplit", () => {
+  it("attaches to the first empty leaf when one exists, ignoring preferredPaneId entirely", () => {
+    const occupied = createLeaf("existing-session");
+    const empty = createLeaf(null);
+    const root: GridNode = { kind: "split", id: "root", direction: "row", children: [occupied, empty] };
+
+    const { root: result, paneId } = attachSessionToEmptyOrSplit(root, "new-session", occupied.id);
+
+    expect(paneId).toBe(empty.id);
+    if (result.kind !== "split") throw new Error("expected a split node");
+    expect(result.children[0]).toBe(occupied); // untouched
+    const attached = result.children[1];
+    if (attached.kind !== "leaf") throw new Error("expected a leaf");
+    expect(attached.content).toEqual({ kind: "session", sessionId: "new-session" });
+  });
+
+  it("splits preferredPaneId and attaches into the new leaf when every pane is occupied", () => {
+    const left = createLeaf("left-session");
+    const right = createLeaf("right-session");
+    const root: GridNode = { kind: "split", id: "root", direction: "row", children: [left, right] };
+
+    const { root: result, paneId } = attachSessionToEmptyOrSplit(root, "new-session", right.id);
+
+    expect(paneId).not.toBeNull();
+    expect(paneId).not.toBe(left.id);
+    expect(paneId).not.toBe(right.id);
+    expect(countPanes(result)).toBe(3);
+    const newPane = listPanes(result).find((p) => p.id === paneId);
+    expect(newPane?.sessionId).toBe("new-session");
+    // The split happened under `right` (the preferred pane) — `left` is
+    // untouched, still a bare leaf.
+    if (result.kind !== "split") throw new Error("expected a split node");
+    expect(result.children[0]).toBe(left);
+    expect(result.children[1].kind).toBe("split");
+  });
+
+  it("falls back to the tree's first pane when preferredPaneId isn't found", () => {
+    const left = createLeaf("left-session");
+    const right = createLeaf("right-session");
+    const root: GridNode = { kind: "split", id: "root", direction: "row", children: [left, right] };
+
+    const { root: result } = attachSessionToEmptyOrSplit(root, "new-session", "does-not-exist");
+
+    if (result.kind !== "split") throw new Error("expected a split node");
+    // `left` (the tree's first pane) is the one that got split, so it's no
+    // longer the same bare-leaf reference; `right` is untouched.
+    expect(result.children[0].kind).toBe("split");
+    expect(result.children[1]).toBe(right);
+  });
+
+  it("treats a browser pane as occupied, not empty — never attaches a session over it", () => {
+    const browserPane: GridNode = { kind: "leaf", id: "browser-pane", content: { kind: "browser", url: "https://example.com" } };
+    const occupied = createLeaf("existing-session");
+    const root: GridNode = {
+      kind: "split",
+      id: "root",
+      direction: "row",
+      children: [browserPane, occupied],
+    };
+
+    const { root: result, paneId } = attachSessionToEmptyOrSplit(root, "new-session", browserPane.id);
+
+    // No empty leaf exists (browser pane doesn't count), so this must have
+    // split rather than silently overwriting the browser pane's content.
+    expect(countPanes(result)).toBe(3);
+    expect(paneId).not.toBe(browserPane.id);
+    if (result.kind !== "split") throw new Error("expected a split node");
+    const stillBrowser = listPanes(result).find((p) => p.id === browserPane.id);
+    expect(stillBrowser?.content).toEqual({ kind: "browser", url: "https://example.com" });
+  });
+});
+
+describe("adoptOrphanSessions", () => {
+  it("adopts a session id that isn't attached anywhere in the tree", () => {
+    const empty = createLeaf(null);
+
+    const result = adoptOrphanSessions(empty, ["orphan-session"]);
+
+    const panes = listPanes(result);
+    expect(panes).toHaveLength(1);
+    expect(panes[0].sessionId).toBe("orphan-session");
+  });
+
+  it("leaves an already-attached session id alone rather than adding a duplicate pane", () => {
+    const already = createLeaf("already-running");
+
+    const result = adoptOrphanSessions(already, []); // caller is responsible for filtering out ids already in the tree
+
+    expect(result).toEqual(already);
+    expect(countPanes(result)).toBe(1);
+  });
+
+  it("adopts nothing, and returns the tree unchanged, when the list is empty", () => {
+    const root = createLeaf(null);
+
+    const result = adoptOrphanSessions(root, []);
+
+    expect(result).toBe(root); // same reference — nothing was folded in
+  });
+
+  it("adopts multiple orphan ids in sequence, each finding its own empty pane", () => {
+    const root = buildTemplate(4);
+
+    const result = adoptOrphanSessions(root, ["orphan-a", "orphan-b"]);
+
+    const sessionIds = listPanes(result)
+      .map((p) => p.sessionId)
+      .filter((id): id is string => id !== null);
+    expect(sessionIds.sort()).toEqual(["orphan-a", "orphan-b"]);
+    expect(countPanes(result)).toBe(4); // buildTemplate(4) already has 4 empty leaves — no split needed
+  });
+
+  // Adoption is the only caller that splits in a loop with nobody watching,
+  // so it is the only one that can run away. Someone who has accumulated a
+  // pile of pane-less sessions (every `POST /api/sessions` without a paneId
+  // leaves one behind) should not open a workspace and find it shattered
+  // into thirty panes, each mounting a real xterm — that would be a worse
+  // outcome than the invisibility adoption exists to fix.
+  it("stops at the 16-pane maximum instead of splitting once per orphan forever", () => {
+    const root = buildTemplate(1);
+    const manyOrphans = Array.from({ length: 30 }, (_, i) => `orphan-${i}`);
+
+    const result = adoptOrphanSessions(root, manyOrphans);
+
+    expect(countPanes(result)).toBe(16);
+    // The ones that did land are real: no empty or duplicated panes.
+    const attached = listPanes(result)
+      .map((p) => p.sessionId)
+      .filter((id): id is string => id !== null);
+    expect(attached).toHaveLength(16);
+    expect(new Set(attached).size).toBe(16);
   });
 });
 
