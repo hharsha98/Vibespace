@@ -27,12 +27,13 @@ function baseProfile(overrides: Partial<SshSpawnProfile> = {}): SshSpawnProfile 
 
 describe("buildSshArgv", () => {
   it("always allocates a tty with -t", () => {
-    expect(buildSshArgv(baseProfile())).toEqual(["-t", "example.com"]);
+    expect(buildSshArgv(baseProfile())).toEqual(["-t", "--", "example.com"]);
   });
 
   it("uses just the host when no user is set", () => {
     expect(buildSshArgv(baseProfile({ host: "prod.example.com" }))).toEqual([
       "-t",
+      "--",
       "prod.example.com",
     ]);
   });
@@ -40,12 +41,19 @@ describe("buildSshArgv", () => {
   it("prefixes user@host when a user is set", () => {
     expect(buildSshArgv(baseProfile({ host: "prod.example.com", user: "deploy" }))).toEqual([
       "-t",
+      "--",
       "deploy@prod.example.com",
     ]);
   });
 
   it("adds -p <port> only when a port is set", () => {
-    expect(buildSshArgv(baseProfile({ port: 2222 }))).toEqual(["-t", "-p", "2222", "example.com"]);
+    expect(buildSshArgv(baseProfile({ port: 2222 }))).toEqual([
+      "-t",
+      "-p",
+      "2222",
+      "--",
+      "example.com",
+    ]);
   });
 
   it("omits -p entirely when port is null (lets ssh/~/.ssh/config decide)", () => {
@@ -54,14 +62,14 @@ describe("buildSshArgv", () => {
   });
 
   it("sends no remote command at all when neither defaultDirectory nor startupCommand is set", () => {
-    expect(buildSshArgv(baseProfile())).toHaveLength(2); // just ["-t", "example.com"]
+    expect(buildSshArgv(baseProfile())).toHaveLength(3); // just ["-t", "--", "example.com"]
   });
 
   it("appends exactly one extra argv element carrying the remote command when a directory is set", () => {
     const argv = buildSshArgv(baseProfile({ defaultDirectory: "/srv/app" }));
-    expect(argv).toHaveLength(3);
-    expect(argv[2]).toContain("cd -- '/srv/app'");
-    expect(argv[2]).toContain('exec "${SHELL:-/bin/sh}" -l');
+    expect(argv).toHaveLength(4);
+    expect(argv[3]).toContain("cd -- '/srv/app'");
+    expect(argv[3]).toContain('exec "${SHELL:-/bin/sh}" -l');
   });
 
   it("every host/user/port value is its own argv element, never concatenated into one shell line", () => {
@@ -71,10 +79,10 @@ describe("buildSshArgv", () => {
     const argv = buildSshArgv(
       baseProfile({ host: "; rm -rf ~ #", user: "$(whoami)", port: 22, defaultDirectory: null })
     );
-    expect(argv).toEqual(["-t", "-p", "22", "$(whoami)@; rm -rf ~ #"]);
+    expect(argv).toEqual(["-t", "-p", "22", "--", "$(whoami)@; rm -rf ~ #"]);
     // It's one literal array element — never re-parsed as shell syntax by
     // anything in this codebase (node-pty spawns argv directly, no shell).
-    expect(argv).toHaveLength(4);
+    expect(argv).toHaveLength(5);
   });
 
   it("full representative profile: user, custom port, directory, and a startup command", () => {
@@ -89,10 +97,33 @@ describe("buildSshArgv", () => {
     );
     expect(argv[0]).toBe("-t");
     expect(argv.slice(1, 3)).toEqual(["-p", "2200"]);
-    expect(argv[3]).toBe("ci@build.internal");
-    expect(argv[4]).toBe(
+    expect(argv[3]).toBe("--");
+    expect(argv[4]).toBe("ci@build.internal");
+    expect(argv[5]).toBe(
       `cd -- '/srv/ci/workspace' || echo 'vibespace: couldn'\\''t cd to "/srv/ci/workspace" on connect' >&2; source .venv/bin/activate; exec "\${SHELL:-/bin/sh}" -l`
     );
+  });
+
+  it("a host value beginning with '-' can never be parsed by ssh as one of its own options", () => {
+    // The security property this change actually buys us, asserted directly
+    // rather than just inferred from argv position: even though argv is
+    // already an ARRAY (which protects against a *shell* reinterpreting an
+    // element — see this file's top comment and spawn.ts's top comment),
+    // that says nothing about how `ssh` ITSELF parses the array it's handed.
+    // ssh runs its own getopt over argv, and getopt treats any element
+    // starting with "-" as a flag regardless of which argv slot it lands
+    // in. A profile whose host was saved as
+    // "-oProxyCommand=touch /tmp/pwned" (no `user` set, so it reaches ssh
+    // unprefixed) is exactly that shape. The literal "--" element is what
+    // makes ssh stop option-parsing and treat everything after it as
+    // positional, so the dangerous-looking value must land strictly AFTER
+    // it in the argv ssh receives.
+    const argv = buildSshArgv(baseProfile({ host: "-oProxyCommand=touch /tmp/pwned" }));
+    const dashDashIndex = argv.indexOf("--");
+    const hostIndex = argv.indexOf("-oProxyCommand=touch /tmp/pwned");
+    expect(dashDashIndex).toBeGreaterThanOrEqual(0);
+    expect(hostIndex).toBeGreaterThanOrEqual(0);
+    expect(dashDashIndex).toBeLessThan(hostIndex);
   });
 });
 
