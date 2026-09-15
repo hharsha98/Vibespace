@@ -49,3 +49,16 @@ jobs:
 
       - name: Gitleaks scan
         uses: gitleaks/gitleaks-action@v2
+        env:
+          # Without this the action does not scan a pull request at all: it
+          # exits with "GITHUB_TOKEN is now required to scan pull requests"
+          # and fails the job before reading a single line. That is what it
+          # has done on every PR this repo has had — so the secret gate was
+          # not catching leaks and passing, it was erroring out and being
+          # read as a flaky job. A security check that never runs is worse
+          # than no check at all, because it looks like one.
+          #
+          # This is the token Actions injects into the job automatically,
+          # not a credential stored anywhere; gitleaks only needs it to
+          # enumerate the commits belonging to the pull request.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
