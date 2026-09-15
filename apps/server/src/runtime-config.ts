@@ -68,6 +68,62 @@ export function resolveServerPort(env: NodeJS.ProcessEnv): number {
   return parsed;
 }
 
+/**
+ * The interface the server binds to when nothing overrides it: loopback
+ * only — reachable from this machine, and from nothing else.
+ */
+export const DEFAULT_HOST = "127.0.0.1";
+
+/**
+ * Resolves which interface to listen on.
+ *
+ * This used to be the literal `"0.0.0.0"`, written inline at the `listen()`
+ * call in this project's first commit and never revisited since. That means
+ * "every interface", and this server has no authentication of any kind: no
+ * token, no password, no origin check, nothing. The combination was a real
+ * remote-code-execution hole rather than a theoretical one, and was
+ * confirmed end to end from the network — a caller POSTed to
+ * `/api/sessions`, received 201, attached to that session's WebSocket, ran
+ * `whoami && hostname` and read the answers back. Every terminal this app
+ * can open, it would open for anyone sharing a coffee-shop, hotel,
+ * co-working or campus network: as the logged-in user, with their files,
+ * their credentials and their SSH keys.
+ *
+ * So loopback is the default, and listening more widely has to be asked
+ * for, explicitly, via `VIBESPACE_HOST`. That escape hatch exists because
+ * reaching your own workroom from your own phone on your own LAN is a
+ * legitimate thing to want, and making it impossible would only push people
+ * toward worse workarounds. But it is opt-in, it is one environment
+ * variable, and `index.ts` prints a loud warning whenever the resolved host
+ * is not loopback — nobody should end up exposed without having typed the
+ * thing that exposed them.
+ *
+ * Deliberately NOT validated against a set of accepted shapes (IPv4, IPv6,
+ * hostname, `::`): whatever is given goes to `listen()`, which already
+ * refuses what it cannot bind and explains itself better than a hand-rolled
+ * check would. The only judgement this function makes is the default.
+ */
+export function resolveServerHost(env: NodeJS.ProcessEnv): string {
+  const raw = env.VIBESPACE_HOST;
+  if (typeof raw !== "string") return DEFAULT_HOST;
+  const trimmed = raw.trim();
+  return trimmed.length > 0 ? trimmed : DEFAULT_HOST;
+}
+
+/**
+ * True for addresses meaning "this machine only" — used by `index.ts` to
+ * decide whether startup needs a warning (see `resolveServerHost` above).
+ *
+ * `0.0.0.0` and `::` are wildcards, so they are emphatically not loopback,
+ * and the whole point of the warning is that they are the dangerous
+ * answers. Any `127.x.x.x` is loopback, not just `127.0.0.1`. Surrounding
+ * brackets are stripped so the IPv6 literal form `[::1]` is recognised too.
+ */
+export function isLoopbackHost(host: string): boolean {
+  const normalised = host.trim().toLowerCase().replace(/^\[/, "").replace(/\]$/, "");
+  return normalised === "::1" || normalised === "localhost" || /^127\./.test(normalised);
+}
+
 export interface ResolveStaticDirOptions {
   /** Process env to read `VIBESPACE_STATIC_DIR` (or its legacy name,
    * `VIBEDECK_STATIC_DIR`) from. */

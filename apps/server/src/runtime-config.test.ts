@@ -1,12 +1,64 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_HOST,
   DEFAULT_PORT,
   READY_LINE_PREFIX,
   formatReadyLine,
+  isLoopbackHost,
   parseReadyLine,
+  resolveServerHost,
   resolveServerPort,
   resolveStaticDir,
 } from "./runtime-config.js";
+
+// These two decide whether this machine's terminals are reachable from the
+// network, so they are asserted literally rather than by shape. Before this,
+// the entrypoint passed "0.0.0.0" inline and nothing anywhere could have
+// failed if that were wrong — which is how it survived from the first commit
+// to a confirmed remote-code-execution finding.
+describe("resolveServerHost", () => {
+  it("defaults to loopback when VIBESPACE_HOST is unset", () => {
+    expect(resolveServerHost({})).toBe(DEFAULT_HOST);
+    expect(DEFAULT_HOST).toBe("127.0.0.1");
+  });
+
+  it("never defaults to a wildcard address", () => {
+    expect(resolveServerHost({})).not.toBe("0.0.0.0");
+    expect(resolveServerHost({})).not.toBe("::");
+  });
+
+  it("honours an explicit VIBESPACE_HOST, including the wildcard", () => {
+    expect(resolveServerHost({ VIBESPACE_HOST: "0.0.0.0" })).toBe("0.0.0.0");
+    expect(resolveServerHost({ VIBESPACE_HOST: "192.168.1.50" })).toBe("192.168.1.50");
+  });
+
+  it.each(["", "   "])("falls back to loopback for a blank VIBESPACE_HOST %j", (value) => {
+    expect(resolveServerHost({ VIBESPACE_HOST: value })).toBe(DEFAULT_HOST);
+  });
+
+  it("trims surrounding whitespace rather than trying to bind it", () => {
+    expect(resolveServerHost({ VIBESPACE_HOST: "  0.0.0.0  " })).toBe("0.0.0.0");
+  });
+});
+
+describe("isLoopbackHost", () => {
+  it.each(["127.0.0.1", "127.1.2.3", "::1", "[::1]", "localhost", "LOCALHOST"])(
+    "treats %j as this machine only",
+    (host) => {
+      expect(isLoopbackHost(host)).toBe(true);
+    }
+  );
+
+  // The wildcards are the whole reason the warning exists — if these ever
+  // read as loopback, the startup warning goes silent exactly when it is
+  // most needed.
+  it.each(["0.0.0.0", "::", "192.168.1.50", "10.0.0.7", "example.com"])(
+    "treats %j as reachable from elsewhere",
+    (host) => {
+      expect(isLoopbackHost(host)).toBe(false);
+    }
+  );
+});
 
 describe("resolveServerPort", () => {
   it("defaults to 4317 when neither VIBESPACE_PORT nor VIBEDECK_PORT is set", () => {

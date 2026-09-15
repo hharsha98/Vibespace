@@ -5,7 +5,13 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
 import { AGENT_IDS, AGENT_SPECS, WORKSPACE_COLORS, isWorkspaceColor, type ClientMessage } from "@vibespace/shared";
-import { resolveServerPort, resolveStaticDir, formatReadyLine } from "./runtime-config.js";
+import {
+  resolveServerPort,
+  resolveServerHost,
+  isLoopbackHost,
+  resolveStaticDir,
+  formatReadyLine,
+} from "./runtime-config.js";
 import { commandExists, detectAllAgents, INSTALL_HINTS, isAgentId } from "./pty/agents.js";
 import { SessionManager } from "./pty/session-manager.js";
 import { WorkspaceStore } from "./db/workspaces.js";
@@ -776,11 +782,33 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const moduleDir = dirname(fileURLToPath(import.meta.url));
   const staticDir = resolveStaticDir({ env: process.env, moduleDir });
 
+  // Loopback unless explicitly told otherwise — see resolveServerHost's doc
+  // comment for the remote-code-execution hole the old inline "0.0.0.0"
+  // opened, and why the override is an opt-in carrying a warning rather
+  // than simply being deleted.
+  const HOST = resolveServerHost(process.env);
+
   const app = buildApp({ staticDir });
   app
-    .listen({ port: PORT, host: "0.0.0.0" })
+    .listen({ port: PORT, host: HOST })
     .then(() => {
       console.log(`vibespace server listening on http://localhost:${PORT}`);
+      if (!isLoopbackHost(HOST)) {
+        // Deliberately loud, and deliberately about the consequence rather
+        // than the setting. Someone who typed VIBESPACE_HOST themselves has
+        // accepted this; someone who inherited it from a script, a shell
+        // profile or a container image almost certainly has not — and
+        // "listening on 0.0.0.0", the message a server would normally
+        // print, does not tell them that every device on the network can
+        // now open a terminal as them.
+        console.warn(
+          `\n  WARNING: vibespace is listening on ${HOST}, not just this machine.\n` +
+            `  This API has no password and no token. Anyone who can reach\n` +
+            `  ${HOST}:${PORT} can open a terminal as ${process.env.USER ?? "you"}, run any\n` +
+            `  command, read any file you can read, and use your SSH keys.\n` +
+            `  Unset VIBESPACE_HOST to go back to this machine only.\n`
+        );
+      }
       if (staticDir) {
         console.log(`serving built web app from ${staticDir}`);
       }
