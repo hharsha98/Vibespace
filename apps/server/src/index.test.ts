@@ -229,6 +229,80 @@ describe("session REST endpoints", () => {
     await app.close();
   });
 
+  // A session must not claim to be running in a directory that no longer
+  // exists. Verified against real behaviour before this guard existed:
+  // create a workspace, delete its directory out from under it, then POST
+  // here with that workspaceId — the route returned 201 with
+  // `status: "running"` anyway. node-pty's `chdir()` failure happens inside
+  // the forked child, so nothing throws in Node; the raw POSIX
+  // `chdir(2) failed.` streamed into the pane as if it were program output,
+  // and the pane then flipped to `(exited 1)`, with the server never
+  // crashing and the caller never told anything actually went wrong. This
+  // test exercises the fix in index.ts (the `existsSync`/`statSync` check
+  // added right after `cwd` is resolved, before either spawn branch runs).
+  it("POST /api/sessions returns 400 when the workspace's directory has been deleted", async () => {
+    const app = buildApp();
+    const projectDir = mkdtempSync(join(tmpdir(), "vibespace-deleted-workspace-dir-"));
+
+    const workspaceResponse = await app.inject({
+      method: "POST",
+      url: "/api/workspaces",
+      payload: { name: "deleted-dir-test", rootPath: projectDir },
+    });
+    expect(workspaceResponse.statusCode).toBe(201);
+    const workspace = workspaceResponse.json() as { id: string; rootPath: string };
+
+    // Delete the workspace's directory out from under it — the workspace
+    // record still exists and still points at `rootPath`, but the folder
+    // itself is gone, e.g. moved, renamed, deleted, or on an unmounted
+    // drive.
+    rmSync(projectDir, { recursive: true, force: true });
+
+    const sessionResponse = await app.inject({
+      method: "POST",
+      url: "/api/sessions",
+      payload: { agent: "shell", workspaceId: workspace.id },
+    });
+    expect(sessionResponse.statusCode).toBe(400);
+    const body = sessionResponse.json() as { error: string };
+    expect(body.error).toContain(projectDir);
+
+    await app.close();
+  });
+
+  // The other half of the same guard: a workspace whose directory DOES
+  // exist must still spawn normally and get back a real 201 — this is what
+  // stops the existsSync/statSync check above from over-triggering on the
+  // ordinary happy path.
+  it(
+    "POST /api/sessions still returns 201 when the workspace's directory exists",
+    async () => {
+      const app = buildApp();
+      const projectDir = mkdtempSync(join(tmpdir(), "vibespace-existing-workspace-dir-"));
+
+      const workspaceResponse = await app.inject({
+        method: "POST",
+        url: "/api/workspaces",
+        payload: { name: "existing-dir-test", rootPath: projectDir },
+      });
+      expect(workspaceResponse.statusCode).toBe(201);
+      const workspace = workspaceResponse.json() as { id: string; rootPath: string };
+
+      const sessionResponse = await app.inject({
+        method: "POST",
+        url: "/api/sessions",
+        payload: { agent: "shell", workspaceId: workspace.id },
+      });
+      expect(sessionResponse.statusCode).toBe(201);
+      const info = sessionResponse.json() as { status: string };
+      expect(info.status).toBe("running");
+
+      rmSync(projectDir, { recursive: true, force: true });
+      await app.close();
+    },
+    10_000
+  );
+
   // Orphan-session DX fix: a session created with a workspaceId but no
   // paneId spawns and appears in GET /api/sessions like any other, but
   // nothing binds it to a layout leaf — the Terminals grid has no way to

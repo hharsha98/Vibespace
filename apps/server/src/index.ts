@@ -3,7 +3,7 @@ import fastifyWebsocket from "@fastify/websocket";
 import fastifyStatic from "@fastify/static";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { AGENT_IDS, AGENT_SPECS, WORKSPACE_COLORS, isWorkspaceColor, type ClientMessage } from "@vibespace/shared";
 import {
   resolveServerPort,
@@ -464,6 +464,34 @@ export function buildApp(options: BuildAppOptions = {}) {
       cwd = workspace.rootPath;
     } else {
       cwd = typeof body.cwd === "string" ? body.cwd : process.cwd();
+    }
+
+    // A workspace's `rootPath` was validated to exist at CREATE time (see
+    // workspace-path.ts's `resolveRootPath`), but nothing stops the folder
+    // from vanishing afterward — moved, renamed, deleted, or living on a
+    // drive that's since been unmounted. Verified against real behaviour:
+    // create a workspace, delete its directory, then POST here with that
+    // workspaceId — without this check the route returned 201 with
+    // `status: "running"` anyway. The reason is that node-pty's `chdir()`
+    // failure happens inside the forked child process, so a missing `cwd`
+    // never throws here in Node at all; the raw POSIX string
+    // `chdir(2) failed.` instead streamed into the pane as if it were
+    // program output, and the pane then flipped to `(exited 1)` moments
+    // later. The server never crashed, but the caller was told a session
+    // started when it did not, and the only clue was a C library message
+    // with zero context. Checked once here, before either spawn branch
+    // below (the SSH branch's local `ssh` client process and the
+    // local-agent branch both start from this same `cwd`), so both get the
+    // same honest, human 400 instead of a session that lies about running.
+    if (!existsSync(cwd)) {
+      return reply.status(400).send({
+        error: `Cannot start a session: "${cwd}" does not exist. If this is a workspace's folder, it may have been moved, renamed, deleted, or is on a drive that isn't currently mounted.`,
+      });
+    }
+    if (!statSync(cwd).isDirectory()) {
+      return reply.status(400).send({
+        error: `Cannot start a session: "${cwd}" exists but is not a directory.`,
+      });
     }
 
     const cols = typeof body.cols === "number" ? body.cols : 80;
