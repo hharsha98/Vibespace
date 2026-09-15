@@ -8,7 +8,23 @@ on:
 
 jobs:
   build-and-test:
-    runs-on: ubuntu-latest
+    # Both operating systems, because for a while this only ran on Linux —
+    # which is the one platform Vibespace does not ship a verified build
+    # for. That gap is not academic: `node-pty` and `better-sqlite3` are
+    # native addons compiled per platform, the pty tests spawn real shells,
+    # and the released, hand-verified artifact is the macOS DMG. Testing
+    # exclusively on Linux meant the thing people actually download was the
+    # thing CI never exercised.
+    #
+    # macOS runners are slower and more contended than Linux ones, which is
+    # why `swarm/routes.test.ts`'s pty wait was raised from 10s to 30s in
+    # the same change — see that helper's comment. A matrix that goes red
+    # at random teaches people to ignore red.
+    strategy:
+      fail-fast: false # one platform failing should not hide the other's result
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4

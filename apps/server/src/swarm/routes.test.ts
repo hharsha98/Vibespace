@@ -54,8 +54,21 @@ function alnumOnly(text: string): string {
 }
 
 /** Waits (polling) until `condition()` is true or `timeoutMs` elapses —
- * identical helper to `board/routes.test.ts`'s. */
-async function waitFor(condition: () => boolean, timeoutMs = 10_000): Promise<void> {
+ * identical helper to `board/routes.test.ts`'s.
+ *
+ * The budget is 30s rather than the 10s it started with, because what is
+ * being waited on here is a real pty: a shell is spawned, a role preamble
+ * is typed into it, and the assertion is that those characters come back
+ * out again. How long that takes is a property of the machine, not of the
+ * code — on a laptop that was already compiling Rust, 10s was enough to
+ * make this the one intermittently-failing test in the whole suite, and a
+ * shared CI runner is slower and more contended than any laptop.
+ *
+ * Raising it costs nothing when the test passes, because the loop exits the
+ * moment the condition holds; it only extends how long a genuinely broken
+ * run takes to admit it. A flaky test is worse than a slow one: people
+ * learn to re-run it, and then they stop reading failures at all. */
+async function waitFor(condition: () => boolean, timeoutMs = 30_000): Promise<void> {
   const start = Date.now();
   while (!condition()) {
     if (Date.now() - start > timeoutMs) {
