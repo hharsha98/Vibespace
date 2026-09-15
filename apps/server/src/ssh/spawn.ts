@@ -149,12 +149,33 @@ export function buildRemoteCommand(
  * for why that's what makes `host`/`user`/`port` immune to injection with
  * zero quoting needed) — `session-manager.ts` passes this straight to
  * node-pty's `pty.spawn("ssh", args, ...)`, never through a shell.
+ *
+ * Separate argv entries are necessary but not sufficient, though, which is
+ * why `--` appears below. Passing arguments as an array stops a SHELL from
+ * reinterpreting them; it does nothing to stop `ssh` ITSELF from reading an
+ * element beginning with `-` as one of its own options. A profile whose
+ * host was saved as `-oProxyCommand=…` is just a string to the array, and
+ * ssh's own getopt still treats it as a flag.
+ *
+ * Measured rather than assumed: `ssh -G -t "-oProxyCommand=echo X"` exits
+ * 255 with a usage error, because the option is consumed and no destination
+ * is left over. So this is NOT exploitable as it stands, and this change is
+ * hardening rather than a patched breach. It is still worth doing. What
+ * saves it today is an accident of argv shape — an attacker controls one
+ * element and would need two — and that stops holding the moment anyone
+ * appends another element after the destination. `--` makes the guarantee
+ * structural instead of incidental: with it, the same value reaches ssh as
+ * a hostname and is rejected as one ("hostname contains invalid
+ * characters"), which is the right answer.
  */
 export function buildSshArgv(profile: SshSpawnProfile): string[] {
   const args: string[] = ["-t"];
   if (profile.port !== null) {
     args.push("-p", String(profile.port));
   }
+  // Everything after `--` is positional, never an option, whatever it
+  // starts with. See this function's doc comment for the measurement.
+  args.push("--");
   args.push(profile.user ? `${profile.user}@${profile.host}` : profile.host);
 
   const remoteCommand = buildRemoteCommand(profile.defaultDirectory, profile.startupCommand);
