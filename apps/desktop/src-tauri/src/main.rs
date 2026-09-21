@@ -63,6 +63,7 @@
 
 use std::collections::VecDeque;
 use std::env;
+use std::ffi::OsString;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStderr, ChildStdout, Command, Stdio};
@@ -338,6 +339,67 @@ fn resolve_server_source(app: &tauri::App) -> ServerSource {
 /// Finder-launched .app's minimal PATH doesn't include wherever Homebrew or
 /// a version manager put it) — `resolve_node_dir` below is shared between
 /// them.
+
+/// The PATH the Node server should run with.
+///
+/// Finding `node` is only half the problem. A Finder- or Dock-launched .app
+/// inherits `/usr/bin:/bin:/usr/sbin:/sbin` from launchd and nothing else, and
+/// that PATH is handed straight to the server process — which then does its
+/// OWN `command -v` lookups for the coding-agent CLIs (`pty/agents.ts`'s
+/// `detectAllAgents`). `claude`, `cursor-agent` and `codex` all install into
+/// `~/.local/bin`, so on a GUI launch every one of them is reported as "isn't
+/// installed on this machine" to a user who has them installed, and no agent
+/// pane can start. Launching the app from a terminal masked this completely:
+/// the app then inherited the shell's full PATH and everything worked.
+///
+/// So the server gets the same directories `resolve_node_dir` already searches,
+/// prepended to whatever PATH we inherited. `node_dir` goes first when known,
+/// so the server's own child processes resolve the same Node this app picked
+/// (ABI-matched, for the bundled case) rather than a different one earlier on
+/// PATH.
+///
+/// Deliberately NOT done by asking the login shell (`$SHELL -ilc 'echo $PATH'`,
+/// which is what VS Code does): that spawns a full interactive shell on every
+/// app start, inherits whatever the user's rc files do, and hangs the launch if
+/// one of them blocks. A fixed candidate list is duller and cannot hang.
+fn server_path_env(node_dir: Option<&Path>) -> OsString {
+    let mut dirs: Vec<PathBuf> = Vec::new();
+
+    if let Some(dir) = node_dir {
+        dirs.push(dir.to_path_buf());
+    }
+    dirs.push(PathBuf::from("/opt/homebrew/bin")); // Homebrew on Apple Silicon
+    dirs.push(PathBuf::from("/usr/local/bin")); // Homebrew on Intel; manual installs
+    if let Some(home) = env::var_os("HOME") {
+        // Where the agent CLIs this app exists to run actually install.
+        dirs.push(PathBuf::from(&home).join(".local/bin"));
+        dirs.push(PathBuf::from(&home).join(".volta/bin"));
+        dirs.push(PathBuf::from(&home).join(".bun/bin"));
+        dirs.push(PathBuf::from(&home).join(".cargo/bin"));
+    }
+    if let Some(inherited) = env::var_os("PATH") {
+        dirs.extend(env::split_paths(&inherited));
+    }
+
+    // Keep first occurrence of each directory: the prepended entries must win
+    // over an inherited duplicate, and a PATH that repeats itself just makes
+    // every miss cost more `stat` calls.
+    let mut seen: Vec<PathBuf> = Vec::with_capacity(dirs.len());
+    dirs.retain(|dir| {
+        if seen.contains(dir) {
+            false
+        } else {
+            seen.push(dir.clone());
+            true
+        }
+    });
+
+    // join_paths only fails if a directory contains a ':'. None of the literals
+    // above can; a pathological $HOME or inherited PATH entry could, and in that
+    // case the inherited PATH unchanged is a better outcome than no PATH at all.
+    env::join_paths(&dirs).unwrap_or_else(|_| env::var_os("PATH").unwrap_or_default())
+}
+
 fn spawn_server(source: &ServerSource) -> std::io::Result<Child> {
     match source {
         ServerSource::Bundled { server_dir, static_dir } => {
@@ -354,13 +416,19 @@ fn spawn_server(source: &ServerSource) -> std::io::Result<Child> {
             // path, this `node` has to match this bundle's ABI, not merely
             // exist — see `resolve_node_dir`'s doc comment for the crash
             // that motivated that requirement.
-            let node_bin = resolve_node_dir(required_node_abi(server_dir).as_deref())
+            let node_dir = resolve_node_dir(required_node_abi(server_dir).as_deref());
+            let node_bin = node_dir
+                .as_ref()
                 .map(|dir| dir.join("node"))
                 .unwrap_or_else(|| PathBuf::from("node"));
 
             Command::new(node_bin)
                 .arg(server_dir.join("dist").join("index.js"))
                 .current_dir(server_dir)
+                // Resolving `node` by absolute path (above) is what lets the
+                // server START; this is what lets it find the agent CLIs once
+                // running. See `server_path_env`.
+                .env("PATH", server_path_env(node_dir.as_deref()))
                 .env("VIBESPACE_PORT", DESKTOP_PORT.to_string())
                 .env("VIBESPACE_STATIC_DIR", static_dir)
                 .stdout(Stdio::piped())
@@ -394,17 +462,18 @@ fn spawn_server(source: &ServerSource) -> std::io::Result<Child> {
             // checkout has no bundle and therefore no `.node-abi` to read
             // — see `resolve_node_dir`'s doc comment for why that makes
             // ABI selection meaningless in this branch.
-            if let Some(node_dir) = resolve_node_dir(None) {
-                let existing_path = env::var("PATH").unwrap_or_default();
-                command.env("PATH", format!("{}:{existing_path}", node_dir.display()));
-            }
-            // else: leave PATH untouched. The spawn below will very likely
-            // still succeed (spawning the shell script itself doesn't
-            // require Node), but the script's own internal `node` lookup
-            // will then fail and it will exit immediately with a real error
-            // on stderr — which flows back through `watch_server`'s
-            // `ServerStartup::Exited` path and is shown to the user, not
-            // swallowed.
+            // `server_path_env` covers both needs at once: the node_dir entry
+            // is what the tsx shim's `command -v node` finds, and the rest is
+            // what the server's agent detection needs once it is running.
+            command.env("PATH", server_path_env(resolve_node_dir(None).as_deref()));
+            // When `resolve_node_dir` finds nothing, `server_path_env` still
+            // returns the candidate directories plus the inherited PATH, so the
+            // shim gets its best shot at `command -v node` anyway. If Node
+            // genuinely is not on the machine, the spawn below still succeeds
+            // (running the shell script itself needs no Node) and the script
+            // exits immediately with a real error on stderr — which flows back
+            // through `watch_server`'s `ServerStartup::Exited` path and is
+            // shown to the user, not swallowed.
 
             command.spawn()
         }
