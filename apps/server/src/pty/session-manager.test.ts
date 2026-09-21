@@ -222,6 +222,64 @@ describe("buildSpawnEnv", () => {
     expect(env.COLORTERM).toBe("truecolor");
   });
 
+  it("sets TERM/COLORTERM even when the inherited env already had them", () => {
+    // The filter loop copies baseEnv first, so these have to be assigned
+    // afterwards or a host TERM=dumb would follow the agent into the pane.
+    const env = buildSpawnEnv("claude", { TERM: "dumb", COLORTERM: "" }, null);
+    expect(env.TERM).toBe("xterm-256color");
+    expect(env.COLORTERM).toBe("truecolor");
+  });
+
+  it("strips the host session's own agent state from every agent's env", () => {
+    // Every key here was observed being inherited by a real pane. The two
+    // MESSAGING_* values are live IPC credentials for the host session; the
+    // rest make a `claude` pane believe it is a nested child run.
+    const hostEnv = {
+      PATH: "/usr/bin",
+      CLAUDE_CODE_MESSAGING_SOCKET: "/tmp/example-host.sock",
+      CLAUDE_CODE_MESSAGING_TOKEN: "example-token",
+      CLAUDE_CODE_SESSION_ID: "example-session-id",
+      CLAUDE_CODE_CHILD_SESSION: "1",
+      CLAUDE_CODE_ENTRYPOINT: "cli",
+      CLAUDECODE: "1",
+      CLAUDE_AGENT_SDK_VERSION: "0.0.0",
+      CLAUDE_PID: "1234",
+      CLAUDE_EFFORT: "high",
+    };
+
+    for (const agent of ["shell", "claude", "cursor-agent", "codex"] as const) {
+      const env = buildSpawnEnv(agent, hostEnv, null);
+      for (const leaked of Object.keys(hostEnv).filter((key) => key !== "PATH")) {
+        expect(env[leaked], `${leaked} leaked into a ${agent} pane`).toBeUndefined();
+      }
+      // The rest of the environment still has to come through.
+      expect(env.PATH).toBe("/usr/bin");
+    }
+  });
+
+  it("keeps user configuration the agent legitimately needs", () => {
+    // ANTHROPIC_* and friends are the user's own settings, not host session
+    // state — stripping them would break a pane for anyone who exports a key
+    // or a gateway URL in their shell.
+    const env = buildSpawnEnv(
+      "claude",
+      {
+        ANTHROPIC_API_KEY: "example-key",
+        ANTHROPIC_BASE_URL: "https://gateway.example.com",
+        CURSOR_API_KEY: "example-cursor-key",
+        CODEX_HOME: "/Users/example/.codex",
+        CLAUDE_CODE_MESSAGING_TOKEN: "example-token",
+      },
+      null
+    );
+
+    expect(env.ANTHROPIC_API_KEY).toBe("example-key");
+    expect(env.ANTHROPIC_BASE_URL).toBe("https://gateway.example.com");
+    expect(env.CURSOR_API_KEY).toBe("example-cursor-key");
+    expect(env.CODEX_HOME).toBe("/Users/example/.codex");
+    expect(env.CLAUDE_CODE_MESSAGING_TOKEN).toBeUndefined();
+  });
+
   it("preserves the base env's other variables (e.g. PATH) unchanged", () => {
     const env = buildSpawnEnv("shell", { PATH: "/usr/bin:/bin", HOME: "/Users/example" }, null);
     expect(env.PATH).toBe("/usr/bin:/bin");

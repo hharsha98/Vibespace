@@ -80,15 +80,53 @@ type Listener = (event: SessionEvent) => void;
  * crash the test before it could assert anything. Testing this function
  * directly needs no process spawn at all.
  */
+/**
+ * Environment variables that belong to whatever process STARTED this server,
+ * and to nothing it spawns.
+ *
+ * Vibespace inherits its environment from its launcher and — before this
+ * filter — handed all of it to every pane. When the launcher is itself a
+ * coding-agent session (a terminal running `claude`, say, or an IDE that
+ * embeds one), that meant two concrete problems:
+ *
+ *   - `CLAUDE_CODE_MESSAGING_SOCKET` and `CLAUDE_CODE_MESSAGING_TOKEN` are
+ *     live IPC credentials for the HOST session. Any pane could read them out
+ *     of its own environment and talk to that session — including a plain
+ *     shell pane the user opened for something unrelated. A pane is an
+ *     untrusted execution surface; that is the entire point of this product,
+ *     and handing it the host's credentials undoes it.
+ *   - `CLAUDECODE` and `CLAUDE_CODE_CHILD_SESSION` make a `claude` pane
+ *     believe it is a nested child of another run. Observed symptom, printed
+ *     by the CLI itself: "Transcript saving is off — inherited
+ *     CLAUDE_CODE_CHILD_SESSION marker". The pane silently stops recording.
+ *
+ * Deliberately NOT stripped: `ANTHROPIC_*`, `CURSOR_*`, `CODEX_*` and the
+ * like. Those are user CONFIGURATION — an API key, a gateway URL, a model
+ * preference — that a pane's agent legitimately needs, and a user who
+ * exported one in their shell expects it to apply inside Vibespace too.
+ * Only session-scoped state is removed here. If a future variable is both
+ * (config that also carries a session secret), it belongs on this list and
+ * the docs should say so.
+ */
+const HOST_SESSION_ENV =
+  /^(?:CLAUDE_CODE_|CLAUDE_AGENT_SDK_)|^(?:CLAUDECODE|CLAUDE_PID|CLAUDE_EFFORT)$/;
+
 export function buildSpawnEnv(
   agent: AgentId,
   baseEnv: NodeJS.ProcessEnv,
   shellIntegrationEnv: Record<string, string> | null
 ): NodeJS.ProcessEnv {
-  // Spread the server's own environment so the spawned process has a normal
-  // PATH etc, then layer on terminal-capability hints so full-color /
-  // interactive CLIs (like the AI agents) render well.
-  const env: NodeJS.ProcessEnv = { ...baseEnv, TERM: "xterm-256color", COLORTERM: "truecolor" };
+  // Copy the server's own environment so the spawned process has a normal
+  // PATH etc — minus the host session's own state (see HOST_SESSION_ENV) —
+  // then layer on terminal-capability hints so full-color / interactive CLIs
+  // (like the AI agents) render well. TERM/COLORTERM are assigned AFTER the
+  // copy so they still win over whatever the server inherited.
+  const env: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(baseEnv)) {
+    if (!HOST_SESSION_ENV.test(key)) env[key] = value;
+  }
+  env.TERM = "xterm-256color";
+  env.COLORTERM = "truecolor";
   // ONLY the "shell" agent ever gets the ZDOTDIR override — claude,
   // cursor-agent, and codex are full-screen TUIs, not shells, and must keep
   // spawning exactly as they always have.
