@@ -87,6 +87,43 @@ describe("GET /api/files/tree", () => {
     await app.close();
   });
 
+  // Build output and tooling caches, added after a real file-descriptor
+  // exhaustion. The bug was in the WATCHER, not this listing: chokidar's
+  // `ignored` predicate consults the same IGNORED_DIR_NAMES set, so a name
+  // missing from it was descended into. On this repo that meant
+  // `apps/desktop/src-tauri/target` and `.claude/worktrees`, which together
+  // held 9,953 open regular-file descriptors after under an hour — at which
+  // point the server could no longer allocate a pty and EVERY new pane died
+  // instantly with no output. This test pins the set, because the listing is
+  // the only place it is cheap to assert.
+  it("skips build output and tooling caches (the set the watcher shares)", async () => {
+    const app = buildApp();
+    const workspaceId = await createWorkspace(app);
+
+    for (const name of ["target", ".claude", ".next", ".turbo", ".cache", "coverage", "__pycache__", ".venv"]) {
+      mkdirSync(join(projectDir, name));
+    }
+    mkdirSync(join(projectDir, "src"));
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/files/tree?workspaceId=${workspaceId}&path=.`,
+    });
+    expect(response.statusCode).toBe(200);
+    const names = (response.json() as { entries: { name: string }[] }).entries.map((e) => e.name);
+
+    // `target` is the one that actually has to be in IGNORED_DIR_NAMES: every
+    // other name here starts with a dot, so the listing would hide it anyway
+    // — but the watcher does NOT hide dotfiles, which is exactly how
+    // `.claude/worktrees` came to be walked.
+    for (const name of ["target", ".claude", ".next", ".turbo", ".cache", "coverage", "__pycache__", ".venv"]) {
+      expect(names, `${name} should not be listed`).not.toContain(name);
+    }
+    expect(names).toContain("src");
+
+    await app.close();
+  });
+
   it("includes node_modules/.git/dist and dotfiles when showHidden=1", async () => {
     const app = buildApp();
     const workspaceId = await createWorkspace(app);
