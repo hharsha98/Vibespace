@@ -38,7 +38,24 @@ import type { ClaimsStore } from "./claims.js";
  * keeps this module from reaching into another route module's internals
  * for it. Kept in sync by hand; if that ever drifts, the cost is just a
  * few more/fewer paths watched, not a correctness bug. */
-const IGNORED_DIR_NAMES = new Set(["node_modules", ".git", "dist"]);
+const IGNORED_DIR_NAMES = new Set([
+  "node_modules",
+  ".git",
+  "dist",
+  // Keep this list identical to files/routes.ts's — see that copy's comment
+  // for the file-descriptor exhaustion these entries exist to prevent. A
+  // mission watcher walks the same tree as the file watcher, so it hits the
+  // same wall, and a mission whose watcher has eaten the process's
+  // descriptors takes every future pane down with it.
+  "target",
+  ".claude",
+  ".next",
+  ".turbo",
+  ".cache",
+  "coverage",
+  "__pycache__",
+  ".venv",
+]);
 
 /**
  * Starts watching `workspaceRoot` for changes to any path currently claimed

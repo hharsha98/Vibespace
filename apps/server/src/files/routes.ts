@@ -45,7 +45,35 @@ const MAX_PASTE_IMAGE_BYTES = 20 * 1024 * 1024; // 20MB
  * want to browse/edit. `?showHidden=1` (tree) opts back into all of these
  * PLUS dotfiles; chokidar's ignore list is unconditional (watching
  * node_modules churn would be both useless and a performance problem). */
-const IGNORED_DIR_NAMES = new Set(["node_modules", ".git", "dist"]);
+const IGNORED_DIR_NAMES = new Set([
+  "node_modules",
+  ".git",
+  "dist",
+  // Build output and tooling caches. These were added after a real
+  // file-descriptor exhaustion: a server that had been open on this repo
+  // for under an hour held 9,953 regular-file descriptors and could no
+  // longer create a pty at all — every new pane died instantly, a login
+  // shell exiting 0 on immediate EOF and every agent CLI exiting 1, all of
+  // them producing zero bytes of output. lsof placed 7,529 of those
+  // descriptors under `apps/desktop/src-tauri/target` and 13,101 under
+  // `.claude/worktrees`, neither of which was ignored: the tree listing
+  // hides dotfiles, but the chokidar `ignored` predicate below only ever
+  // consulted this set, so the watcher descended into the Rust build
+  // output and into every git worktree (each a full checkout of its own).
+  //
+  // The symptom is nasty because it is time-delayed and looks like an
+  // agent bug: the app works when freshly launched and silently stops
+  // being able to start ANY pane once the watcher has walked enough of the
+  // tree. Nothing in the UI says why.
+  "target", // cargo
+  ".claude", // worktrees, caches, plugin installs
+  ".next",
+  ".turbo",
+  ".cache",
+  "coverage",
+  "__pycache__",
+  ".venv",
+]);
 
 function isIgnoredEntryName(name: string, showHidden: boolean): boolean {
   if (showHidden) return false; // showHidden=1 opts back into everything, dotfiles included
