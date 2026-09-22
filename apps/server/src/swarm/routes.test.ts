@@ -24,19 +24,44 @@ afterEach(() => {
 });
 
 /**
- * Strips terminal escape sequences (CSI/OSC) and then everything but
- * letters/digits, uppercasing what's left. The swarm preamble is much
- * longer than an 80-column pty's width, so zsh's line editor word-wraps it
- * and inserts its own redraw sequences (cursor moves, "erase to end of
- * line", and a visible interpunct wrap-continuation marker) mid-string —
- * asserting on a raw substring of the scrollback is exactly what those
- * artifacts would break. Reducing both sides to bare alphanumerics sidesteps
- * that entirely: the escape/wrap bytes are all non-alphanumeric, so what's
- * left is just the real characters that were actually typed, in order.
+ * Reconstructs the characters that were actually typed into a pty, out of
+ * the raw scrollback the shell echoed back.
+ *
+ * The swarm preamble is one ~700-character line, far wider than an
+ * 80-column pty, so zsh's line editor has to wrap it. The way it wraps is
+ * the part that matters here: at each boundary it emits
+ *
+ *     \r  ESC[K  <the character that overflowed>  \r  <the line, redrawn>
+ *
+ * i.e. carriage-return, erase-line, re-print that one character, and
+ * carriage-return again before redrawing. On screen that renders correctly,
+ * but in the byte stream the overflowing character appears TWICE. Stripping
+ * only escape sequences leaves the duplicate behind, so "Build the thing"
+ * arrives as "Build the thing" or as "Buiild the thing" depending purely on
+ * where the boundary fell — and where it falls depends on the width of the
+ * shell prompt, which contains the temp directory name.
+ *
+ * That made this test deterministic-but-machine-dependent rather than
+ * flaky: with the 32-character directory name `createWorkspace` generates,
+ * it failed every single run on one developer's machine and passed every
+ * run on CI, whose prompt happens to be a different width. Sweeping the
+ * directory-name length one character at a time reproduces the on/off
+ * pattern exactly (28, 30, 31, 32, 33 fail; 29, 34+ pass).
+ *
+ * So the wrap sequence is removed FIRST, before the escape-stripping that
+ * would otherwise make it unrecognisable. What is left is then reduced to
+ * bare letters and digits, which drops the remaining escape bytes, the
+ * spaces zsh inserts at wrap points, and any punctuation the shell may
+ * render differently.
  */
 function alnumOnly(text: string): string {
   return (
     text
+      // The zsh wrap-continuation sequence described above. This has to run
+      // BEFORE the CSI strip below: once ESC[K is gone there is no way to
+      // tell this apart from an ordinary carriage return.
+      // eslint-disable-next-line no-control-regex -- "\r ESC[K <char> \r", zsh's line-wrap redraw
+      .replace(/\r\x1b\[K.\r/g, "")
       // These control-character regexes are the whole point of this
       // function (stripping ANSI escape sequences, digit parameters and
       // all, BEFORE the final alnum-only pass below — otherwise a
@@ -56,19 +81,21 @@ function alnumOnly(text: string): string {
 /** Waits (polling) until `condition()` is true or `timeoutMs` elapses —
  * identical helper to `board/routes.test.ts`'s.
  *
- * The budget is 30s rather than the 10s it started with, because what is
- * being waited on here is a real pty: a shell is spawned, a role preamble
- * is typed into it, and the assertion is that those characters come back
- * out again. How long that takes is a property of the machine, not of the
- * code — on a laptop that was already compiling Rust, 10s was enough to
- * make this the one intermittently-failing test in the whole suite, and a
- * shared CI runner is slower and more contended than any laptop.
+ * The budget was once raised to 30s on the theory that the preamble test
+ * was losing a race against a slow machine. It was not: it was reading the
+ * scrollback wrong, every time, on any machine whose shell prompt happened
+ * to be the wrong width (see `alnumOnly`). Worse, 30s here was unreachable
+ * dead code — the test that used it declares its own 15s timeout, so vitest
+ * always killed the test first and reported a bare "Test timed out" instead
+ * of the message below, which would have said what was actually being
+ * waited for.
  *
- * Raising it costs nothing when the test passes, because the loop exits the
- * moment the condition holds; it only extends how long a genuinely broken
- * run takes to admit it. A flaky test is worse than a slow one: people
- * learn to re-run it, and then they stop reading failures at all. */
-async function waitFor(condition: () => boolean, timeoutMs = 30_000): Promise<void> {
+ * So the budget is back to 10s, matching `session-manager.test.ts`, and
+ * deliberately under every caller's own timeout so that this error is the
+ * one that fires. A wait that genuinely needs more than 10s to spawn a
+ * shell and echo a line back is a bug worth failing on, not one worth
+ * waiting out. */
+async function waitFor(condition: () => boolean, timeoutMs = 10_000): Promise<void> {
   const start = Date.now();
   while (!condition()) {
     if (Date.now() - start > timeoutMs) {

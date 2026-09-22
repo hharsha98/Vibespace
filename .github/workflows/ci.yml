@@ -16,10 +16,13 @@ jobs:
     # exclusively on Linux meant the thing people actually download was the
     # thing CI never exercised.
     #
-    # macOS runners are slower and more contended than Linux ones, which is
-    # why `swarm/routes.test.ts`'s pty wait was raised from 10s to 30s in
-    # the same change — see that helper's comment. A matrix that goes red
-    # at random teaches people to ignore red.
+    # Running macOS here is also what would eventually have caught
+    # `swarm/routes.test.ts`'s pty-echo assertion, which reads a zsh
+    # line-wrap redraw as real characters. It passed on this runner only
+    # because the runner's shell prompt is a different width to a
+    # developer's — see that test's `alnumOnly` comment. A matrix that goes
+    # red at random teaches people to ignore red, so the cause was fixed
+    # rather than the timeout raised again.
     strategy:
       fail-fast: false # one platform failing should not hide the other's result
       matrix:
