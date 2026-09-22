@@ -1,7 +1,10 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Core window/app permissions for vibespace's main window. The served vibespace app itself talks to its own Node server over plain HTTP/WebSocket, never through Tauri's IPC bridge, so beyond Tauri's own default core set the only permissions granted are Phase 11b's updater (check/download/install) and process (relaunch after an approved install) — see apps/web/src/shell/UpdateBanner.tsx for what actually calls these.",
+  "description": "Core window/app permissions for vibespace's main window. The served vibespace app itself talks to its own Node server over plain HTTP/WebSocket, never through Tauri's IPC bridge, so beyond Tauri's own default core set the only permissions granted are Phase 11b's updater (check/download/install) and process (relaunch after an approved install) — see apps/web/src/shell/UpdateBanner.tsx for what actually calls these. The `remote` block below is what lets those two reach the window at all: main.rs navigates it to the bundled Node server at http://127.0.0.1:{port}/?vibespaceDesktop=1 rather than to a page inside the bundle, so Tauri classes the window's origin as REMOTE, and a capability with no `remote` block applies only to locally-served content — its own schema says so: 'defaults to not being set, as our default use case is that the content is served from our local application'. Without it these permissions were granted to an origin nothing ever loads: every check() was rejected by the ACL and UpdateBanner's deliberately-silent catch swallowed the rejection, so the update banner never appeared for anyone in any release from v0.1.0 on. The updater is the ONLY user of Tauri IPC in this app, which is precisely why an origin-wide IPC block stayed invisible — nothing else could fail and give it away. The port is picked at runtime, hence the wildcard; 127.0.0.1 is this machine only, and the granted permissions are unchanged.",
   "windows": ["main"],
+  "remote": {
+    "urls": ["http://127.0.0.1:*"]
+  },
   "permissions": ["core:default", "updater:default", "process:allow-restart"]
 }
